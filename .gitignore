@@ -1,0 +1,28 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Trained model files
+*.zip
+rita_output/
+rita_output_test/
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# uv lock (env is shared, not project-specific)
+uv.lock
+
+# Machine-specific files (contain local absolute paths)
+activate-env.ps1
+.env-name
+config/claude_desktop_config.json

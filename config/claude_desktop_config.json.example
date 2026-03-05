@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "rita-cowork": {
+      "command": "C:\\path\\to\\your\\python.exe",
+      "args": [
+        "-m",
+        "rita.interfaces.mcp_server"
+      ],
+      "env": {
+        "NIFTY_CSV_PATH": "C:\\path\\to\\nifty\\merged.csv",
+        "OUTPUT_DIR": "C:\\path\\to\\rita-cowork-demo\\rita_output",
+        "PYTHON_ENV": "development",
+        "PYTHONPATH": "C:\\path\\to\\rita-cowork-demo\\src"
+      }
+    }
+  }
+}

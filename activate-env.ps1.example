@@ -1,0 +1,2 @@
+# Copy this to activate-env.ps1 and update the path to your Python environment
+. "C:\path\to\your\pyenv-envs\<env-name>\Scripts\Activate.ps1"

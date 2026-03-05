@@ -1,0 +1,39 @@
+version: "3.9"
+
+# Usage:
+#   docker compose up api      # REST API on port 8000
+#   docker compose up ui       # Streamlit UI on port 8501
+#   docker compose up          # both services
+#
+# Set DATA_DIR to the directory containing merged.csv before running:
+#   DATA_DIR=C:\path\to\data docker compose up
+
+services:
+  api:
+    build: .
+    command: ["run_api.py", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - "${DATA_DIR:-./data}:/data:ro"
+      - rita_output:/app/rita_output
+    environment:
+      NIFTY_CSV_PATH: /data/merged.csv
+      OUTPUT_DIR: /app/rita_output
+    restart: unless-stopped
+
+  ui:
+    build: .
+    command: ["run_ui.py", "--port", "8501"]
+    ports:
+      - "8501:8501"
+    volumes:
+      - "${DATA_DIR:-./data}:/data:ro"
+      - rita_output:/app/rita_output
+    environment:
+      NIFTY_CSV_PATH: /data/merged.csv
+      OUTPUT_DIR: /app/rita_output
+    restart: unless-stopped
+
+volumes:
+  rita_output:

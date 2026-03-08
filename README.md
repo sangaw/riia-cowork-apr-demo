@@ -249,3 +249,15 @@ For issues or questions:
 
 
 The memory file at C:\Users\Sandeep\.claude\projects\...\memory\MEMORY.md has the full context for the next session
+
+
+All 3 phases committed to GitHub: https://github.com/sangaw/riia-cowork-apr-demo.git
+
+  When you come back, start with:
+  cd C:\Users\Sandeep\Documents\Work\code\poc\rita-cowork-demo
+  .\activate-env.ps1
+  python verify.py          # confirms everything works in ~10s
+
+  Context is preserved in:
+  - project-report.md — full architecture, API reference, "Continuing the Project" section
+  - MEMORY.md — Claude session memory auto-loaded next time

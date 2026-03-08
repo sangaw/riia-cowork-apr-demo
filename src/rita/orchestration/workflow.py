@@ -4,8 +4,10 @@ RITA Orchestration — Workflow Orchestrator
 All methods return structured dicts suitable for any caller (MCP, Python client, REST API).
 """
 
+import json
 import os
 
+import numpy as np
 import pandas as pd
 
 from rita.core.data_loader import (
@@ -21,8 +23,44 @@ from rita.core.rl_agent import train_agent, load_agent, run_episode, validate_ag
 from rita.core.performance import generate_full_report, compute_all_metrics
 from rita.core.goal_engine import set_goal, update_goal_from_results
 from rita.core.strategy_engine import design_strategy, validate_strategy_constraints
+from rita.core.risk_engine import RiskEngine
+from rita.core.training_tracker import TrainingTracker
+from rita.core.shap_explainer import SHAPExplainer
 from rita.orchestration.session import SessionManager
 from rita.orchestration.monitor import PhaseMonitor
+
+
+# ─── Episode cache helpers ────────────────────────────────────────────────────
+
+def _save_episode_cache(episode: dict, path: str) -> None:
+    """Serialise a run_episode() result dict to JSON (DataFrames excluded)."""
+    obs = episode.get("observations")
+    cacheable = {
+        "portfolio_values": episode["portfolio_values"],
+        "benchmark_values": episode["benchmark_values"],
+        "allocations": episode["allocations"],
+        "daily_returns": episode["daily_returns"],
+        "dates": [str(d) for d in episode["dates"]],
+        "close_prices": episode["close_prices"],
+        "q_confidence_series": episode.get("q_confidence_series", []),
+        "observations": obs.tolist() if obs is not None else [],
+        "performance": {k: (v if not isinstance(v, (np.bool_, np.integer, np.floating)) else v.item())
+                        for k, v in episode["performance"].items()},
+    }
+    with open(path, "w") as fh:
+        json.dump(cacheable, fh)
+
+
+def _load_episode_cache(path: str) -> dict | None:
+    """Load a cached episode dict from JSON, or return None if missing."""
+    if not os.path.exists(path):
+        return None
+    with open(path) as fh:
+        data = json.load(fh)
+    data["dates"] = pd.DatetimeIndex(data["dates"])
+    if data.get("observations"):
+        data["observations"] = np.array(data["observations"], dtype=np.float32)
+    return data
 
 
 class WorkflowOrchestrator:
@@ -136,7 +174,11 @@ class WorkflowOrchestrator:
 
                 self.session.set("model_path", model_zip)
                 self.session.set("validation_metrics", val_metrics)
+                self.session.set("model_source", "loaded_existing")
                 self.session.save()
+
+                # Cache episodes for Risk View (train + val)
+                self._cache_episodes_for_risk_view(model)
 
                 result = {
                     "model_path": model_zip,
@@ -161,7 +203,11 @@ class WorkflowOrchestrator:
             self.session.set("model_path", training_metrics["model_path"])
             self.session.set("training_metrics", training_metrics)
             self.session.set("validation_metrics", val_metrics)
+            self.session.set("model_source", "trained")
             self.session.save()
+
+            # Cache episodes for Risk View (train + val)
+            self._cache_episodes_for_risk_view(model)
 
             result = {**training_metrics, "source": "trained", "validation": val_metrics}
             self.monitor.end_step(4, {
@@ -245,7 +291,7 @@ class WorkflowOrchestrator:
 
     # ─── STEP 7 ──────────────────────────────────────────────────────────────
 
-    def step7_get_results(self) -> dict:
+    def step7_get_results(self, record_to_history: bool = True, notes: str = "") -> dict:
         """Step 7: Generate full performance report with interpretability plots."""
         self.monitor.start_step(7)
         try:
@@ -253,7 +299,6 @@ class WorkflowOrchestrator:
             if not backtest_results:
                 raise RuntimeError("Run step6 before step7.")
 
-            import numpy as np
             plots = generate_full_report(
                 portfolio_values=np.array(backtest_results["portfolio_values"]),
                 benchmark_values=np.array(backtest_results["benchmark_values"]),
@@ -266,6 +311,25 @@ class WorkflowOrchestrator:
 
             constraint_check = validate_strategy_constraints(backtest_results)
             perf = backtest_results["performance"]
+
+            # ── Risk Arc ─────────────────────────────────────────────────────
+            try:
+                self._compute_risk_arc()
+            except Exception as re:
+                print(f"[RITA] Risk arc computation skipped: {re}")
+
+            # ── SHAP Explainability ───────────────────────────────────────────
+            try:
+                self._compute_shap_explainability()
+            except Exception as se:
+                print(f"[RITA] SHAP computation skipped: {se}")
+
+            # ── Training History ──────────────────────────────────────────────
+            if record_to_history:
+                try:
+                    self._record_training_round(perf, notes)
+                except Exception as te:
+                    print(f"[RITA] Training history recording skipped: {te}")
 
             result = {
                 "performance": perf,
@@ -304,6 +368,155 @@ class WorkflowOrchestrator:
         except Exception as e:
             self.monitor.fail_step(8, str(e))
             raise
+
+    # ─── Risk Arc & Training Tracker (internal) ───────────────────────────────
+
+    def _cache_episodes_for_risk_view(self, model) -> None:
+        """
+        Run model inference on training + validation data and cache results to disk.
+        Called from step4 so that step7 can build the full risk arc without
+        rerunning inference a second time.
+        """
+        self._ensure_data()
+        train_cache = os.path.join(self.output_dir, "train_episode_cache.json")
+        val_cache = os.path.join(self.output_dir, "val_episode_cache.json")
+
+        train_df = calculate_indicators(get_training_data(self._raw_df))
+        val_df = calculate_indicators(get_validation_data(self._raw_df))
+
+        print("[RITA] Caching train episode for Risk View (may take a few seconds)…")
+        train_ep = run_episode(model, train_df)
+        _save_episode_cache(train_ep, train_cache)
+
+        print("[RITA] Caching val episode for Risk View…")
+        val_ep = run_episode(model, val_df)
+        _save_episode_cache(val_ep, val_cache)
+
+    def _compute_risk_arc(self) -> None:
+        """
+        Build the full-arc risk timeline (Train → Validation → Backtest) and
+        persist results to risk_timeline.csv, risk_trade_events.csv,
+        risk_summary.json inside output_dir.
+        Called from step7_get_results().
+        """
+        backtest_results = self.session.get("backtest_results")
+        if not backtest_results:
+            return
+
+        self._ensure_data()
+        nifty_returns = self._feat_df["daily_return"].dropna()
+        risk_engine = RiskEngine()
+
+        sim_period = self.session.get("simulation_period") or {}
+        bt_start = sim_period.get("start", BACKTEST_START)
+        bt_end = sim_period.get("end")
+
+        # Feature DataFrames for regime detection per phase
+        train_feat = calculate_indicators(get_training_data(self._raw_df))
+        val_feat = calculate_indicators(get_validation_data(self._raw_df))
+        bt_feat = calculate_indicators(get_backtest_data(self._raw_df, bt_start, bt_end))
+
+        # Load cached episodes (produced in step4)
+        train_ep = _load_episode_cache(os.path.join(self.output_dir, "train_episode_cache.json"))
+        val_ep = _load_episode_cache(os.path.join(self.output_dir, "val_episode_cache.json"))
+
+        # Fall back: rerun inference if cache is missing
+        if train_ep is None:
+            model_path = self.session.get("model_path")
+            if model_path and os.path.exists(model_path):
+                m = load_agent(model_path)
+                train_ep = run_episode(m, train_feat)
+                val_ep = run_episode(m, val_feat)
+
+        timelines = []
+
+        if train_ep is not None:
+            tl_train = risk_engine.compute_risk_timeline(
+                train_ep, train_feat, nifty_returns, phase="Train"
+            )
+            timelines.append(tl_train)
+
+        if val_ep is not None:
+            tl_val = risk_engine.compute_risk_timeline(
+                val_ep, val_feat, nifty_returns, phase="Validation"
+            )
+            timelines.append(tl_val)
+
+        tl_bt = risk_engine.compute_risk_timeline(
+            backtest_results, bt_feat, nifty_returns, phase="Backtest"
+        )
+        timelines.append(tl_bt)
+
+        combined = risk_engine.combine_phases(timelines)
+        trades = risk_engine.compute_trade_events(combined)
+        summary = risk_engine.compute_risk_summary(combined, trades)
+
+        risk_engine.save(combined, trades, summary, self.output_dir)
+        self.session.set("risk_arc_ready", True)
+        self.session.save()
+
+    def _compute_shap_explainability(self) -> None:
+        """
+        Fit SHAP DeepExplainer on training observations (background) and
+        explain the backtest observations. Saves shap_values.npz,
+        shap_importance.csv, shap_phase_importance.csv to output_dir.
+        """
+        model_path = self.session.get("model_path")
+        backtest_results = self.session.get("backtest_results")
+        if not model_path or not backtest_results:
+            return
+
+        # Background observations — from cached training episode
+        train_ep = _load_episode_cache(
+            os.path.join(self.output_dir, "train_episode_cache.json")
+        )
+        if train_ep is None or not len(train_ep.get("observations", [])):
+            print("[RITA] SHAP: train episode cache missing — skipping")
+            return
+
+        train_obs = np.array(train_ep["observations"], dtype=np.float32)
+
+        # Explain observations — backtest + validation episodes combined
+        bt_obs = backtest_results.get("observations")
+        if bt_obs is None or len(bt_obs) == 0:
+            print("[RITA] SHAP: backtest observations missing — skipping")
+            return
+
+        val_ep = _load_episode_cache(
+            os.path.join(self.output_dir, "val_episode_cache.json")
+        )
+
+        obs_parts, phase_parts = [bt_obs], ["Backtest"] * len(bt_obs)
+        if val_ep is not None and len(val_ep.get("observations", [])):
+            val_obs = np.array(val_ep["observations"], dtype=np.float32)
+            obs_parts.insert(0, val_obs)
+            phase_parts = ["Validation"] * len(val_obs) + phase_parts
+
+        explain_obs = np.concatenate(obs_parts, axis=0)
+        phases = np.array(phase_parts)
+
+        model = load_agent(model_path)
+        explainer = SHAPExplainer(model)
+
+        print("[RITA] Fitting SHAP explainer (background: training obs)…")
+        explainer.fit(train_obs)
+
+        print(f"[RITA] Computing SHAP values for {len(explain_obs)} observations…")
+        shap_vals = explainer.explain(explain_obs)
+
+        explainer.save(shap_vals, explain_obs, phases, self.output_dir)
+        print("[RITA] SHAP values saved.")
+
+    def _record_training_round(self, backtest_perf: dict, notes: str = "") -> None:
+        """Append one row to training_history.csv via TrainingTracker."""
+        val_metrics = self.session.get("validation_metrics") or {}
+        training_metrics = self.session.get("training_metrics") or {
+            "source": self.session.get("model_source", "loaded_existing"),
+            "timesteps_trained": 0,
+        }
+        tracker = TrainingTracker(self.output_dir)
+        rn = tracker.record_round(training_metrics, val_metrics, backtest_perf, notes)
+        print(f"[RITA] Training history: recorded Round {rn}")
 
     # ─── FULL PIPELINE ────────────────────────────────────────────────────────
 

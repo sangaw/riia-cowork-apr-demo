@@ -236,6 +236,9 @@ def run_episode(model: DQN, test_df: pd.DataFrame) -> dict:
 
     # For interpretability: collect (obs, action, q_values) at each step
     obs_log = []
+    q_confidence_list: list = []   # per-step Q-value spread (max Q − min Q)
+
+    import torch  # local import — already a dep via stable-baselines3
 
     for i in range(len(df) - 1):
         row = df.iloc[i]
@@ -250,6 +253,15 @@ def run_episode(model: DQN, test_df: pd.DataFrame) -> dict:
         ], dtype=np.float32)
 
         action, _ = model.predict(obs, deterministic=True)
+
+        # Capture per-step Q-value confidence for the Risk View
+        try:
+            obs_t = torch.FloatTensor(obs.reshape(1, -1)).to(model.device)
+            with torch.no_grad():
+                q_vals = model.policy.q_net(obs_t).cpu().numpy()[0]
+            q_confidence_list.append(float(q_vals.max() - q_vals.min()))
+        except Exception:
+            q_confidence_list.append(float("nan"))
         alloc_map = {0: 0.0, 1: 0.5, 2: 1.0}
         allocation = alloc_map[int(action)]
 
@@ -273,6 +285,9 @@ def run_episode(model: DQN, test_df: pd.DataFrame) -> dict:
     # Build Q-value interpretability data
     q_values_by_feature = _build_q_value_interpretability(model, obs_log)
 
+    # Raw observation matrix — used by SHAPExplainer
+    obs_array = np.array([o for o, _, _ in obs_log], dtype=np.float32)  # shape (N, 7)
+
     port_arr = np.array(portfolio_values)
     bench_arr = np.array(benchmark_values)
     perf = compute_all_metrics(port_arr, bench_arr)
@@ -285,6 +300,8 @@ def run_episode(model: DQN, test_df: pd.DataFrame) -> dict:
         "dates": pd.DatetimeIndex(dates),
         "close_prices": close_prices,
         "q_values_by_feature": q_values_by_feature,
+        "q_confidence_series": q_confidence_list,   # per-step Q-value spread for Risk View
+        "observations": obs_array,                  # raw obs matrix for SHAP
         "performance": perf,
     }
 

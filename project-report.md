@@ -5,7 +5,7 @@
 
 ## 1. Project Overview
 
-RITA is a Nifty 50 index investment system powered by a Reinforcement Learning (Double DQN) model. It follows an 8-step workflow — from goal setting and market analysis, through model training and backtesting, to goal feedback — and is callable through three interfaces: MCP (Claude Desktop), a Python client SDK, and a Streamlit web UI.
+RITA is a Nifty 50 index investment system powered by a Reinforcement Learning (Double DQN) model. It follows an 8-step workflow — from goal setting and market analysis, through model training and backtesting, to goal feedback — and is callable through four interfaces: MCP (Claude Desktop), a Python client SDK, a Streamlit web UI, and a FastAPI REST API.
 
 ### Core idea
 Given only historical Nifty 50 OHLCV data, train an RL agent to decide daily: hold cash (0%), go half-invested (50%), or fully invested (100%). Constrain the strategy to achieve Sharpe ratio > 1.0 and maximum drawdown < 10%.
@@ -17,10 +17,10 @@ Given only historical Nifty 50 OHLCV data, train an RL agent to decide daily: ho
 RITA follows a strict 3-layer architecture. No layer accesses a lower layer's internals — all communication goes through defined function calls.
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                     INTERFACE LAYER                          │
-│  MCP Server (Claude Desktop)  |  Streamlit UI  |  Python SDK │
-└────────────────────┬─────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────┐
+│                         INTERFACE LAYER                               │
+│  MCP Server (Claude Desktop) | Streamlit UI | Python SDK | REST API  │
+└──────────────────────────┬────────────────────────────────────────────┘
                      │
 ┌────────────────────▼─────────────────────────────────────────┐
 │                  ORCHESTRATION LAYER                         │
@@ -55,15 +55,25 @@ rita-cowork-demo/
 │   └── interfaces/
 │       ├── mcp_server.py           # 8 MCP tools → WorkflowOrchestrator
 │       ├── python_client.py        # RITAClient Python SDK
-│       └── streamlit_app.py        # Web UI (Phase 2)
+│       ├── streamlit_app.py        # Web UI (Phase 2)
+│       └── rest_api.py             # FastAPI REST API (Phase 3)
+├── tests/
+│   └── test_core.py                # 39 pytest tests (unit + API integration)
+├── .github/
+│   └── workflows/
+│       └── ci.yml                  # GitHub Actions CI (Python 3.11 + 3.12)
+├── Dockerfile                      # Python 3.12-slim image
+├── docker-compose.yml              # API (8000) + UI (8501) services
 ├── run_pipeline.py                 # CLI: full 8-step pipeline
-├── run_ui.py                       # CLI: launch Streamlit UI
+├── run_ui.py                       # CLI: launch Streamlit UI (auto port)
+├── run_api.py                      # CLI: launch FastAPI server
 ├── verify.py                       # Quick test: steps 1–3, no training
 ├── test_steps5to8.py               # Quick test: steps 5–8 with saved model
+├── project-report.md               # This document
 ├── pyproject.toml                  # Package + dependencies
-├── activate-env.ps1                # Activate shared Python env
+├── activate-env.ps1.example        # Template for activating shared Python env
 └── config/
-    └── claude_desktop_config.json  # MCP config for Claude Desktop
+    └── claude_desktop_config.json.example  # MCP config template
 ```
 
 ---
@@ -239,19 +249,83 @@ client.update_goal()
 ```bash
 python run_ui.py            # auto-selects free port from 8501
 python run_ui.py --port 8502
-streamlit run src/rita/interfaces/streamlit_app.py
 ```
 
 **UI features:**
-- Sidebar: data source toggle, goal config, model toggle, sim period
-- Step-by-step live progress with `st.status` blocks
-- Results dashboard: Overview · Charts · Step Details · Export
-- 5 interactive Plotly charts
-- JSON + HTML report download
+- Sidebar: data source toggle, goal config, force-retrain checkbox, timestep selector, training history options
+- 8-step live progress bar during pipeline run; Reset button clears session
+- Global KPI strip (8 metrics) always visible above all tabs: Return, CAGR, Sharpe, Max DD, Win Rate, Avg VaR, Train Rounds, Constraints
+- **7-tab results dashboard:**
+
+| Tab | Contents |
+|-----|---------|
+| 🏠 Dashboard | Constraint status badges, goal update summary (Step 8), recommendations |
+| 📋 Steps | Interactive 8-step strip — click any step to expand its details inline |
+| 📈 Performance | Returns, Drawdown, Rolling Sharpe, Allocations, Q-Value interpretability |
+| 🛡️ Risk View | Risk Evolution arc, DD Budget, Trade Impact, Regime & Confidence, Risk-Return Scatter |
+| 🔍 Explainability | SHAP Global Importance, Beeswarm, Feature Radar, Dependence Plot, Top Trades |
+| 📉 Training | Sharpe/MDD/Return progression across training rounds |
+| 📥 Export | JSON summary, HTML report, risk CSVs, training history download |
+
+- Each chart tab shows **4-column card grid**: every card has a 140px mini-preview thumbnail + summary metrics + "🔍 Expand" button that opens the full interactive Plotly chart in a modal dialog
+- 📋 Steps tab: 8 bordered cards in one row with `✅/⏳` status; clicking any card expands its step result below (scalars as `st.metric`, nested data in sub-expanders); phase timing table at bottom
+
+### FastAPI REST API (Phase 3)
+```bash
+python run_api.py                    # port 8000
+python run_api.py --port 8080 --reload   # dev mode with auto-reload
+```
+
+**Endpoints:**
+
+| Method | Path | Step | Description |
+|--------|------|------|-------------|
+| POST | `/api/v1/goal` | 1 | Set financial goal |
+| POST | `/api/v1/market` | 2 | Analyze market conditions |
+| POST | `/api/v1/strategy` | 3 | Design strategy |
+| POST | `/api/v1/train` | 4 | Train / load model |
+| POST | `/api/v1/period` | 5 | Set simulation period |
+| POST | `/api/v1/backtest` | 6 | Run backtest |
+| GET | `/api/v1/results` | 7 | Get results + plots |
+| POST | `/api/v1/goal/update` | 8 | Update goal |
+| POST | `/api/v1/pipeline` | all | Full 8-step run |
+| GET | `/health` | — | Service health |
+| GET | `/progress` | — | Pipeline progress |
+| POST | `/reset` | — | Clear session |
+
+Interactive docs auto-generated at `http://localhost:8000/docs` (Swagger UI).
+
+### Docker
+```bash
+# Mount your data directory and run:
+DATA_DIR=C:\path\to\nifty\data docker compose up api    # REST API
+DATA_DIR=C:\path\to\nifty\data docker compose up ui     # Streamlit UI
+DATA_DIR=C:\path\to\nifty\data docker compose up        # both
+```
 
 ---
 
-## 11. Technology Stack
+## 11. Test Suite
+
+39 pytest tests in `tests/test_core.py` — all passing, no CSV or training required for unit tests.
+
+| Class | Tests | Coverage |
+|-------|-------|---------|
+| `TestPerformanceMetrics` | 9 | Sharpe, MDD, CAGR, compute_all_metrics |
+| `TestTechnicalAnalyzer` | 6 | All 13 indicator columns, RSI range, trend validity |
+| `TestGoalEngine` | 4 | Feasibility levels, required keys, update logic |
+| `TestStrategyEngine` | 4 | Strategy keys, allocation range, constraint pass/fail |
+| `TestNiftyTradingEnv` | 6 | Observation shape, action space, step/reset, episode termination |
+| `TestAPIEndpoints` | 10 | All 8 workflow endpoints + health + progress (needs CSV) |
+
+```bash
+pytest tests/                          # all 39 tests
+pytest tests/ -k "not APIEndpoints"   # unit tests only (no CSV needed)
+```
+
+---
+
+## 12. Technology Stack
 
 | Category | Library | Version |
 |----------|---------|---------|
@@ -264,9 +338,15 @@ streamlit run src/rita/interfaces/streamlit_app.py
 | Static plots | matplotlib | ≥ 3.7.0 |
 | Interactive plots | plotly | ≥ 5.0.0 |
 | Web UI | streamlit | ≥ 1.35.0 |
+| REST API | fastapi | ≥ 0.110.0 |
+| API server | uvicorn[standard] | ≥ 0.29.0 |
+| API test client | httpx | ≥ 0.27.0 |
+| Test framework | pytest | ≥ 7.0.0 |
 | MCP protocol | mcp | ≥ 1.0.0, < 2.0.0 |
 | Env config | python-dotenv | ≥ 1.0.0 |
 | Build system | hatchling | — |
+| Container | Docker + docker-compose | — |
+| CI/CD | GitHub Actions | — |
 | Python | CPython | ≥ 3.10 |
 
 **Python environment:** `C:\Users\Sandeep\pyenv-envs\poc` (shared, not project-level)
@@ -288,10 +368,18 @@ streamlit run src/rita/interfaces/streamlit_app.py
 - HTML + JSON export
 - Auto port selection
 
-### Phase 3 — REST API + CI/CD (Planned)
-- FastAPI exposing all 8 workflow steps as REST endpoints
-- GitHub Actions: CI on push, weekly automated backtest
-- Docker containerisation
+### Phase 3 — REST API + Tests + CI/CD + Docker (Complete ✓)
+- FastAPI REST API: 8 endpoints + /pipeline, /health, /progress, /reset
+- 39 pytest tests (unit + API integration), all passing
+- GitHub Actions CI: runs on every push/PR across Python 3.11 + 3.12
+- Dockerfile + docker-compose.yml for containerised deployment
+
+### Phase 4 — UI Enhancements (Complete ✓)
+- **Risk Engine** (`risk_engine.py`): risk_timeline, trade_events, risk_summary; VaR, drawdown budget, regime detection
+- **Training Tracker** (`training_tracker.py`): appends per-run metrics to `training_history.csv`
+- **SHAP Explainability** (`shap_explainer.py`): DeepExplainer on DQN Q-network; global importance, beeswarm, radar, dependence, top trades
+- **UI restructure**: 7-tab layout with global KPI strip; chart cards with 140px mini-preview thumbnails + modal expand
+- **Interactive Step Strip**: 📋 Steps tab — single-row 8-step status cards, click to expand details inline
 
 ---
 
@@ -319,14 +407,85 @@ python run_pipeline.py
 python run_ui.py
 ```
 
+### REST API
+```bash
+python run_api.py                       # port 8000
+python run_api.py --port 8080 --reload  # dev mode
+```
+Swagger UI: http://localhost:8000/docs
+
+### Tests
+```bash
+pytest tests/                           # all 39 tests (needs CSV)
+pytest tests/ -k "not APIEndpoints"     # unit tests only (~5s, no CSV)
+```
+
 ### Claude Desktop MCP
-1. Copy `config/claude_desktop_config.json` content to `%APPDATA%\Claude\claude_desktop_config.json`
-2. Restart Claude Desktop
-3. RITA tools appear in Claude Cowork
+1. Copy `config/claude_desktop_config.json.example` to `config/claude_desktop_config.json`
+2. Fill in your local paths
+3. Copy to `%APPDATA%\Claude\claude_desktop_config.json`
+4. Restart Claude Desktop — RITA tools appear in Claude Cowork
 
 ---
 
-## 14. Key Design Decisions
+## 15. Continuing the Project in a New Session
+
+### Quick orientation (run these first)
+```bash
+# 1. Activate shared Python env
+.\activate-env.ps1
+
+# 2. Confirm everything still works (no training, ~10s)
+python verify.py
+
+# 3. Check git status
+git log --oneline -5
+git status
+```
+
+### Context files to read
+| File | Purpose |
+|------|---------|
+| `project-report.md` | Full architecture, design decisions, API reference (this file) |
+| `C:\Users\Sandeep\.claude\projects\...\memory\MEMORY.md` | Claude session memory — current status, known bugs, TODOs |
+| `pyproject.toml` | All dependencies |
+| `src/rita/orchestration/workflow.py` | Central 8-step pipeline — start here to understand flow |
+
+### GitHub repo
+```bash
+git clone https://github.com/sangaw/riia-cowork-apr-demo.git
+cd riia-cowork-apr-demo
+.\activate-env.ps1
+pip install -e .
+```
+
+### Resuming after a gap
+The trained model is **not in git** (excluded by `.gitignore`). If `rita_output/rita_ddqn_model.zip`
+is missing on your machine, step 4 will retrain automatically (~6 min). To skip retraining, copy
+the model zip from a previous run into `rita_output/` before running the pipeline.
+
+### Known pending work
+| Item | How to do it |
+|------|-------------|
+| Push Sharpe above 1.0 | `client.train_model(500_000, force_retrain=True)` |
+| Enable Claude Desktop | Copy + edit `config/claude_desktop_config.json.example`, restart Claude |
+| Mock data mode | Add synthetic data generator in `data_loader.py`, wire to Streamlit toggle |
+| Weekly backtest action | Add `.github/workflows/weekly_backtest.yml` (scheduled cron trigger) |
+| PDF report export | Add `reportlab` dep + `generate_pdf_report()` in `performance.py` |
+
+### Architecture reminder — where to add new features
+| Feature type | Where to add |
+|-------------|-------------|
+| New indicator | `src/rita/core/technical_analyzer.py` → `calculate_indicators()` |
+| New RL reward component | `src/rita/core/rl_agent.py` → `NiftyTradingEnv.step()` |
+| New performance metric | `src/rita/core/performance.py` → `compute_all_metrics()` |
+| New workflow step | `src/rita/orchestration/workflow.py` → add `stepN_...()` method |
+| New API endpoint | `src/rita/interfaces/rest_api.py` + matching test in `tests/test_core.py` |
+| New UI tab/chart | `src/rita/interfaces/streamlit_app.py` → `render_dashboard()` |
+
+---
+
+## 16. Key Design Decisions
 
 | Decision | Rationale |
 |----------|-----------|
@@ -341,4 +500,4 @@ python run_ui.py
 
 ---
 
-*Generated: 2026-03-05 · RITA v0.2.0*
+*Generated: 2026-03-08 · RITA v0.2.0 · GitHub: https://github.com/sangaw/riia-cowork-apr-demo*

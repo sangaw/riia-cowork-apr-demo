@@ -1710,11 +1710,30 @@ def render_devops_tab(output_dir: str):
                 with urllib.request.urlopen(f"{api_url}/health", timeout=3) as resp:
                     health_data = _json.loads(resp.read().decode())
                 st.success(f"✅ API reachable — status: {health_data.get('status', '?')}")
+                # Show enriched health fields
+                hc1, hc2, hc3 = st.columns(3)
+                hc1.metric("Model Exists", "✅ Yes" if health_data.get("model_exists") else "❌ No")
+                hc2.metric("Model Age", f"{health_data.get('model_age_days', '?')} days")
+                hc3.metric("CSV Loaded", "✅ Yes" if health_data.get("csv_loaded") else "❌ No")
                 with st.expander("Full /health response"):
                     st.json(health_data)
             except Exception as exc:
-                st.error(f"❌ API unreachable: {exc}")
-                st.caption(f"Make sure the API is running: `python run_api.py`")
+                exc_str = str(exc)
+                if "10061" in exc_str or "Connection refused" in exc_str or "actively refused" in exc_str:
+                    st.warning("🔌 API server is not running on this URL.")
+                    st.info(
+                        "Start it in a separate terminal:\n"
+                        "```powershell\n. .\\activate-env.ps1\npython run_api.py\n```\n"
+                        "Then click **Ping API** again.",
+                        icon="💡",
+                    )
+                elif "timed out" in exc_str.lower() or "timeout" in exc_str.lower():
+                    st.error("⏱️ Request timed out — API may be overloaded or unreachable.")
+                else:
+                    st.error(f"❌ Unexpected error: {exc_str}")
+                    st.caption("Check that the API URL is correct and the server is running.")
+        else:
+            st.caption("Click **Ping API** to test connectivity to the RITA REST API.")
 
     st.divider()
 

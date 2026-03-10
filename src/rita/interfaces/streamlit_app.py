@@ -25,6 +25,7 @@ from rita.core.performance import RISK_FREE_RATE, TRADING_DAYS
 from rita.core.risk_engine import RiskEngine
 from rita.core.training_tracker import TrainingTracker
 from rita.core.shap_explainer import SHAPExplainer, FEATURE_NAMES, ACTION_NAMES
+from rita.core.drift_detector import DriftDetector
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1347,6 +1348,493 @@ def dlg_train_return(fig): st.plotly_chart(fig, use_container_width=True)
 @st.dialog("📉 Training Loss & Reward", width="large")
 def dlg_train_progress(fig): st.plotly_chart(fig, use_container_width=True)
 
+# ── Observability dialogs ────────────────────────────────────────────────────
+
+@st.dialog("🔭 Pipeline Run Timeline", width="large")
+def dlg_obs_gantt(fig): st.plotly_chart(fig, use_container_width=True)
+
+@st.dialog("🔥 Step Duration Heatmap", width="large")
+def dlg_obs_heatmap(fig): st.plotly_chart(fig, use_container_width=True)
+
+@st.dialog("⚠️ Model Drift Trend", width="large")
+def dlg_obs_drift(fig): st.plotly_chart(fig, use_container_width=True)
+
+@st.dialog("📊 API Latency Breakdown", width="large")
+def dlg_devops_api(fig): st.plotly_chart(fig, use_container_width=True)
+
+
+# ─── Observability charts ──────────────────────────────────────────────────────
+
+def chart_pipeline_gantt(output_dir: str):
+    """
+    Horizontal bar chart showing avg step duration per step across runs.
+    Reads monitor_log.csv.  Returns None if no data.
+    """
+    log_path = os.path.join(output_dir, "monitor_log.csv")
+    if not os.path.exists(log_path):
+        return None
+    try:
+        df = pd.read_csv(log_path)
+        df.columns = [c.strip() for c in df.columns]
+        df = df[df["status"] == "completed"].copy()
+        df["duration_secs"] = pd.to_numeric(df.get("duration_secs", pd.Series()), errors="coerce")
+        df = df.dropna(subset=["duration_secs"])
+        if df.empty or "step_name" not in df.columns:
+            return None
+        agg = df.groupby("step_name")["duration_secs"].mean().reset_index()
+        agg.columns = ["Step", "Avg Duration (s)"]
+        # Colour by duration bucket
+        colors = ["#1565C0" if d < 30 else "#E65100" if d > 120 else "#2E7D32"
+                  for d in agg["Avg Duration (s)"]]
+        fig = go.Figure(go.Bar(
+            x=agg["Avg Duration (s)"],
+            y=agg["Step"],
+            orientation="h",
+            marker_color=colors,
+            text=[f"{v:.1f}s" for v in agg["Avg Duration (s)"]],
+            textposition="outside",
+        ))
+        fig.update_layout(
+            title="Average Step Duration (all runs)",
+            xaxis_title="Seconds", yaxis_title="",
+            height=360, margin=dict(t=50, b=30, l=200),
+        )
+        return fig
+    except Exception:
+        return None
+
+
+def chart_step_heatmap(output_dir: str):
+    """
+    Pivot: rows = step number, cols = run number, cell = duration (s).
+    Returns a Plotly heatmap or None if insufficient data.
+    """
+    log_path = os.path.join(output_dir, "monitor_log.csv")
+    if not os.path.exists(log_path):
+        return None
+    try:
+        df = pd.read_csv(log_path)
+        df.columns = [c.strip() for c in df.columns]
+        df = df[df["status"] == "completed"].copy()
+        df["duration_secs"] = pd.to_numeric(df.get("duration_secs", pd.Series()), errors="coerce")
+        df = df.dropna(subset=["duration_secs", "step_num"])
+        if len(df) < 8:
+            return None
+        # Assign a sequential run number per calendar date
+        if "started_at" in df.columns:
+            df["started_at_dt"] = pd.to_datetime(df["started_at"], errors="coerce")
+            df["run_date"] = df["started_at_dt"].dt.date
+        else:
+            df["run_date"] = "unknown"
+
+        dates = sorted(df["run_date"].unique())
+        date_to_run = {d: i + 1 for i, d in enumerate(dates)}
+        df["run_num"] = df["run_date"].map(date_to_run)
+
+        pivot = df.pivot_table(
+            index="step_num", columns="run_num", values="duration_secs", aggfunc="mean"
+        )
+        if pivot.empty:
+            return None
+
+        fig = go.Figure(go.Heatmap(
+            z=pivot.values.tolist(),
+            x=[f"Run {c}" for c in pivot.columns],
+            y=[f"Step {r}" for r in pivot.index],
+            colorscale="Blues",
+            text=[[f"{v:.0f}s" if not math.isnan(v) else "" for v in row]
+                  for row in pivot.values.tolist()],
+            texttemplate="%{text}",
+            showscale=True,
+        ))
+        fig.update_layout(
+            title="Step Duration Heatmap (seconds)",
+            height=340, margin=dict(t=50, b=30),
+        )
+        return fig
+    except Exception:
+        return None
+
+
+def chart_drift_trend(output_dir: str):
+    """
+    Line chart: Sharpe ratio trend across training rounds with drift zones.
+    Returns None if <2 rounds recorded.
+    """
+    history_path = os.path.join(output_dir, "training_history.csv")
+    if not os.path.exists(history_path):
+        return None
+    try:
+        hdf = pd.read_csv(history_path)
+        if len(hdf) < 2 or "backtest_sharpe" not in hdf.columns:
+            return None
+        x = [f"R{r}" for r in hdf["round"].tolist()]
+        sharpe = hdf["backtest_sharpe"].tolist()
+        rolling_mean = hdf["backtest_sharpe"].rolling(5, min_periods=1).mean().tolist()
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=x, y=sharpe, name="Backtest Sharpe",
+            mode="lines+markers",
+            line=dict(color="#1565C0", width=2), marker=dict(size=9),
+        ))
+        fig.add_trace(go.Scatter(
+            x=x, y=rolling_mean, name="Rolling Mean (5)",
+            mode="lines",
+            line=dict(color="#FF9800", width=2, dash="dash"),
+        ))
+        fig.add_hline(y=1.0, line_dash="dot", line_color="#E53935",
+                      annotation_text="Target 1.0", annotation_position="top right")
+        # Drift warning band: ±15% of latest rolling mean
+        if rolling_mean:
+            ref = rolling_mean[-1]
+            fig.add_hrect(
+                y0=ref * (1 - 0.15), y1=ref * (1 + 0.15),
+                fillcolor="#FFF9C4", opacity=0.25, line_width=0,
+                annotation_text="±15% band", annotation_position="top left",
+            )
+        fig.update_layout(
+            title="Model Drift — Sharpe Ratio Trend",
+            xaxis_title="Training Round", yaxis_title="Sharpe Ratio",
+            height=340, margin=dict(t=50, b=30),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        )
+        return fig
+    except Exception:
+        return None
+
+
+def chart_api_latency(output_dir: str):
+    """
+    Bar chart of avg API latency per endpoint from api_request_log.csv.
+    Returns None if no log exists.
+    """
+    log_path = os.path.join(output_dir, "api_request_log.csv")
+    if not os.path.exists(log_path):
+        return None
+    try:
+        df = pd.read_csv(log_path)
+        if "path" not in df.columns or "duration_ms" not in df.columns:
+            return None
+        df["duration_ms"] = pd.to_numeric(df["duration_ms"], errors="coerce")
+        agg = (df.groupby("path")["duration_ms"]
+               .agg(["mean", "count"])
+               .reset_index()
+               .rename(columns={"mean": "Avg (ms)", "count": "Calls", "path": "Endpoint"}))
+        agg = agg.sort_values("Avg (ms)", ascending=False).head(15)
+        colors = ["#E53935" if v > 500 else "#FF9800" if v > 100 else "#2E7D32"
+                  for v in agg["Avg (ms)"]]
+        fig = go.Figure(go.Bar(
+            x=agg["Avg (ms)"],
+            y=agg["Endpoint"],
+            orientation="h",
+            marker_color=colors,
+            text=[f"{v:.0f}ms ({c} calls)" for v, c in zip(agg["Avg (ms)"], agg["Calls"])],
+            textposition="outside",
+        ))
+        fig.update_layout(
+            title="API Avg Latency by Endpoint",
+            xaxis_title="Avg Duration (ms)", yaxis_title="",
+            height=360, margin=dict(t=50, b=30, l=200),
+        )
+        return fig
+    except Exception:
+        return None
+
+
+def _status_badge(status: str) -> str:
+    """Return a coloured emoji + label for a health status string."""
+    return {"ok": "🟢 OK", "warn": "🟡 WARN", "alert": "🔴 ALERT"}.get(status, "⚪ UNKNOWN")
+
+
+def render_observability_tab(output_dir: str):
+    """Render the 🔭 Observability tab content."""
+    detector  = DriftDetector(output_dir, CSV_PATH)
+    report    = detector.full_report()
+    summary   = detector.health_summary(report)
+
+    # ── Health summary strip ────────────────────────────────────────────────
+    ov = summary["overall"]
+    badge_color = "green" if ov == "ok" else "orange" if ov == "warn" else "red"
+    st.markdown(
+        f"**System Health:** :{badge_color}[{_status_badge(ov)}] "
+        f"— generated {report['generated_at']}"
+    )
+
+    checks = summary.get("checks", {})
+    hc1, hc2, hc3, hc4, hc5 = st.columns(5)
+    cols_checks = [hc1, hc2, hc3, hc4, hc5]
+    labels = {
+        "sharpe_drift":       "Sharpe Drift",
+        "return_degradation": "Return Trend",
+        "data_freshness":     "Data Freshness",
+        "pipeline_health":    "Pipeline Health",
+        "constraint_breach":  "Constraints",
+    }
+    for col, (k, label) in zip(cols_checks, labels.items()):
+        s = checks.get(k, "ok")
+        col.metric(label, _status_badge(s))
+
+    st.divider()
+
+    # ── Chart row 1 ─────────────────────────────────────────────────────────
+    fig_gantt   = chart_pipeline_gantt(output_dir)
+    fig_heatmap = chart_step_heatmap(output_dir)
+    fig_drift   = chart_drift_trend(output_dir)
+
+    c1, c2, c3 = st.columns(3)
+    if fig_gantt:
+        ph = report["pipeline_health"]
+        chart_card(c1, "Step Duration Profile",
+                   [("Total Runs", str(ph.get("total_logged", "—"))),
+                    ("Failures", str(ph.get("failed_steps", 0)))],
+                   lambda: dlg_obs_gantt(fig_gantt), "btn_obs_gantt", fig=fig_gantt)
+    else:
+        with c1:
+            with st.container(border=True):
+                st.markdown("**Step Duration Profile**")
+                st.caption("Run the pipeline to populate step timing data.")
+
+    if fig_heatmap:
+        chart_card(c2, "Step Duration Heatmap",
+                   [("Rows", "Steps 1–8"), ("Cols", "Pipeline runs")],
+                   lambda: dlg_obs_heatmap(fig_heatmap), "btn_obs_heat", fig=fig_heatmap)
+    else:
+        with c2:
+            with st.container(border=True):
+                st.markdown("**Step Duration Heatmap**")
+                st.caption("Needs at least 2 pipeline runs to display.")
+
+    if fig_drift:
+        sd = report["sharpe_drift"]
+        chart_card(c3, "Model Drift Monitor",
+                   [("Status", _status_badge(sd["status"])),
+                    ("Drift", f"{sd.get('drift_pct', 0):.1f}%")],
+                   lambda: dlg_obs_drift(fig_drift), "btn_obs_drift", fig=fig_drift)
+    else:
+        with c3:
+            with st.container(border=True):
+                st.markdown("**Model Drift Monitor**")
+                st.caption("Needs ≥2 training rounds to detect drift.")
+
+    st.divider()
+
+    # ── Detail panels ────────────────────────────────────────────────────────
+    col_a, col_b = st.columns(2)
+
+    with col_a:
+        with st.container(border=True):
+            st.markdown("**Drift & Health Details**")
+            check_order = [
+                ("sharpe_drift",       "Sharpe Drift",     "📈"),
+                ("return_degradation", "Return Trend",     "📉"),
+                ("data_freshness",     "Data Freshness",   "📅"),
+                ("pipeline_health",    "Pipeline Health",  "⚙️"),
+                ("constraint_breach",  "Constraints",      "🎯"),
+            ]
+            for key, label, icon in check_order:
+                chk = report.get(key, {})
+                s   = chk.get("status", "ok")
+                col_badge = "green" if s == "ok" else "orange" if s == "warn" else "red"
+                st.markdown(f"{icon} **{label}** — :{col_badge}[{_status_badge(s)}]")
+                st.caption(chk.get("message", ""))
+
+    with col_b:
+        with st.container(border=True):
+            st.markdown("**Recent Pipeline Runs**")
+            ph = report.get("pipeline_health", {})
+            recent_runs = ph.get("recent_runs", [])
+            if recent_runs:
+                run_df = pd.DataFrame(recent_runs)
+                st.dataframe(run_df, use_container_width=True, hide_index=True)
+            else:
+                st.caption("No run history yet.")
+
+    # ── Error log ────────────────────────────────────────────────────────────
+    log_path = os.path.join(output_dir, "monitor_log.csv")
+    if os.path.exists(log_path):
+        with st.expander("📋 Full Monitor Log (last 50 rows)"):
+            mdf = pd.read_csv(log_path)
+            mdf.columns = [c.strip() for c in mdf.columns]
+            failed_rows = mdf[mdf["status"] == "failed"]
+            if not failed_rows.empty:
+                st.warning(f"⚠️ {len(failed_rows)} failed step(s) in monitor log")
+                st.dataframe(failed_rows.tail(20), use_container_width=True, hide_index=True)
+            st.dataframe(mdf.tail(50), use_container_width=True, hide_index=True)
+
+
+def render_devops_tab(output_dir: str):
+    """Render the 🚀 DevOps & Deployment tab content."""
+    import platform
+
+    detector = DriftDetector(output_dir, CSV_PATH)
+
+    # ── Deployment manifest ───────────────────────────────────────────────────
+    st.markdown("### 🚀 Deployment Manifest")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("App Version", "0.2.0")
+    c2.metric("Python", platform.python_version())
+    c3.metric("Platform", platform.system())
+    c4.metric("Output Dir", output_dir[:24] + "…" if len(output_dir) > 24 else output_dir)
+
+    # Library versions
+    try:
+        import stable_baselines3, torch, streamlit as _st, fastapi, shap
+        lib_rows = [
+            {"Library": "stable-baselines3", "Version": stable_baselines3.__version__},
+            {"Library": "torch",             "Version": torch.__version__},
+            {"Library": "streamlit",         "Version": _st.__version__},
+            {"Library": "fastapi",           "Version": fastapi.__version__},
+            {"Library": "shap",              "Version": shap.__version__},
+        ]
+        with st.expander("📦 Key Library Versions"):
+            st.dataframe(pd.DataFrame(lib_rows), use_container_width=True, hide_index=True)
+    except Exception:
+        pass
+
+    st.divider()
+
+    # ── API Health Panel ─────────────────────────────────────────────────────
+    st.markdown("### ⚡ API Health Panel")
+    api_col1, api_col2 = st.columns([1, 2])
+
+    with api_col1:
+        api_url = st.text_input("API Base URL", value="http://localhost:8000", key="devops_api_url")
+        ping_clicked = st.button("🔄 Ping API", use_container_width=True)
+
+    with api_col2:
+        if ping_clicked:
+            try:
+                import urllib.request, json as _json
+                with urllib.request.urlopen(f"{api_url}/health", timeout=3) as resp:
+                    health_data = _json.loads(resp.read().decode())
+                st.success(f"✅ API reachable — status: {health_data.get('status', '?')}")
+                with st.expander("Full /health response"):
+                    st.json(health_data)
+            except Exception as exc:
+                st.error(f"❌ API unreachable: {exc}")
+                st.caption(f"Make sure the API is running: `python run_api.py`")
+
+    st.divider()
+
+    # ── API Request Log ──────────────────────────────────────────────────────
+    st.markdown("### 📊 API Request Log")
+    fig_api = chart_api_latency(output_dir)
+
+    if fig_api:
+        api_stats = detector.api_request_stats()
+        ar1, ar2, ar3 = st.columns(3)
+        ar1.metric("Total Requests", str(api_stats.get("total_requests", 0)))
+        ar2.metric("Errors", str(api_stats.get("error_count", 0)),
+                   delta=f"{api_stats.get('error_rate_pct', 0):.1f}% rate",
+                   delta_color="inverse" if api_stats.get("error_count", 0) > 0 else "off")
+        ar3.metric("Avg Latency", f"{api_stats.get('avg_latency_ms', 0):.0f} ms")
+
+        _api_col, _api_spacer = st.columns([3, 1])
+        chart_card(_api_col, "API Endpoint Latency",
+                   [("Endpoints Logged", str(len(api_stats.get("endpoints", {})))),
+                    ("Green", "<100ms  Orange 100–500ms  Red >500ms")],
+                   lambda: dlg_devops_api(fig_api), "btn_devops_api", fig=fig_api)
+
+        # Recent requests table
+        recent = api_stats.get("recent", [])
+        if recent:
+            with st.expander("Recent API Requests (last 20)"):
+                st.dataframe(pd.DataFrame(recent), use_container_width=True, hide_index=True)
+    else:
+        st.info(
+            "No API request log found. Start the API server (`python run_api.py`) "
+            "and make some requests to populate the log.",
+            icon="ℹ️",
+        )
+
+    st.divider()
+
+    # ── GitHub CI Status ─────────────────────────────────────────────────────
+    st.markdown("### 🔧 GitHub CI / CD")
+
+    gh_col1, gh_col2 = st.columns([1, 2])
+    with gh_col1:
+        repo = st.text_input("GitHub repo (owner/repo)", value="sangaw/riia-cowork-apr-demo",
+                             key="devops_gh_repo")
+        ci_clicked = st.button("🔄 Fetch CI Status", use_container_width=True)
+
+    with gh_col2:
+        if ci_clicked:
+            try:
+                import urllib.request, json as _json
+                url = f"https://api.github.com/repos/{repo}/actions/runs?per_page=5"
+                req = urllib.request.Request(url, headers={"User-Agent": "RITA-Dashboard"})
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    data = _json.loads(resp.read().decode())
+                runs = data.get("workflow_runs", [])
+                if runs:
+                    rows_ci = []
+                    for run in runs:
+                        status_icon = {
+                            "success":    "✅",
+                            "failure":    "❌",
+                            "in_progress":"🔄",
+                            "cancelled":  "⚪",
+                        }.get(run.get("conclusion") or run.get("status", ""), "❓")
+                        rows_ci.append({
+                            "Run": f"#{run.get('run_number', '?')}",
+                            "Status": f"{status_icon} {run.get('conclusion') or run.get('status', '?')}",
+                            "Branch": run.get("head_branch", "?"),
+                            "Triggered": run.get("event", "?"),
+                            "Updated": run.get("updated_at", "")[:16],
+                        })
+                    st.dataframe(pd.DataFrame(rows_ci), use_container_width=True, hide_index=True)
+                else:
+                    st.caption("No workflow runs found.")
+            except Exception as exc:
+                st.warning(f"Could not fetch CI status: {exc}")
+                st.caption("This may be due to network restrictions or a private repository.")
+
+    st.divider()
+
+    # ── Docker info ──────────────────────────────────────────────────────────
+    st.markdown("### 🐳 Docker Configuration")
+    dockerfile_path = os.path.join(
+        os.path.dirname(__file__), "../../../Dockerfile"
+    )
+    docker_compose_path = os.path.join(
+        os.path.dirname(__file__), "../../../docker-compose.yml"
+    )
+    dock1, dock2 = st.columns(2)
+    with dock1:
+        with st.container(border=True):
+            st.markdown("**Dockerfile**")
+            if os.path.exists(dockerfile_path):
+                st.success("✅ Dockerfile found")
+                st.caption(f"Size: {os.path.getsize(dockerfile_path)} bytes")
+                with st.expander("View Dockerfile"):
+                    with open(dockerfile_path, "r", encoding="utf-8") as f:
+                        st.code(f.read(), language="dockerfile")
+            else:
+                st.warning("Dockerfile not found at project root")
+    with dock2:
+        with st.container(border=True):
+            st.markdown("**docker-compose.yml**")
+            if os.path.exists(docker_compose_path):
+                st.success("✅ docker-compose.yml found")
+                st.caption(f"Size: {os.path.getsize(docker_compose_path)} bytes")
+                with st.expander("View docker-compose.yml"):
+                    with open(docker_compose_path, "r", encoding="utf-8") as f:
+                        st.code(f.read(), language="yaml")
+            else:
+                st.warning("docker-compose.yml not found at project root")
+
+    # ── Environment Config ────────────────────────────────────────────────────
+    st.divider()
+    st.markdown("### ⚙️ Environment Configuration")
+    env_rows = [
+        {"Variable": "NIFTY_CSV_PATH", "Value": CSV_PATH, "Set": "✅" if os.path.exists(CSV_PATH) else "❌ File missing"},
+        {"Variable": "OUTPUT_DIR",     "Value": output_dir, "Set": "✅" if os.path.exists(output_dir) else "📁 Will be created"},
+    ]
+    st.dataframe(pd.DataFrame(env_rows), use_container_width=True, hide_index=True)
+
 
 def chart_training_progress(output_dir: str):
     """
@@ -1555,11 +2043,13 @@ def render_dashboard(orch: WorkflowOrchestrator, step_results: dict):
     render_kpi_strip(perf, risk_summary, history)
     st.divider()
 
-    # ── 7-tab navigation ──────────────────────────────────────────────────────
+    # ── 9-tab navigation ──────────────────────────────────────────────────────
     st.subheader("Results Dashboard")
-    tab_dash, tab_steps, tab_perf, tab_risk, tab_explain, tab_train, tab_export = st.tabs([
+    (tab_dash, tab_steps, tab_perf, tab_risk, tab_explain,
+     tab_train, tab_export, tab_obs, tab_devops) = st.tabs([
         "🏠 Dashboard", "📋 Steps", "📈 Performance", "🛡️ Risk View",
         "🔍 Explainability", "📉 Training", "📥 Export",
+        "🔭 Observability", "🚀 DevOps",
     ])
 
     # ── 🏠 Dashboard ──────────────────────────────────────────────────────────
@@ -1945,6 +2435,14 @@ def render_dashboard(orch: WorkflowOrchestrator, step_results: dict):
 
         if rows:
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    # ── 🔭 Observability ──────────────────────────────────────────────────────
+    with tab_obs:
+        render_observability_tab(OUTPUT_DIR)
+
+    # ── 🚀 DevOps & Deployment ────────────────────────────────────────────────
+    with tab_devops:
+        render_devops_tab(OUTPUT_DIR)
 
 
 # ─── Pipeline runner ──────────────────────────────────────────────────────────

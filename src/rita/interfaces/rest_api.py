@@ -11,20 +11,24 @@ Docs auto-generated at:
     http://localhost:8000/redoc  (ReDoc)
 """
 
+import csv
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../.."))
 
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from rita.orchestration.workflow import WorkflowOrchestrator
 from rita.core.data_loader import BACKTEST_START
+from rita.core.drift_detector import DriftDetector
 
 try:
     from dotenv import load_dotenv
@@ -39,6 +43,42 @@ CSV_PATH = os.getenv(
     r"C:\Users\Sandeep\Documents\Work\code\claude-pattern-trading\data\raw-data\nifty\merged.csv",
 )
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "./rita_output")
+API_LOG_PATH = os.path.join(OUTPUT_DIR, "api_request_log.csv")
+
+# ─── Request Logging Middleware ───────────────────────────────────────────────
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """
+    Logs every HTTP request to api_request_log.csv.
+    Columns: timestamp, method, path, status_code, duration_ms
+    """
+
+    def __init__(self, app, log_path: str = API_LOG_PATH):
+        super().__init__(app)
+        self.log_path = log_path
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        if not os.path.exists(log_path):
+            with open(log_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["timestamp", "method", "path", "status_code", "duration_ms"])
+
+    async def dispatch(self, request: Request, call_next):
+        start = time.time()
+        response = await call_next(request)
+        duration_ms = round((time.time() - start) * 1000, 1)
+        try:
+            with open(self.log_path, "a", newline="", encoding="utf-8") as f:
+                csv.writer(f).writerow([
+                    time.strftime("%Y-%m-%d %H:%M:%S"),
+                    request.method,
+                    request.url.path,
+                    response.status_code,
+                    duration_ms,
+                ])
+        except Exception:
+            pass
+        return response
+
 
 # ─── Singleton orchestrator ───────────────────────────────────────────────────
 
@@ -73,6 +113,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(RequestLoggingMiddleware, log_path=API_LOG_PATH)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -116,13 +157,65 @@ def _wrap(step_result: dict) -> dict:
 
 @app.get("/health", tags=["System"])
 def health():
-    """Service health check."""
+    """
+    Rich service health check.
+
+    Returns model age, data freshness, last pipeline run, and Sharpe trend
+    in addition to the basic liveness indicators.
+    """
+    import json
+    from datetime import datetime
+
     orch = get_orchestrator()
+    model_path = os.path.join(OUTPUT_DIR, "rita_ddqn_model.zip")
+    model_exists = os.path.exists(model_path)
+
+    # Model age
+    model_age_days: Optional[float] = None
+    if model_exists:
+        mtime = os.path.getmtime(model_path)
+        model_age_days = round((time.time() - mtime) / 86400, 1)
+
+    # Last pipeline run (latest timestamp in monitor_log.csv)
+    last_run: Optional[str] = None
+    monitor_path = os.path.join(OUTPUT_DIR, "monitor_log.csv")
+    if os.path.exists(monitor_path):
+        try:
+            import pandas as pd
+            mdf = pd.read_csv(monitor_path)
+            mdf.columns = [c.strip() for c in mdf.columns]
+            ended = mdf[mdf["status"] == "completed"]
+            if not ended.empty and "ended_at" in ended.columns:
+                last_run = ended["ended_at"].dropna().iloc[-1]
+        except Exception:
+            pass
+
+    # Sharpe trend (last 5 backtest rounds)
+    sharpe_trend: list = []
+    history_path = os.path.join(OUTPUT_DIR, "training_history.csv")
+    if os.path.exists(history_path):
+        try:
+            import pandas as pd
+            hdf = pd.read_csv(history_path)
+            if "backtest_sharpe" in hdf.columns:
+                sharpe_trend = hdf["backtest_sharpe"].tail(5).dropna().tolist()
+        except Exception:
+            pass
+
+    # Data freshness
+    detector = DriftDetector(OUTPUT_DIR, CSV_PATH)
+    freshness = detector.check_data_freshness()
+
     return {
         "status": "ok",
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "csv_loaded": orch._raw_df is not None,
-        "model_exists": os.path.exists(os.path.join(OUTPUT_DIR, "rita_ddqn_model.zip")),
+        "model_exists": model_exists,
+        "model_age_days": model_age_days,
         "output_dir": OUTPUT_DIR,
+        "last_pipeline_run": last_run,
+        "sharpe_trend_last5": sharpe_trend,
+        "data_freshness": freshness,
     }
 
 
@@ -138,6 +231,99 @@ def reset():
     global _orchestrator
     _orchestrator = WorkflowOrchestrator(CSV_PATH, OUTPUT_DIR)
     return {"status": "reset", "message": "Orchestrator session cleared."}
+
+
+# ─── Metrics ──────────────────────────────────────────────────────────────────
+
+@app.get("/metrics", tags=["System"])
+def metrics():
+    """
+    Aggregated performance + pipeline metrics in JSON format.
+
+    Includes: latest backtest KPIs, training history summary, step timing
+    averages, and API request log statistics.
+    """
+    import pandas as pd
+
+    result: dict = {
+        "pipeline": {},
+        "training": {},
+        "api_requests": {},
+    }
+
+    # Pipeline step timing
+    monitor_path = os.path.join(OUTPUT_DIR, "monitor_log.csv")
+    if os.path.exists(monitor_path):
+        try:
+            mdf = pd.read_csv(monitor_path)
+            mdf.columns = [c.strip() for c in mdf.columns]
+            completed = mdf[mdf["status"] == "completed"]
+            if "step_num" in completed.columns and "duration_secs" in completed.columns:
+                completed = completed.copy()
+                completed["duration_secs"] = pd.to_numeric(completed["duration_secs"], errors="coerce")
+                timing = (
+                    completed.groupby("step_num")["duration_secs"]
+                    .agg(["mean", "max", "count"])
+                    .round(2)
+                    .to_dict(orient="index")
+                )
+                result["pipeline"] = {
+                    "total_logged_steps": len(mdf),
+                    "completed_steps": len(completed),
+                    "failed_steps": int((mdf["status"] == "failed").sum()),
+                    "step_timing": timing,
+                }
+        except Exception as exc:
+            result["pipeline"]["error"] = str(exc)
+
+    # Training history
+    history_path = os.path.join(OUTPUT_DIR, "training_history.csv")
+    if os.path.exists(history_path):
+        try:
+            hdf = pd.read_csv(history_path)
+            if not hdf.empty:
+                latest = hdf.iloc[-1]
+                result["training"] = {
+                    "rounds": len(hdf),
+                    "latest_backtest_sharpe": round(float(latest.get("backtest_sharpe", 0)), 4),
+                    "latest_backtest_mdd_pct": round(float(latest.get("backtest_mdd_pct", 0)), 2),
+                    "latest_backtest_cagr_pct": round(float(latest.get("backtest_cagr_pct", 0)), 2),
+                    "latest_constraints_met": bool(latest.get("backtest_constraints_met", False)),
+                    "avg_backtest_sharpe": round(float(hdf["backtest_sharpe"].mean()), 4),
+                }
+        except Exception as exc:
+            result["training"]["error"] = str(exc)
+
+    # API request stats
+    detector = DriftDetector(OUTPUT_DIR, CSV_PATH)
+    result["api_requests"] = detector.api_request_stats()
+
+    return result
+
+
+# ─── Drift ────────────────────────────────────────────────────────────────────
+
+@app.get("/api/v1/drift", tags=["Observability"])
+def check_drift():
+    """
+    Model drift and health report.
+
+    Runs all DriftDetector checks:
+    - Sharpe drift (vs rolling mean)
+    - Return degradation (consecutive CAGR decline)
+    - Data freshness (days since latest CSV date)
+    - Pipeline health (step failure rate)
+    - Constraint breach rate
+
+    Returns a full report + overall health badge (ok / warn / alert).
+    """
+    try:
+        detector = DriftDetector(OUTPUT_DIR, CSV_PATH)
+        report   = detector.full_report()
+        summary  = detector.health_summary(report)
+        return {"health": summary, "report": report}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ─── Step 1 ───────────────────────────────────────────────────────────────────

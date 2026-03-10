@@ -259,6 +259,21 @@ class RiskEngine:
         for phase in combined["phase"].unique():
             ph = combined[combined["phase"] == phase]
             pt = trades[trades["phase"] == phase]
+
+            # Sharpe ratio and total return for this phase
+            pv = ph["portfolio_value_norm"].values
+            if len(pv) > 1:
+                daily_rets_ph = np.diff(pv) / np.where(pv[:-1] != 0, pv[:-1], 1e-9)
+                daily_rf = 0.07 / 252
+                std_ph = daily_rets_ph.std()
+                sharpe_ph = float(
+                    (daily_rets_ph.mean() - daily_rf) / std_ph * np.sqrt(252)
+                ) if std_ph > 0 else 0.0
+                total_ret_ph = round((float(pv[-1]) / float(pv[0]) - 1) * 100, 2)
+            else:
+                sharpe_ph = 0.0
+                total_ret_ph = 0.0
+
             per_phase[phase] = {
                 "avg_vol_pct": round(float(ph["rolling_vol_20d"].mean()), 2),
                 "avg_var_pct": round(float(ph["portfolio_var_95"].mean()), 2),
@@ -266,6 +281,8 @@ class RiskEngine:
                 "max_budget_used_pct": round(float(ph["drawdown_budget_pct"].max()), 1),
                 "trade_count": len(pt),
                 "days": len(ph),
+                "sharpe_ratio": round(sharpe_ph, 3),
+                "total_return_pct": total_ret_ph,
             }
         summary["per_phase"] = per_phase
         return summary

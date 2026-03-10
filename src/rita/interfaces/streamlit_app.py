@@ -778,6 +778,8 @@ def render_risk_view_tab(output_dir: str):
                 "Avg VaR (%)": vals.get("avg_var_pct", 0),
                 "Max DD (%)": vals.get("max_drawdown_pct", 0),
                 "Max Budget (%)": vals.get("max_budget_used_pct", 0),
+                "Sharpe": vals.get("sharpe_ratio", 0),
+                "Return (%)": vals.get("total_return_pct", 0),
             })
         st.dataframe(
             pd.DataFrame(phase_rows),
@@ -943,6 +945,17 @@ def render_training_progress_tab(output_dir: str):
     })
     st.markdown("**Constraint Checklist per Round**")
     st.dataframe(constraint_data, use_container_width=True, hide_index=True)
+
+    # ── Chart E: Training Loss & Reward ──────────────────────────────────────
+    fig_tp = chart_training_progress(output_dir)
+    if fig_tp is not None:
+        st.plotly_chart(fig_tp, use_container_width=True)
+    else:
+        st.info(
+            "Training Loss & Reward chart not available — model was loaded from cache. "
+            "Enable *Force Retrain* and re-run Step 4 to generate this chart.",
+            icon="💡",
+        )
 
     # ── Full history table ────────────────────────────────────────────────────
     st.divider()
@@ -1331,6 +1344,57 @@ def dlg_train_mdd(fig): st.plotly_chart(fig, use_container_width=True)
 @st.dialog("💹 Return & CAGR Progress", width="large")
 def dlg_train_return(fig): st.plotly_chart(fig, use_container_width=True)
 
+@st.dialog("📉 Training Loss & Reward", width="large")
+def dlg_train_progress(fig): st.plotly_chart(fig, use_container_width=True)
+
+
+def chart_training_progress(output_dir: str):
+    """
+    Dual-axis Plotly chart: TD Loss (left Y) and Mean Episode Reward (right Y)
+    over training timesteps. Reads training_progress.csv saved by TrainingProgressCallback.
+    Returns None if the file does not exist (model loaded from cache, not retrained).
+    """
+    csv_path = os.path.join(output_dir, "training_progress.csv")
+    if not os.path.exists(csv_path):
+        return None
+    df = pd.read_csv(csv_path).dropna(subset=["timestep"])
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    # Loss trace (left Y)
+    loss_df = df.dropna(subset=["loss"])
+    if not loss_df.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=loss_df["timestep"], y=loss_df["loss"],
+                name="TD Loss", mode="lines",
+                line=dict(color="#E53935", width=1.5),
+            ),
+            secondary_y=False,
+        )
+
+    # Reward trace (right Y)
+    rew_df = df.dropna(subset=["ep_rew_mean"])
+    if not rew_df.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=rew_df["timestep"], y=rew_df["ep_rew_mean"],
+                name="Mean Episode Reward", mode="lines",
+                line=dict(color="#1E88E5", width=1.5),
+            ),
+            secondary_y=True,
+        )
+
+    fig.update_layout(
+        title="Training Progress — Loss & Reward over Timesteps",
+        xaxis_title="Training Timestep",
+        height=340, margin=dict(t=50, b=30),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+    )
+    fig.update_yaxes(title_text="TD Loss", secondary_y=False, title_font_color="#E53935")
+    fig.update_yaxes(title_text="Mean Episode Reward", secondary_y=True, title_font_color="#1E88E5")
+    return fig
+
 
 # ─── UI helpers ───────────────────────────────────────────────────────────────
 
@@ -1631,7 +1695,9 @@ def render_dashboard(orch: WorkflowOrchestrator, step_results: dict):
                             {"Phase": ph,
                              "Avg VaR%": f"{v.get('avg_var_pct', 0):.2f}",
                              "Max DD%":  f"{v.get('max_drawdown_pct', 0):.1f}",
-                             "Trades":   v.get("trade_count", 0)}
+                             "Trades":   v.get("trade_count", 0),
+                             "Sharpe":   f"{v.get('sharpe_ratio', 0):.3f}",
+                             "Return%":  f"{v.get('total_return_pct', 0):.1f}"}
                             for ph, v in per_phase.items()
                         ]
                         st.dataframe(pd.DataFrame(rows_ph), use_container_width=True, hide_index=True)
@@ -1786,6 +1852,24 @@ def render_dashboard(orch: WorkflowOrchestrator, step_results: dict):
                     st.markdown(f"Validation: {'✓' if val_ok else '✗'}")
                     st.markdown(f"Backtest:   {'✓' if bt_ok else '✗'}")
                     st.caption(f"{n_rounds} round{'s' if n_rounds > 1 else ''} recorded")
+
+            # Row 2 — Training Loss & Reward (full width, only if retrained)
+            fig_tp = chart_training_progress(OUTPUT_DIR)
+            if fig_tp is not None:
+                cp1, cp2 = st.columns([3, 1])
+                chart_card(cp1, "Training Loss & Reward",
+                           [("X-axis", "Timestep"), ("Loss", "TD (red) · Reward (blue)")],
+                           lambda: dlg_train_progress(fig_tp), "btn_train_prog", fig=fig_tp)
+                with cp2:
+                    with st.container(border=True):
+                        st.markdown("**About this chart**")
+                        st.caption(
+                            "TD Loss (left axis): lower = more stable Q-value estimates. "
+                            "Mean Episode Reward (right axis): higher = better strategy quality. "
+                            "Only available when model is retrained (force_retrain=True)."
+                        )
+            else:
+                st.caption("💡 Training Loss & Reward chart available after retraining with *Force Retrain* enabled.")
 
             # Full history table (collapsed)
             with st.expander("Full training history"):

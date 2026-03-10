@@ -29,9 +29,43 @@ import pandas as pd
 import gymnasium as gym
 from gymnasium import spaces
 from stable_baselines3 import DQN
-from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnNoModelImprovement
+from stable_baselines3.common.callbacks import BaseCallback, EvalCallback, StopTrainingOnNoModelImprovement
 
 from .performance import sharpe_ratio, max_drawdown, compute_all_metrics
+
+
+# ─── Training progress callback ───────────────────────────────────────────────
+
+class TrainingProgressCallback(BaseCallback):
+    """
+    Records TD loss and mean episode reward at regular intervals during training.
+    Saves to {output_dir}/training_progress.csv on training end.
+
+    Columns: timestep, loss, ep_rew_mean
+    """
+
+    def __init__(self, log_interval: int = 1_000, output_dir: str = ""):
+        super().__init__(verbose=0)
+        self.log_interval = log_interval
+        self.output_dir = output_dir
+        self.records: list = []
+
+    def _on_step(self) -> bool:
+        if self.n_calls % self.log_interval == 0:
+            vals = self.model.logger.name_to_value
+            self.records.append({
+                "timestep":    self.num_timesteps,
+                "loss":        vals.get("train/loss", float("nan")),
+                "ep_rew_mean": vals.get("rollout/ep_rew_mean", float("nan")),
+            })
+        return True
+
+    def _on_training_end(self) -> None:
+        if self.records and self.output_dir:
+            os.makedirs(self.output_dir, exist_ok=True)
+            pd.DataFrame(self.records).to_csv(
+                os.path.join(self.output_dir, "training_progress.csv"), index=False
+            )
 
 
 # ─── Reward hyper-params ──────────────────────────────────────────────────────
@@ -183,7 +217,8 @@ def train_agent(
         verbose=verbose,
     )
 
-    model.learn(total_timesteps=timesteps)
+    progress_cb = TrainingProgressCallback(log_interval=1_000, output_dir=output_dir)
+    model.learn(total_timesteps=timesteps, callback=progress_cb)
     model.save(model_path)
 
     training_metrics = {

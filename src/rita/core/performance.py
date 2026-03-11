@@ -92,6 +92,422 @@ def compute_all_metrics(portfolio_values: np.ndarray, benchmark_values: np.ndarr
     }
 
 
+def build_portfolio_comparison(backtest_df: pd.DataFrame, portfolio_inr: float) -> dict:
+    """
+    Compare three fixed-allocation manual strategies against the RITA RL model
+    on the same historical date range and Nifty price series.
+
+    Args:
+        backtest_df : DataFrame from backtest_daily.csv — columns:
+                      date, portfolio_value, benchmark_value, allocation, close_price
+                      portfolio_value and benchmark_value are normalized to 1.0 at start.
+        portfolio_inr : Starting capital in INR (e.g. 1_000_000 for Rs 10 lakh).
+
+    Returns:
+        Structured comparison dict with per-profile metrics and INR values.
+    """
+    df = backtest_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date").reset_index(drop=True)
+
+    # Reconstruct daily Nifty returns from close prices
+    closes = df["close_price"].values
+    market_returns = np.concatenate([[0.0], np.diff(closes) / closes[:-1]])
+
+    years = len(df) / TRADING_DAYS
+
+    def _simulate_fixed(alloc: float) -> np.ndarray:
+        """Simulate a buy-and-hold fixed allocation on daily market returns."""
+        vals = np.ones(len(df))
+        for i in range(1, len(df)):
+            vals[i] = vals[i - 1] * (1.0 + alloc * market_returns[i])
+        return vals
+
+    def _profile_metrics(norm_values: np.ndarray, label: str, alloc_desc: str) -> dict:
+        daily_rets = np.diff(norm_values) / norm_values[:-1]
+        sr  = sharpe_ratio(daily_rets)
+        mdd = max_drawdown(norm_values)
+        total_return = (norm_values[-1] / norm_values[0] - 1)
+        final_inr    = round(portfolio_inr * norm_values[-1])
+        profit_inr   = round(final_inr - portfolio_inr)
+        return {
+            "label":              label,
+            "allocation":         alloc_desc,
+            "start_value_inr":    int(portfolio_inr),
+            "final_value_inr":    final_inr,
+            "profit_loss_inr":    profit_inr,
+            "return_pct":         round(total_return * 100, 2),
+            "cagr_pct":           round(cagr(1.0, norm_values[-1], years) * 100, 2),
+            "max_drawdown_pct":   round(mdd * 100, 2),
+            "sharpe_ratio":       round(sr, 3),
+            "sharpe_constraint_met":   sr > 1.0,
+            "drawdown_constraint_met": mdd > -0.10,
+        }
+
+    # ── Three manual fixed-allocation profiles ────────────────────────────────
+    conservative = _profile_metrics(_simulate_fixed(0.30), "Conservative", "30% Nifty + 70% Cash")
+    moderate     = _profile_metrics(_simulate_fixed(0.60), "Moderate",     "60% Nifty + 40% Cash")
+    aggressive   = _profile_metrics(_simulate_fixed(1.00), "Aggressive",   "100% Nifty (Buy & Hold)")
+
+    # ── RITA RL model — use portfolio_value from backtest_daily.csv ───────────
+    rita_norm = df["portfolio_value"].values
+    rita      = _profile_metrics(rita_norm, "RITA RL Model", "0 / 50 / 100% dynamic (DDQN)")
+
+    profiles = {
+        "conservative": conservative,
+        "moderate":     moderate,
+        "aggressive":   aggressive,
+        "rita_model":   rita,
+    }
+
+    # ── Winner by Sharpe (project goal) ──────────────────────────────────────
+    best_key   = max(profiles, key=lambda k: profiles[k]["sharpe_ratio"])
+    best_return_key = max(profiles, key=lambda k: profiles[k]["return_pct"])
+
+    # ── Summary table rows (for easy display) ────────────────────────────────
+    table = []
+    for key, p in profiles.items():
+        table.append({
+            "profile":       p["label"],
+            "allocation":    p["allocation"],
+            "final_inr":     p["final_value_inr"],
+            "profit_inr":    p["profit_loss_inr"],
+            "return_pct":    p["return_pct"],
+            "max_dd_pct":    p["max_drawdown_pct"],
+            "sharpe":        p["sharpe_ratio"],
+            "sharpe_ok":     p["sharpe_constraint_met"],
+            "dd_ok":         p["drawdown_constraint_met"],
+        })
+
+    return {
+        "period_start":   df["date"].iloc[0].strftime("%Y-%m-%d"),
+        "period_end":     df["date"].iloc[-1].strftime("%Y-%m-%d"),
+        "trading_days":   len(df),
+        "portfolio_inr":  int(portfolio_inr),
+        "nifty_return_pct": round((closes[-1] / closes[0] - 1) * 100, 2),
+        "profiles":       profiles,
+        "summary_table":  table,
+        "sharpe_winner":  best_key,
+        "return_winner":  best_return_key,
+        "insight": (
+            f"RITA RL model achieves Sharpe {rita['sharpe_ratio']:.3f} vs "
+            f"Aggressive (Buy & Hold) Sharpe {aggressive['sharpe_ratio']:.3f}. "
+            f"{'RITA wins on risk-adjusted return (project goal: Sharpe > 1.0).' if rita['sharpe_ratio'] > aggressive['sharpe_ratio'] else 'Buy & Hold leads on Sharpe this period.'}"
+        ),
+    }
+
+
+def build_performance_feedback(
+    backtest_df: pd.DataFrame,
+    perf_df: pd.DataFrame,
+    history_df: pd.DataFrame,
+) -> dict:
+    """
+    Outcome Analyst: summarise how the RITA RL model performed over the backtest
+    period and derive realistic return expectations for planning.
+
+    Args:
+        backtest_df : DataFrame from backtest_daily.csv
+        perf_df     : DataFrame from performance_summary.csv (metric/value pairs)
+        history_df  : DataFrame from training_history.csv
+
+    Returns:
+        Structured feedback dict covering performance, trade activity, constraints,
+        and realistic forward-looking return expectations.
+    """
+    # ── Load performance metrics ──────────────────────────────────────────────
+    perf = dict(zip(perf_df["metric"], perf_df["value"]))
+
+    def _f(key, default=0.0):
+        try:
+            return float(perf.get(key, default))
+        except (ValueError, TypeError):
+            return default
+
+    sharpe      = _f("sharpe_ratio")
+    mdd         = _f("max_drawdown_pct")
+    total_ret   = _f("portfolio_total_return_pct")
+    bench_ret   = _f("benchmark_total_return_pct")
+    cagr_pct    = _f("portfolio_cagr_pct")
+    bench_cagr  = _f("benchmark_cagr_pct")
+    volatility  = _f("annual_volatility_pct")
+    win_rate    = _f("win_rate_pct")
+    total_days  = int(_f("total_days"))
+    years       = _f("years")
+
+    sharpe_ok = str(perf.get("sharpe_constraint_met", "False")).lower() == "true"
+    dd_ok     = str(perf.get("drawdown_constraint_met", "False")).lower() == "true"
+
+    # ── Trade activity from backtest_daily.csv ────────────────────────────────
+    bt = backtest_df.copy()
+    bt["date"] = pd.to_datetime(bt["date"])
+    bt = bt.sort_values("date").reset_index(drop=True)
+
+    alloc   = bt["allocation"].dropna()
+    changes = alloc.diff().fillna(0)
+
+    total_trades   = int((changes.abs() > 0).sum())
+    buy_trades     = int((changes > 0).sum())
+    sell_trades    = int((changes < 0).sum())
+
+    days_hold = int((alloc == 0.0).sum())
+    days_half = int((alloc == 0.5).sum())
+    days_full = int((alloc == 1.0).sum())
+    days_invested = int((alloc > 0).sum())
+
+    port   = bt["portfolio_value"].values
+    closes = bt["close_price"].values
+    daily_rets = np.diff(port) / port[:-1] * 100
+
+    # ── Training round context ────────────────────────────────────────────────
+    latest_round = None
+    round_number = None
+    if not history_df.empty:
+        latest = history_df.iloc[-1]
+        round_number = int(latest.get("round", len(history_df)))
+        latest_round = {
+            "round":           round_number,
+            "timesteps":       int(latest.get("timesteps", 0)),
+            "source":          str(latest.get("source", "unknown")),
+            "val_sharpe":      round(float(latest.get("val_sharpe", 0)), 3),
+            "val_mdd_pct":     round(float(latest.get("val_mdd_pct", 0)), 2),
+        }
+
+    # ── Realistic return expectations ─────────────────────────────────────────
+    # Annualise observed CAGR conservatively: apply a 20% discount for uncertainty
+    conservative_annual = round(cagr_pct * 0.80, 1)
+    realistic_annual    = round(cagr_pct, 1)
+
+    # 1-year projection from current portfolio base
+    def _project(rate_pct, years_ahead=1):
+        return round((1 + rate_pct / 100) ** years_ahead - 1, 4) * 100
+
+    expectations = {
+        "conservative_1y_pct":  round(_project(conservative_annual), 2),
+        "realistic_1y_pct":     round(_project(realistic_annual), 2),
+        "conservative_3y_pct":  round(_project(conservative_annual, 3), 2),
+        "realistic_3y_pct":     round(_project(realistic_annual, 3), 2),
+        "basis": (
+            f"Based on observed CAGR of {cagr_pct:.1f}% over {total_days} trading days. "
+            f"Conservative estimate applies 20% discount for market uncertainty."
+        ),
+    }
+
+    # ── Constraint verdict ────────────────────────────────────────────────────
+    constraint_verdict = "ALL CONSTRAINTS MET" if (sharpe_ok and dd_ok) else (
+        "SHARPE CONSTRAINT FAILED" if not sharpe_ok else "DRAWDOWN CONSTRAINT FAILED"
+    )
+
+    # ── Alpha vs benchmark ────────────────────────────────────────────────────
+    alpha = round(total_ret - bench_ret, 2)
+    alpha_note = (
+        f"Underperformed Buy & Hold by {abs(alpha):.1f}% on raw return, "
+        f"but Sharpe {sharpe:.3f} vs implied B&H Sharpe shows better risk-adjusted outcome."
+        if alpha < 0 else
+        f"Outperformed Buy & Hold by {alpha:.1f}% on raw return."
+    )
+
+    return {
+        # Period
+        "period_start":     bt["date"].iloc[0].strftime("%Y-%m-%d"),
+        "period_end":       bt["date"].iloc[-1].strftime("%Y-%m-%d"),
+        "trading_days":     total_days,
+        "years":            round(years, 2),
+
+        # Return metrics
+        "return_metrics": {
+            "portfolio_return_pct":  round(total_ret, 2),
+            "benchmark_return_pct":  round(bench_ret, 2),
+            "alpha_pct":             alpha,
+            "portfolio_cagr_pct":    round(cagr_pct, 2),
+            "benchmark_cagr_pct":    round(bench_cagr, 2),
+            "alpha_note":            alpha_note,
+        },
+
+        # Risk metrics
+        "risk_metrics": {
+            "sharpe_ratio":          round(sharpe, 3),
+            "max_drawdown_pct":      round(mdd, 2),
+            "annual_volatility_pct": round(volatility, 2),
+            "win_rate_pct":          round(win_rate, 2),
+            "best_day_pct":          round(float(daily_rets.max()), 2),
+            "worst_day_pct":         round(float(daily_rets.min()), 2),
+        },
+
+        # Trade activity
+        "trade_activity": {
+            "total_trades":          total_trades,
+            "buy_trades":            buy_trades,
+            "sell_trades":           sell_trades,
+            "days_at_hold_0pct":     days_hold,
+            "days_at_half_50pct":    days_half,
+            "days_at_full_100pct":   days_full,
+            "days_invested":         days_invested,
+            "pct_time_invested":     round(days_invested / len(alloc) * 100, 1),
+            "avg_trades_per_month":  round(total_trades / max(years * 12, 1), 1),
+        },
+
+        # Constraints
+        "constraints": {
+            "sharpe_target":        "> 1.0",
+            "sharpe_actual":        round(sharpe, 3),
+            "sharpe_met":           sharpe_ok,
+            "drawdown_target":      "< -10%",
+            "drawdown_actual":      round(mdd, 2),
+            "drawdown_met":         dd_ok,
+            "verdict":              constraint_verdict,
+        },
+
+        # Training context
+        "training_round":   latest_round,
+
+        # Forward-looking expectations
+        "realistic_expectations": expectations,
+
+        # One-line summary
+        "summary": (
+            f"RITA RL model: {total_ret:.1f}% return over {total_days} days "
+            f"({round(years, 1)}y), Sharpe {sharpe:.3f}, MDD {mdd:.1f}%. "
+            f"{total_trades} trades ({buy_trades} buys, {sell_trades} sells). "
+            f"{constraint_verdict}. "
+            f"Realistic 1-year expectation: {expectations['realistic_1y_pct']:.1f}% "
+            f"(conservative: {expectations['conservative_1y_pct']:.1f}%)."
+        ),
+    }
+
+
+def simulate_stress_scenarios(
+    portfolio_inr: float,
+    market_moves: list,
+    rita_allocation_pct: float,
+) -> dict:
+    """
+    Point-in-time stress test across market move scenarios.
+
+    For each market_move in market_moves, shows the portfolio impact for:
+      - Conservative  (30% fixed allocation)
+      - Moderate      (60% fixed allocation)
+      - Aggressive    (100% fixed — Buy & Hold)
+      - RITA current  (current RL model recommendation allocation)
+      - RITA → HOLD   (0% — model's downgrade protection trigger)
+
+    Args:
+        portfolio_inr        : Starting capital in INR.
+        market_moves         : List of market move percentages (e.g. [-20, -10, 10, 20]).
+        rita_allocation_pct  : Current RITA recommendation in % (0, 50, or 100).
+
+    Returns:
+        dict with scenario results and per-move breach analysis.
+    """
+    PROFILES = {
+        "conservative":  ("Conservative",       0.30),
+        "moderate":      ("Moderate",           0.60),
+        "aggressive":    ("Aggressive (B&H)",   1.00),
+        "rita_current":  (f"RITA ({int(rita_allocation_pct)}% current)", rita_allocation_pct / 100.0),
+        "rita_hold":     ("RITA -> HOLD (0%)",  0.00),
+    }
+
+    def _calc(alloc: float, move_pct: float) -> dict:
+        impact_pct   = alloc * move_pct
+        final_inr    = round(portfolio_inr * (1 + impact_pct / 100))
+        pl_inr       = round(final_inr - portfolio_inr)
+        dd_pct       = round(min(impact_pct, 0), 2)   # only negative moves are drawdown
+        breaches_dd  = dd_pct < -10.0
+        return {
+            "allocation_pct":    round(alloc * 100),
+            "portfolio_impact_pct": round(impact_pct, 2),
+            "final_value_inr":   final_inr,
+            "profit_loss_inr":   pl_inr,
+            "drawdown_pct":      dd_pct,
+            "breaches_10pct_dd": breaches_dd,
+        }
+
+    scenarios = {}
+    for move in market_moves:
+        move_key = f"{move:+d}%"
+        profiles_at_move = {}
+        for key, (label, alloc) in PROFILES.items():
+            result = _calc(alloc, move)
+            result["label"] = label
+            profiles_at_move[key] = result
+
+        # Count breaches (excluding RITA→HOLD which is always safe)
+        breach_count = sum(
+            1 for k, v in profiles_at_move.items()
+            if k != "rita_hold" and v["breaches_10pct_dd"]
+        )
+
+        # Narrative insight for this move
+        if move < 0:
+            rita_dd  = profiles_at_move["rita_current"]["drawdown_pct"]
+            hold_msg = (
+                "RITA downgrade protection (HOLD) eliminates market loss entirely."
+                if rita_allocation_pct > 0 else
+                "RITA already at HOLD — fully protected."
+            )
+            if breach_count == 0:
+                insight = f"All profiles within 10% drawdown limit. {hold_msg}"
+            else:
+                names = [profiles_at_move[k]["label"]
+                         for k in profiles_at_move
+                         if k != "rita_hold" and profiles_at_move[k]["breaches_10pct_dd"]]
+                insight = (
+                    f"{', '.join(names)} breach the 10% drawdown limit. "
+                    f"RITA at {int(rita_allocation_pct)}% allocation: "
+                    f"{rita_dd:.1f}% drawdown. {hold_msg}"
+                )
+        else:
+            best = max(
+                (k for k in profiles_at_move if k != "rita_hold"),
+                key=lambda k: profiles_at_move[k]["profit_loss_inr"],
+            )
+            insight = (
+                f"Market up {move}%: {profiles_at_move[best]['label']} captures "
+                f"most upside (+Rs {profiles_at_move[best]['profit_loss_inr']:,}). "
+                f"RITA at {int(rita_allocation_pct)}% captures "
+                f"+Rs {profiles_at_move['rita_current']['profit_loss_inr']:,}."
+            )
+
+        scenarios[move_key] = {
+            "market_move_pct": move,
+            "profiles":        profiles_at_move,
+            "breach_count":    breach_count,
+            "insight":         insight,
+        }
+
+    # Summary: which profile is safest in worst case
+    worst_move   = min(market_moves)
+    worst_key    = f"{worst_move:+d}%"
+    worst_scen   = scenarios[worst_key]
+
+    return {
+        "portfolio_inr":   int(portfolio_inr),
+        "rita_recommendation": f"{int(rita_allocation_pct)}%",
+        "market_moves_tested": [f"{m:+d}%" for m in market_moves],
+        "scenarios":       scenarios,
+        "worst_case": {
+            "move":    worst_key,
+            "summary": worst_scen["insight"],
+            "profiles": {
+                k: {
+                    "final_inr": v["final_value_inr"],
+                    "pl_inr":    v["profit_loss_inr"],
+                    "dd_pct":    v["drawdown_pct"],
+                    "breach":    v["breaches_10pct_dd"],
+                }
+                for k, v in worst_scen["profiles"].items()
+            },
+        },
+        "constraint_note": (
+            "Constraint: max drawdown < 10%. "
+            "RITA -> HOLD (0%) is always safe. "
+            f"At current {int(rita_allocation_pct)}% allocation, "
+            f"a {abs(worst_move)}% market drop causes "
+            f"{worst_scen['profiles']['rita_current']['drawdown_pct']:.1f}% drawdown."
+        ),
+    }
+
+
 def _ensure_plots_dir(output_dir: str) -> str:
     plots_dir = os.path.join(output_dir, "plots")
     os.makedirs(plots_dir, exist_ok=True)

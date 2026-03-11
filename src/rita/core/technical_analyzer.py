@@ -145,3 +145,103 @@ def get_market_summary(df: pd.DataFrame) -> dict:
         "atr_percentile": round(atr_percentile, 3),
         "sentiment_proxy": sentiment,
     }
+
+
+def get_sentiment_score(summary: dict) -> dict:
+    """
+    Consolidate the 5 indicator signals from get_market_summary() into a single
+    weighted sentiment rating.
+
+    Scoring:
+        trend     — weight 2  (+1 uptrend, -1 downtrend,  0 sideways)
+        macd      — weight 1  (+1 bullish,  -1 bearish)
+        rsi       — weight 1  (+1 oversold, -1 overbought, 0 neutral)
+        bb        — weight 1  (+1 near_lower, -1 near_upper, 0 middle)
+        volatility— weight 1  (+1 complacent, -1 fearful,   0 neutral)
+
+    Total range: -6 to +6
+    Mapped to: BULLISH / CAUTIOUSLY_BULLISH / NEUTRAL / CAUTIOUSLY_BEARISH / BEARISH
+    """
+    # ── Individual scores ────────────────────────────────────────────────────
+    trend_val = summary["trend"]
+    trend_score = (
+        2 if trend_val == "uptrend" else
+        -2 if trend_val == "downtrend" else
+        0
+    )
+
+    macd_score = 1 if summary["macd_signal"] == "bullish" else -1
+
+    rsi_val = summary["rsi_signal"]
+    rsi_score = (
+        1 if rsi_val == "oversold" else
+        -1 if rsi_val == "overbought" else
+        0
+    )
+
+    bb_val = summary["bb_position"]
+    bb_score = (
+        1 if bb_val == "near_lower_band" else
+        -1 if bb_val == "near_upper_band" else
+        0
+    )
+
+    vol_val = summary["sentiment_proxy"]
+    vol_score = (
+        1 if vol_val == "complacent" else
+        -1 if vol_val == "fearful" else
+        0
+    )
+
+    total = trend_score + macd_score + rsi_score + bb_score + vol_score
+
+    # ── Overall rating ───────────────────────────────────────────────────────
+    if total >= 4:
+        rating = "BULLISH"
+    elif total >= 1:
+        rating = "CAUTIOUSLY_BULLISH"
+    elif total >= -1:
+        rating = "NEUTRAL"
+    elif total >= -3:
+        rating = "CAUTIOUSLY_BEARISH"
+    else:
+        rating = "BEARISH"
+
+    # ── Human-readable signal summary ────────────────────────────────────────
+    parts = []
+    if trend_val == "uptrend":
+        parts.append("uptrend intact")
+    elif trend_val == "downtrend":
+        parts.append("downtrend in force")
+    else:
+        parts.append("no clear trend")
+
+    parts.append(f"MACD {summary['macd_signal']}")
+    parts.append(f"RSI {summary['rsi_14']:.1f} ({rsi_val})")
+
+    if bb_val != "middle":
+        parts.append(f"price {bb_val.replace('_', ' ')}")
+
+    if vol_val != "neutral":
+        parts.append(f"volatility {vol_val}")
+
+    conviction = (
+        "strong conviction" if abs(total) >= 4 else
+        "moderate conviction" if abs(total) >= 2 else
+        "low conviction"
+    )
+    signal_summary = ", ".join(parts) + f" — {conviction}"
+
+    return {
+        "overall_sentiment": rating,
+        "total_score": total,
+        "max_score": 6,
+        "signal_summary": signal_summary,
+        "signals": {
+            "trend":      {"value": trend_val,                      "score": trend_score},
+            "macd":       {"value": summary["macd_signal"],         "score": macd_score},
+            "rsi":        {"value": f"{rsi_val} ({summary['rsi_14']:.1f})", "score": rsi_score},
+            "bollinger":  {"value": bb_val,                         "score": bb_score},
+            "volatility": {"value": vol_val,                        "score": vol_score},
+        },
+    }

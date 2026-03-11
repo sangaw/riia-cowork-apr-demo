@@ -1,144 +1,128 @@
-# RITA Demo Checklist ✅
+# RITA Demo Checklist
 
-## What's Been Prepared
+## What's Implemented
 
-### ✅ Project Structure
-- [x] Reorganized into proper Python package: `src/rita/`
-- [x] Added `__init__.py` for package initialization
-- [x] Moved server to `src/rita/server.py` (matches pyproject.toml entry point)
-- [x] Separated concerns across 6 phases
+### Core ML System
+- [x] Double DQN (DDQN) RL model trained on Nifty 50 data (2010–2022)
+- [x] 7-feature state space: daily_return, RSI, MACD, Bollinger %B, trend_score, allocation, days_remaining
+- [x] 3-action space: HOLD (0%), HALF (50%), FULL (100%)
+- [x] Constraints: Sharpe > 1.0 AND max drawdown < 10%
+- [x] Backtest period: 2025 (Apr–Dec), Sharpe 1.191, MDD -4.55%, Return 13.85%
 
-### ✅ Enhanced Mock Data
-- [x] **Phase 1 (Initiation)**: Financial goal tracking with calculated metrics
-- [x] **Phase 2 (Research)**: 
-  - Realistic sentiment data with fear/greed indices
-  - Trend analysis with support/resistance levels
-  - Technical indicators (RSI, MACD, Stochastic, Bollinger)
-  - Candlestick pattern recognition
-  - News impact analysis for individual tickers
-  - Macro trend analysis with sector data
-- [x] **Phase 3 (Design)**: Strategy recommendations + portfolio allocation
-- [x] **Phase 4 (Evaluation)**: Scenario analysis across 4 market conditions + hedging strategies
-- [x] **Phase 5 (Execution)**: Trade execution with realistic pricing
-- [x] **Phase 6 (Feedback)**: Trade outcome logging + performance analysis + AI insights
+### MCP Integration (14 tools)
+- [x] **get_return_estimates** — historical Nifty 50 return scenarios (1d to 3y)
+- [x] **get_market_sentiment** — BULLISH/NEUTRAL/BEARISH from 5 live signals (EMA, MACD, RSI, BB, ATR)
+- [x] **get_strategy_recommendation** — HOLD/HALF/FULL aligned to RL model action space
+- [x] **get_portfolio_scenarios** — Compare Conservative/Moderate/Aggressive vs RITA in INR
+- [x] **get_stress_scenarios** — Stress test for market moves (e.g. ±10%, ±20%)
+- [x] **get_performance_feedback** — Outcome analyst: full 2025 backtest summary + realistic expectations
+- [x] **step1–step8** — Full 8-step pipeline via MCP
 
-### ✅ Windows Configuration
-- [x] Updated `config/claude_desktop_config.json` with Windows paths
-- [x] Set demo mode by default (`MARKET_DATA_API_KEY=demo_mode`)
-- [x] Created `.env.example` with all configuration options
-- [x] Added environment variable handling in server code
+### Streamlit UI (10 tabs)
+- [x] 🏠 Dashboard — KPI strip + constraint badges
+- [x] 📋 Steps — interactive 8-step strip
+- [x] 📈 Performance — returns, drawdown, Sharpe, Q-values
+- [x] 🛡️ Risk View — risk timeline, drawdown budget, trade impact, regimes
+- [x] 🔍 Explainability — SHAP global importance, beeswarm, radar, dependence
+- [x] 📉 Training — round history, Sharpe/MDD/return trends
+- [x] 📥 Export — JSON, HTML, CSV downloads
+- [x] 🔭 Observability — drift detection, latency, API health
+- [x] 🚀 DevOps — Docker, CI/CD status
+- [x] 🔌 MCP Calls — isolated refresh, call log, per-tool latency
 
-### ✅ Documentation
-- [x] Created `SETUP.md` with complete Windows setup guide
-- [x] Configuration examples for both demo and real data modes
-- [x] Troubleshooting section for common issues
-- [x] Project structure overview
-
-### ✅ Code Enhancements
-- [x] All 30+ tools fully implemented with realistic responses
-- [x] Proper error handling and data validation
-- [x] JSON-serializable responses
-- [x] Timestamp tracking on all operations
-- [x] Confidence scores and reliability metrics
-- [x] Contextual recommendations and insights
-
-## Ready to Test
-
-### Quick Start (5 minutes)
-1. Open PowerShell in project directory
-2. Run: `uv pip install -e .`
-3. Update `%APPDATA%\Claude\claude_desktop_config.json` with config from project
-4. Restart Claude Desktop
-5. Try the example in top of this checklist
-
-### Demo Prompts to Try
-
-**Basic Analysis:**
-```
-RITA: What's the current market sentiment and trend?
-```
-
-**Portfolio Setup:**
-```
-RITA: I have 10 lakhs to invest with moderate risk. What strategy do you recommend?
-```
-
-**Risk Assessment:**
-```
-RITA: Run scenario analysis on a portfolio with 70% equity and 30% cash.
-```
-
-**Complete Workflow:**
-```
-RITA: I want to trade actively. Set my goal to 20% return in 90 days, analyze current market,
-recommend a strategy, and suggest portfolio allocation.
-```
-
-## What's Mock, What's Real
-
-### Mock Data (Demo Mode)
-- ✅ All market data returns realistic values with proper ranges
-- ✅ Sentiment indices, technical indicators, trend analysis
-- ✅ Trade execution details (prices, fees, confirmations)
-- ✅ Performance metrics and learning insights
-- ✅ Scenario analysis with defined impacts
-
-### Ready for Real Integration
-- ⏭️ **Market Data**: Replace with yfinance/Alpha Vantage API
-- ⏭️ **Sentiment**: Replace with NewsAPI or custom NLP
-- ⏭️ **Trade Execution**: Connect to broker APIs (Zerodha, etc.)
-- ⏭️ **Database**: Setup SQLite/PostgreSQL for trade history
-- ⏭️ **Learning**: Add ML models for performance prediction
-
-## Architecture Highlights
-
-```
-claude_desktop_config.json (Windows paths) ✅
-           ↓
-    MCP Server Connection
-           ↓
-    src/rita/server.py ✅
-    ├── Tool Definitions (30+ tools)
-    ├── Tool Handlers (6 phases)
-    └── Mock Data Generators ✅
-```
-
-Each tool handler is designed to:
-1. Accept structured input with validation
-2. Generate realistic demo data
-3. Return properly formatted JSON
-4. Include metadata (timestamps, confidence scores, etc.)
-
-## Files Modified/Created
-
-```
-✅ Created:  src/rita/__init__.py
-✅ Created:  src/rita/server.py (enhanced version)
-✅ Updated:  config/claude_desktop_config.json (Windows paths)
-✅ Created:  .env.example
-✅ Created:  SETUP.md (Windows guide)
-✅ Updated:  This checklist
-```
-
-## Known Limitations (Demo Mode)
-
-- Random data generation means results vary between calls
-- No persistent state across MCP sessions
-- Trade history not persisted to database
-- Real-time market data not integrated
-- Perfect for demo showcasing; replace with real APIs for production
-
-## Next Sprint (When Integrating Real Data)
-
-1. Implement database layer with SQLite
-2. Add yfinance for market data
-3. Integrate NewsAPI for sentiment
-4. Connect broker API for trade execution
-5. Add ML models for performance analytics
-6. Implement proper logging and monitoring
+### Infrastructure
+- [x] FastAPI REST API (13 endpoints) with pytest suite (39 tests)
+- [x] Docker + GitHub CI/CD
+- [x] SHAP explainability (DeepExplainer on DQN Q-network)
+- [x] Risk engine (VaR, trade events, phase breakdown)
+- [x] Training tracker (round history, val vs backtest metrics)
 
 ---
 
-**Status**: ✅ Ready for Demo  
-**Last Updated**: February 14, 2026  
-**Test Environment**: Windows 11 / PowerShell  
+## Demo Conversation Flow (Claude Desktop)
+
+Start a new chat in Claude Desktop — RITA tools are available automatically.
+
+### Step 1 — Return Expectations
+> "What returns can I expect from Nifty 50 over 1 year?"
+
+→ `get_return_estimates`: Shows 5 historical percentile scenarios (conservative to best-case) with win rate and suggested target.
+
+### Step 2 — Market Sentiment
+> "How is the market looking right now?"
+
+→ `get_market_sentiment`: Consolidated BULLISH/NEUTRAL/BEARISH from EMA cross, MACD, RSI, Bollinger, ATR. Score −6 to +6.
+
+### Step 3 — Strategy Recommendation
+> "What allocation should I take in Nifty 50?"
+
+→ `get_strategy_recommendation`: HOLD / HALF (50%) / FULL (100%) — mirrors RL model action space. Includes rationale, override rules, upgrade/downgrade triggers.
+
+### Step 4 — Portfolio Scenarios
+> "I have 10 lakh INR. Show me how different strategies would have performed in 2025."
+
+→ `get_portfolio_scenarios`: Conservative (30%), Moderate (60%), Aggressive (100%) vs RITA — final INR values, Sharpe, MDD, return for each.
+
+### Step 5 — Stress Test
+> "What if the market moves 20% up or down from here?"
+
+→ `get_stress_scenarios`: Point-in-time stress across all profiles + RITA current + RITA→HOLD. Shows ₹ P&L, drawdown breach flag, and RITA's MDD protection mechanism.
+
+### Step 6 — Performance Feedback
+> "How did the RITA model perform in 2025? What are realistic return expectations going forward?"
+
+→ `get_performance_feedback`: Full outcome report — return %, CAGR, Sharpe, MDD, 33 trades (18 buys, 15 sells), time at each allocation, constraint verdict, 1y/3y forward expectations.
+
+---
+
+## Claude Desktop Setup (Windows)
+
+Config file: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "rita-cowork": {
+      "command": "C:\\Users\\Sandeep\\pyenv-envs\\poc\\Scripts\\python.exe",
+      "args": ["-m", "rita.interfaces.mcp_server"],
+      "env": {
+        "NIFTY_CSV_PATH": "C:\\path\\to\\merged.csv",
+        "OUTPUT_DIR": "C:\\path\\to\\rita-cowork-demo\\rita_output",
+        "PYTHONPATH": "C:\\path\\to\\rita-cowork-demo\\src",
+        "PYTHON_ENV": "development"
+      }
+    }
+  }
+}
+```
+
+After editing, restart Claude Desktop. RITA tools appear automatically in conversations.
+
+---
+
+## Launching the Streamlit UI
+
+```powershell
+cd C:\Users\Sandeep\Documents\Work\code\poc\rita-cowork-demo
+. .\activate-env.ps1
+python run_ui.py
+```
+
+Opens at http://localhost:8501. The 🔌 MCP Calls tab auto-refreshes via the 🔄 Refresh button (isolated — no full pipeline re-run).
+
+---
+
+## Key Architectural Decisions
+
+- Standalone MCP tools (1–6) load CSV directly — no workflow session required
+- Tool descriptions use "ALWAYS use this tool when..." to force Claude Desktop to make real calls (not answer from training knowledge)
+- Strategy recommendation uses the same 3-action space as the DDQN model (HOLD/HALF/FULL)
+- Stress test auto-derives current RITA allocation from live market signals
+- All 14 tools log to `rita_output/mcp_call_log.csv` with timestamp, duration_ms, args, result summary
+- MCP Calls tab uses `@st.fragment` (isolated re-run) — click 🔄 Refresh without triggering full pipeline
+
+---
+
+**Status**: Ready for Demo
+**Last Updated**: March 2026
+**Test Environment**: Windows 11 / PyEnv poc / Python 3.11

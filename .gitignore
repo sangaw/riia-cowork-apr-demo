@@ -13,6 +13,7 @@ rita_output_test/
 
 # Environment
 .env
+.venv/
 
 # IDE
 .vscode/

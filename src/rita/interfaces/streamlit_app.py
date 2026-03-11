@@ -1362,6 +1362,20 @@ def dlg_obs_drift(fig): st.plotly_chart(fig, use_container_width=True)
 @st.dialog("📊 API Latency Breakdown", width="large")
 def dlg_devops_api(fig): st.plotly_chart(fig, use_container_width=True)
 
+# ── MCP Calls dialogs ────────────────────────────────────────────────────────
+
+@st.dialog("📅 MCP Call Timeline", width="large")
+def dlg_mcp_timeline(fig): st.plotly_chart(fig, use_container_width=True)
+
+@st.dialog("🔧 Tool Usage Breakdown", width="large")
+def dlg_mcp_usage(fig): st.plotly_chart(fig, use_container_width=True)
+
+@st.dialog("⚡ Latency by Tool", width="large")
+def dlg_mcp_latency(fig): st.plotly_chart(fig, use_container_width=True)
+
+@st.dialog("✅ Call Status Breakdown", width="large")
+def dlg_mcp_status(fig): st.plotly_chart(fig, use_container_width=True)
+
 
 # ─── Observability charts ──────────────────────────────────────────────────────
 
@@ -1661,6 +1675,201 @@ def render_observability_tab(output_dir: str):
                 st.warning(f"⚠️ {len(failed_rows)} failed step(s) in monitor log")
                 st.dataframe(failed_rows.tail(20), use_container_width=True, hide_index=True)
             st.dataframe(mdf.tail(50), use_container_width=True, hide_index=True)
+
+
+@st.fragment
+def render_mcp_tab(output_dir: str):
+    """Render the 🔌 MCP Calls tab — live log of all Claude Desktop → RITA tool calls."""
+    hdr_col, btn_col = st.columns([6, 1])
+    with hdr_col:
+        st.markdown("**Live activity from Claude Desktop → rita-cowork MCP server**")
+    with btn_col:
+        st.button("🔄 Refresh", key="mcp_refresh", use_container_width=True)
+
+    log_path = os.path.join(output_dir, "mcp_call_log.csv")
+
+    if not os.path.exists(log_path):
+        st.info(
+            "No MCP calls logged yet — connect Claude Desktop and call a RITA tool "
+            "to see activity here.",
+            icon="🔌",
+        )
+        return
+
+    df = pd.read_csv(log_path)
+    df.columns = [c.strip() for c in df.columns]
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    df = df.sort_values("timestamp", ascending=False).reset_index(drop=True)
+
+    total_calls   = len(df)
+    ok_calls      = int((df["status"] == "ok").sum())
+    error_calls   = total_calls - ok_calls
+    success_rate  = round(ok_calls / total_calls * 100, 1) if total_calls else 0.0
+    unique_tools  = df["tool_name"].nunique()
+    avg_latency   = round(df["duration_ms"].mean(), 1) if total_calls else 0.0
+    last_call     = df["timestamp"].iloc[0].strftime("%H:%M:%S") if total_calls else "—"
+
+    # ── KPI strip ─────────────────────────────────────────────────────────────
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
+    k1.metric("Total Calls",   str(total_calls))
+    k2.metric("Success Rate",  f"{success_rate}%",
+              delta=f"{error_calls} error(s)" if error_calls else "✓ No errors",
+              delta_color="inverse" if error_calls else "normal")
+    k3.metric("Tools Invoked", str(unique_tools))
+    k4.metric("Avg Latency",   f"{avg_latency} ms")
+    k5.metric("Errors",        str(error_calls),
+              delta_color="inverse" if error_calls else "normal")
+    k6.metric("Last Call",     last_call)
+
+    st.divider()
+
+    # ── Build charts ──────────────────────────────────────────────────────────
+
+    # Chart 1 — Call Timeline (calls per day, stacked by tool)
+    df["date"] = df["timestamp"].dt.date
+    tools_order = df["tool_name"].value_counts().index.tolist()
+    palette = [
+        "#1E88E5", "#E53935", "#43A047", "#FB8C00",
+        "#8E24AA", "#00ACC1", "#F4511E", "#6D4C41", "#3949AB",
+    ]
+    colour_map = {t: palette[i % len(palette)] for i, t in enumerate(tools_order)}
+
+    fig_timeline = go.Figure()
+    daily = df.groupby(["date", "tool_name"]).size().reset_index(name="count")
+    for tool in tools_order:
+        sub = daily[daily["tool_name"] == tool]
+        fig_timeline.add_trace(go.Bar(
+            x=sub["date"], y=sub["count"], name=tool,
+            marker_color=colour_map[tool],
+        ))
+    fig_timeline.update_layout(
+        barmode="stack", title="MCP Calls per Day",
+        xaxis_title="Date", yaxis_title="Calls",
+        legend=dict(orientation="h", y=-0.25),
+        height=380, margin=dict(t=40, b=60),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+    )
+
+    # Chart 2 — Tool Usage (total calls per tool)
+    usage = df["tool_name"].value_counts().reset_index()
+    usage.columns = ["tool", "calls"]
+    fig_usage = go.Figure(go.Bar(
+        x=usage["calls"], y=usage["tool"],
+        orientation="h",
+        marker_color=[colour_map.get(t, "#1E88E5") for t in usage["tool"]],
+        text=usage["calls"], textposition="outside",
+    ))
+    fig_usage.update_layout(
+        title="Total Calls per Tool",
+        xaxis_title="Calls", yaxis_title="",
+        height=380, margin=dict(t=40, b=40, l=10, r=40),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+    )
+
+    # Chart 3 — Avg Latency per Tool
+    lat = df.groupby("tool_name")["duration_ms"].mean().reset_index()
+    lat.columns = ["tool", "avg_ms"]
+    lat = lat.sort_values("avg_ms", ascending=True)
+    fig_latency = go.Figure(go.Bar(
+        x=lat["avg_ms"], y=lat["tool"],
+        orientation="h",
+        marker_color=[colour_map.get(t, "#FB8C00") for t in lat["tool"]],
+        text=[f"{v:.0f} ms" for v in lat["avg_ms"]], textposition="outside",
+    ))
+    fig_latency.update_layout(
+        title="Avg Latency per Tool (ms)",
+        xaxis_title="Avg Duration (ms)", yaxis_title="",
+        height=380, margin=dict(t=40, b=40, l=10, r=60),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+    )
+
+    # Chart 4 — Status Breakdown (donut)
+    status_counts = df["status"].value_counts()
+    fig_status = go.Figure(go.Pie(
+        labels=status_counts.index.tolist(),
+        values=status_counts.values.tolist(),
+        hole=0.55,
+        marker_colors=["#43A047" if s == "ok" else "#E53935"
+                       for s in status_counts.index],
+        textinfo="label+percent",
+    ))
+    fig_status.update_layout(
+        title="Call Status Distribution",
+        height=380, margin=dict(t=40, b=20),
+        showlegend=False,
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+    )
+
+    # ── Row 1 — 4 chart cards ──────────────────────────────────────────────────
+    most_used = usage.iloc[0]["tool"] if not usage.empty else "—"
+    slowest   = lat.iloc[-1]["tool"] if not lat.empty else "—"
+
+    c1, c2, c3, c4 = st.columns(4)
+    chart_card(c1, "Call Timeline",
+               [("Most Active", str(df["date"].value_counts().index[0]) if total_calls else "—"),
+                ("Days w/ Calls", str(df["date"].nunique()))],
+               lambda: dlg_mcp_timeline(fig_timeline), "btn_mcp_timeline", fig=fig_timeline)
+    chart_card(c2, "Tool Usage",
+               [("Most Called", most_used),
+                ("Total Tools", str(unique_tools))],
+               lambda: dlg_mcp_usage(fig_usage), "btn_mcp_usage", fig=fig_usage)
+    chart_card(c3, "Latency by Tool",
+               [("Avg Latency", f"{avg_latency} ms"),
+                ("Slowest", slowest)],
+               lambda: dlg_mcp_latency(fig_latency), "btn_mcp_latency", fig=fig_latency)
+    chart_card(c4, "Status Breakdown",
+               [("Success Rate", f"{success_rate}%"),
+                ("Errors", str(error_calls))],
+               lambda: dlg_mcp_status(fig_status), "btn_mcp_status", fig=fig_status)
+
+    st.divider()
+
+    # ── Row 2 — Recent calls table + per-tool stats ────────────────────────────
+    col_log, col_stats = st.columns([2, 1])
+
+    with col_log:
+        with st.container(border=True):
+            st.markdown("**Recent MCP Calls** (newest first)")
+            display_df = df[["timestamp", "tool_name", "status", "duration_ms",
+                              "args_summary", "result_summary"]].head(50).copy()
+            display_df["timestamp"] = display_df["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
+            display_df.columns = ["Time", "Tool", "Status", "ms", "Args", "Result"]
+            st.dataframe(
+                display_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Status": st.column_config.TextColumn(width="small"),
+                    "ms":     st.column_config.NumberColumn(format="%.0f ms", width="small"),
+                },
+            )
+
+    with col_stats:
+        with st.container(border=True):
+            st.markdown("**Per-Tool Summary**")
+            summary = (
+                df.groupby("tool_name")
+                .agg(
+                    calls=("status", "count"),
+                    errors=("status", lambda x: (x == "error").sum()),
+                    avg_ms=("duration_ms", "mean"),
+                )
+                .reset_index()
+                .sort_values("calls", ascending=False)
+            )
+            summary["avg_ms"] = summary["avg_ms"].round(0).astype(int)
+            summary.columns = ["Tool", "Calls", "Errors", "Avg ms"]
+            st.dataframe(summary, use_container_width=True, hide_index=True)
+
+        if error_calls:
+            with st.container(border=True):
+                st.markdown("**Error Details**")
+                err_df = df[df["status"] == "error"][
+                    ["timestamp", "tool_name", "result_summary"]
+                ].head(20).copy()
+                err_df["timestamp"] = err_df["timestamp"].dt.strftime("%H:%M:%S")
+                err_df.columns = ["Time", "Tool", "Error"]
+                st.dataframe(err_df, use_container_width=True, hide_index=True)
 
 
 def render_devops_tab(output_dir: str):
@@ -2065,10 +2274,10 @@ def render_dashboard(orch: WorkflowOrchestrator, step_results: dict):
     # ── 9-tab navigation ──────────────────────────────────────────────────────
     st.subheader("Results Dashboard")
     (tab_dash, tab_steps, tab_perf, tab_risk, tab_explain,
-     tab_train, tab_export, tab_obs, tab_devops) = st.tabs([
+     tab_train, tab_export, tab_obs, tab_devops, tab_mcp) = st.tabs([
         "🏠 Dashboard", "📋 Steps", "📈 Performance", "🛡️ Risk View",
         "🔍 Explainability", "📉 Training", "📥 Export",
-        "🔭 Observability", "🚀 DevOps",
+        "🔭 Observability", "🚀 DevOps", "🔌 MCP Calls",
     ])
 
     # ── 🏠 Dashboard ──────────────────────────────────────────────────────────
@@ -2462,6 +2671,10 @@ def render_dashboard(orch: WorkflowOrchestrator, step_results: dict):
     # ── 🚀 DevOps & Deployment ────────────────────────────────────────────────
     with tab_devops:
         render_devops_tab(OUTPUT_DIR)
+
+    # ── 🔌 MCP Calls ──────────────────────────────────────────────────────────
+    with tab_mcp:
+        render_mcp_tab(OUTPUT_DIR)
 
 
 # ─── Pipeline runner ──────────────────────────────────────────────────────────

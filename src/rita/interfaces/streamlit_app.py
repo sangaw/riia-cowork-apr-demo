@@ -97,23 +97,19 @@ def render_sidebar() -> dict:
     if model_exists:
         size_kb = round(os.path.getsize(model_zip) / 1024)
         st.sidebar.success(f"✓ Trained model found ({size_kb} KB)")
-        force_retrain = st.sidebar.checkbox(
-            "Force retrain from scratch",
-            value=False,
-            help="Uncheck to reuse the existing model (faster). Check to train a new model.",
-        )
     else:
-        st.sidebar.info("No trained model found — will train on first run.")
-        force_retrain = True
+        st.sidebar.info("No trained model found — use 🏗 Build Model Pipeline to train.")
 
-    timesteps = 200_000
-    if force_retrain or not model_exists:
-        timesteps = st.sidebar.select_slider(
-            "Training timesteps",
-            options=[50_000, 100_000, 200_000, 500_000],
-            value=200_000,
-            format_func=lambda x: f"{x:,}",
-        )
+    # force_retrain is controlled by button choice, not a checkbox
+    force_retrain = False
+
+    timesteps = st.sidebar.select_slider(
+        "Training timesteps (Build only)",
+        options=[50_000, 100_000, 200_000, 500_000],
+        value=200_000,
+        format_func=lambda x: f"{x:,}",
+        help="Only used when clicking '🏗 Build Model Pipeline'.",
+    )
 
     st.sidebar.divider()
 
@@ -2777,8 +2773,18 @@ def main():
     orch: WorkflowOrchestrator = st.session_state.orch
 
     # Action buttons
-    btn_run, btn_reset = st.columns([3, 1])
-    run_clicked = btn_run.button("▶  Run Pipeline", type="primary", use_container_width=True)
+    btn_build, btn_reuse, btn_reset = st.columns([2, 2, 1])
+    build_clicked = btn_build.button(
+        "🏗  Build Model Pipeline",
+        type="primary",
+        use_container_width=True,
+        help="Train a new DDQN model from scratch, then run the full pipeline.",
+    )
+    reuse_clicked = btn_reuse.button(
+        "▶  Re-use Model Pipeline",
+        use_container_width=True,
+        help="Skip training — load the existing model and run backtest + results.",
+    )
     reset_clicked = btn_reset.button("↺  Reset", use_container_width=True)
 
     if reset_clicked:
@@ -2786,6 +2792,12 @@ def main():
         st.session_state.completed_steps = set()
         st.session_state.orch = WorkflowOrchestrator(CSV_PATH, OUTPUT_DIR)
         st.rerun()
+
+    run_clicked = build_clicked or reuse_clicked
+    if run_clicked:
+        # Override force_retrain based on which button was pressed
+        config = dict(config)
+        config["force_retrain"] = build_clicked
 
     progress_slot = st.empty()
 

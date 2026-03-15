@@ -1,6 +1,6 @@
 [project]
 name = "rita-mcp-server"
-version = "0.2.0"
+version = "1.0.0"
 description = "RITA: Nifty 50 Double DQN Investment System — MCP + Python Client"
 authors = [
     {name = "RITA Team"}

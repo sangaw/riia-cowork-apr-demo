@@ -52,7 +52,10 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
     ).average_true_range()
 
     # EMAs
-    out["ema_50"] = ta.trend.EMAIndicator(close=out["Close"], window=50).ema_indicator()
+    out["ema_5"]   = ta.trend.EMAIndicator(close=out["Close"], window=5).ema_indicator()
+    out["ema_13"]  = ta.trend.EMAIndicator(close=out["Close"], window=13).ema_indicator()
+    out["ema_26"]  = ta.trend.EMAIndicator(close=out["Close"], window=26).ema_indicator()
+    out["ema_50"]  = ta.trend.EMAIndicator(close=out["Close"], window=50).ema_indicator()
     out["ema_200"] = ta.trend.EMAIndicator(close=out["Close"], window=200).ema_indicator()
 
     # Trend score: normalized slope of ema_50 over last 20 days

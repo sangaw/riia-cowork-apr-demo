@@ -189,6 +189,109 @@ def get_period_return_estimates(df: pd.DataFrame, period_days: int) -> dict:
     }
 
 
+def prepare_data(input_dir: str, base_csv: str, output_csv: str) -> dict:
+    """
+    Merge new NSE-format CSV files from input_dir with the existing base merged CSV.
+
+    Input files use the standard NSE export format:
+        columns  : Date, Open, High, Low, Close, Shares Traded, Turnover (₹ Cr)
+        date fmt : DD-MMM-YYYY  (e.g. 13-MAR-2026)
+
+    The result is saved to output_csv in the same format as the base merged CSV
+    (lowercase columns, IST-aware dates) so load_nifty_csv() can read it unchanged.
+
+    Priority for existing data:
+        1. output_csv  — if it already exists (previous prepare run)
+        2. base_csv    — original merged.csv from external project
+        3. input files only — if neither exists
+
+    Returns a summary dict with: status, files_processed, rows_added,
+    total_rows, date_from, date_to, output_csv.
+    """
+    import glob as _glob
+    import os as _os
+
+    # ── Collect new input files ──────────────────────────────
+    input_files = sorted(_glob.glob(_os.path.join(input_dir, "*.csv")))
+    if not input_files:
+        return {
+            "status": "no_input_files",
+            "files_found": 0,
+            "rows_added": 0,
+            "message": f"No CSV files found in {input_dir}",
+        }
+
+    new_dfs = []
+    skipped = []
+    for f in input_files:
+        try:
+            df = pd.read_csv(f)
+            df.columns = df.columns.str.strip().str.lower()
+            if "date" not in df.columns:
+                skipped.append(_os.path.basename(f))
+                continue
+            new_dfs.append(df)
+        except Exception as exc:
+            skipped.append(f"{_os.path.basename(f)} ({exc})")
+
+    if not new_dfs:
+        return {"status": "error", "message": "Could not read any input files", "skipped": skipped}
+
+    new_data = pd.concat(new_dfs, ignore_index=True)
+
+    # Parse dates from DD-MMM-YYYY (NSE export) → timezone-aware IST
+    new_data["date"] = pd.to_datetime(new_data["date"].astype(str), errors="coerce")
+    new_data = new_data.dropna(subset=["date"])
+    if new_data["date"].dt.tz is None:
+        new_data["date"] = new_data["date"].dt.tz_localize("Asia/Kolkata")
+    else:
+        new_data["date"] = new_data["date"].dt.tz_convert("Asia/Kolkata")
+
+    # ── Load existing base data ──────────────────────────────
+    # Prefer output_csv (already extended) over base_csv (original)
+    existing_source = output_csv if _os.path.exists(output_csv) else base_csv
+    rows_before = 0
+
+    if _os.path.exists(existing_source):
+        existing = pd.read_csv(existing_source)
+        existing.columns = existing.columns.str.strip().str.lower()
+        existing["date"] = pd.to_datetime(existing["date"].astype(str), errors="coerce")
+        existing = existing.dropna(subset=["date"])
+        if existing["date"].dt.tz is None:
+            existing["date"] = existing["date"].dt.tz_localize("Asia/Kolkata")
+        else:
+            existing["date"] = existing["date"].dt.tz_convert("Asia/Kolkata")
+        rows_before = len(existing)
+        combined = pd.concat([existing, new_data], ignore_index=True)
+    else:
+        combined = new_data
+
+    # ── Dedup, sort, save ────────────────────────────────────
+    combined = (
+        combined
+        .sort_values("date")
+        .drop_duplicates(subset=["date"], keep="first")
+        .reset_index(drop=True)
+    )
+
+    output_dir = _os.path.dirname(output_csv)
+    if output_dir:
+        _os.makedirs(output_dir, exist_ok=True)
+    combined.to_csv(output_csv, index=False)
+
+    rows_added = len(combined) - rows_before
+    return {
+        "status": "ok",
+        "files_processed": len(new_dfs),
+        "skipped": skipped,
+        "rows_added": rows_added,
+        "total_rows": len(combined),
+        "date_from": str(combined["date"].iloc[0])[:10],
+        "date_to":   str(combined["date"].iloc[-1])[:10],
+        "output_csv": output_csv,
+    }
+
+
 def get_historical_stats(df: pd.DataFrame) -> dict:
     """
     Calculate full-history performance statistics from the loaded DataFrame.

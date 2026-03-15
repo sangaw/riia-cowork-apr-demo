@@ -20,7 +20,7 @@ from plotly.subplots import make_subplots
 import streamlit as st
 
 from rita.orchestration.workflow import WorkflowOrchestrator
-from rita.core.data_loader import BACKTEST_START
+from rita.core.data_loader import BACKTEST_START, prepare_data
 from rita.core.performance import RISK_FREE_RATE, TRADING_DAYS
 from rita.core.risk_engine import RiskEngine
 from rita.core.training_tracker import TrainingTracker
@@ -40,6 +40,13 @@ CSV_PATH = os.getenv(
     r"C:\Users\Sandeep\Documents\Work\code\claude-pattern-trading\data\raw-data\nifty\merged.csv",
 )
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "./rita_output")
+INPUT_DIR  = os.getenv("RITA_INPUT_DIR", "./rita_input")
+_PREPARED_CSV = os.path.join(OUTPUT_DIR, "nifty_merged.csv")
+
+
+def _get_active_csv() -> str:
+    """Return the extended CSV if prepare_data() has been run, else the base CSV."""
+    return _PREPARED_CSV if os.path.exists(_PREPARED_CSV) else CSV_PATH
 
 STEP_NAMES = [
     "Set Goal", "Analyze Market", "Design Strategy", "Train Model",
@@ -49,45 +56,39 @@ STEP_NAMES = [
 # ─── Page config ──────────────────────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="RITA — Nifty 50 RL Investment System",
+    page_title="RIIA — Risk Informed Investment Approach",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
+st.markdown("""
+<style>
+/* ── Main content top gap ── */
+.block-container { padding-top: 1.5rem !important; }
+
+/* ── Sidebar compact spacing ── */
+[data-testid="stSidebar"] h1 { margin-top: 0 !important; margin-bottom: 0.2rem !important; font-size: 1.4rem !important; }
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] { margin-top: 0 !important; margin-bottom: 0.5rem !important; }
+[data-testid="stSidebar"] h3 { margin-top: 0.5rem !important; margin-bottom: 0.3rem !important; font-size: 0.9rem !important; }
+[data-testid="stSidebar"] hr { margin-top: 0.6rem !important; margin-bottom: 0.6rem !important; }
+[data-testid="stSidebar"] .stAlert { padding: 0.4rem 0.6rem !important; margin-bottom: 0.3rem !important; }
+[data-testid="stSidebar"] .stAlert p { font-size: 0.8rem !important; margin: 0 !important; }
+[data-testid="stSidebar"] label { font-size: 0.85rem !important; }
+[data-testid="stSidebar"] .stSelectSlider { margin-bottom: 0.3rem !important; }
+[data-testid="stSidebar"] .stTextInput { margin-bottom: 0.2rem !important; }
+[data-testid="stSidebar"] .stCheckbox { margin-bottom: 0.3rem !important; }
+[data-testid="stSidebarContent"] { padding-top: 0.5rem !important; padding-bottom: 0.5rem !important; }
+[data-testid="stSidebar"] > div:first-child { padding-top: 0.5rem !important; }
+[data-testid="stSidebar"] .stVerticalBlock { gap: 0.5rem !important; }
+</style>
+""", unsafe_allow_html=True)
+
 # ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 def render_sidebar() -> dict:
-    st.sidebar.title("RITA")
+    st.sidebar.title("RIIA")
     st.sidebar.caption("Nifty 50 · Double DQN · 8-Step Workflow")
-
-    # Data source toggle
-    st.sidebar.subheader("Data Source")
-    data_source = st.sidebar.radio(
-        "Source",
-        ["Historical (Nifty 50)", "Mock Data (Coming Soon)"],
-        index=0,
-        label_visibility="collapsed",
-    )
-    if "Mock" in data_source:
-        st.sidebar.info("Mock data support planned for Phase 3.")
-
-    st.sidebar.divider()
-
-    # Financial goal
-    st.sidebar.subheader("Financial Goal")
-    target_return = st.sidebar.slider("Target Annual Return (%)", 5.0, 30.0, 15.0, 0.5)
-    horizon_days = st.sidebar.selectbox(
-        "Time Horizon",
-        [90, 180, 252, 365, 730],
-        index=3,
-        format_func=lambda x: f"{x} days",
-    )
-    risk_tolerance = st.sidebar.selectbox(
-        "Risk Tolerance", ["conservative", "moderate", "aggressive"], index=1
-    )
-
-    st.sidebar.divider()
 
     # Model training
     st.sidebar.subheader("Model Training")
@@ -133,9 +134,9 @@ def render_sidebar() -> dict:
     )
 
     return {
-        "target_return": target_return,
-        "horizon_days": horizon_days,
-        "risk_tolerance": risk_tolerance,
+        "target_return": 15.0,
+        "horizon_days": 365,
+        "risk_tolerance": "moderate",
         "force_retrain": force_retrain,
         "timesteps": timesteps,
         "sim_start": sim_start,
@@ -721,6 +722,350 @@ def chart_regime_confidence(combined: pd.DataFrame) -> go.Figure:
         margin=dict(t=50, b=30),
     )
     return fig
+
+
+# ─── Trade Journal helpers ─────────────────────────────────────────────────────
+
+def _classify_trades(trades_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add 'trade_type' column to each trade event row:
+      'entry'       — allocation increased (model going more invested)
+      'profit_exit' — allocation decreased, portfolio value >= value at last entry
+      'loss_exit'   — allocation decreased, portfolio value < value at last entry
+    """
+    df = trades_df.copy().sort_values("date").reset_index(drop=True)
+    types = []
+    last_entry_val = None
+    for _, row in df.iterrows():
+        if row["delta_allocation"] > 0:
+            types.append("entry")
+            last_entry_val = row["portfolio_value_inr"]
+        else:
+            if last_entry_val is not None and row["portfolio_value_inr"] >= last_entry_val:
+                types.append("profit_exit")
+            else:
+                types.append("loss_exit")
+            last_entry_val = None
+    df["trade_type"] = types
+    return df
+
+
+def build_trade_journal_data(output_dir: str, csv_path: str):
+    """
+    Load risk_timeline + trade_events, enrich with:
+      - Nifty 50 close prices (joined from source CSV)
+      - Rolling 63-day Sharpe (computed from portfolio_value_norm)
+      - Trade type classification (entry / profit_exit / loss_exit)
+
+    Returns (timeline_df, trades_df) or (None, None) on missing data.
+    """
+    rt_path = os.path.join(output_dir, "risk_timeline.csv")
+    te_path = os.path.join(output_dir, "risk_trade_events.csv")
+    if not os.path.exists(rt_path) or not os.path.exists(te_path):
+        return None, None
+    try:
+        rt = pd.read_csv(rt_path, parse_dates=["date"])
+
+        # Join Nifty close prices from source CSV
+        src = pd.read_csv(csv_path, parse_dates=["date"])
+        src["date"] = src["date"].dt.tz_localize(None)
+        rt = rt.merge(src[["date", "close"]], on="date", how="left")
+        rt = rt.sort_values("date").reset_index(drop=True)
+
+        # Rolling 63-day Sharpe from daily portfolio returns
+        rt["_ret"] = rt["portfolio_value_norm"].pct_change()
+        daily_rf = RISK_FREE_RATE / TRADING_DAYS
+        rt["rolling_sharpe"] = (
+            (rt["_ret"] - daily_rf).rolling(63).mean()
+            / rt["_ret"].rolling(63).std()
+            * math.sqrt(TRADING_DAYS)
+        )
+        rt.drop(columns=["_ret"], inplace=True)
+
+        # Classify trade events
+        te = pd.read_csv(te_path, parse_dates=["date"])
+        te = _classify_trades(te)
+
+        return rt, te
+    except Exception:
+        return None, None
+
+
+def chart_trade_journal(
+    timeline: pd.DataFrame,
+    trades: pd.DataFrame,
+    phases: list,
+    title: str,
+) -> go.Figure:
+    """
+    4-row subplot for the given phases:
+      Row 1 (46%): Nifty 50 close price + phase shading + trade markers
+      Row 2 (20%): Portfolio value (normalised, base = 1.0)
+      Row 3 (18%): Rolling 63-day Sharpe Ratio
+      Row 4 (16%): Drawdown (%)
+    """
+    sub_t  = timeline[timeline["phase"].isin(phases)].copy()
+    sub_tr = trades[trades["phase"].isin(phases)].copy()
+
+    if sub_t.empty:
+        fig = go.Figure()
+        fig.update_layout(title=f"{title} — No data available", height=300)
+        return fig
+
+    fig = make_subplots(
+        rows=4, cols=1,
+        shared_xaxes=True,
+        row_heights=[0.46, 0.20, 0.18, 0.16],
+        subplot_titles=[
+            "Nifty 50 Close Price   ( ▲ Entry  |  ▼ Profit Exit  |  ✕ Loss Exit )",
+            "Portfolio Value  (normalised, base = 1.0)",
+            "Rolling 63-Day Sharpe Ratio",
+            "Drawdown (%)",
+        ],
+        vertical_spacing=0.05,
+    )
+
+    # ── Phase background shading (all 4 rows) ─────────────────────────────────
+    _phase_bg = {
+        "Train":      "rgba(21,101,192,0.06)",
+        "Validation": "rgba(106,27,154,0.06)",
+        "Backtest":   "rgba(46,125,50,0.07)",
+    }
+    _phase_lc = {
+        "Train":      "#1565C0",
+        "Validation": "#6A1B9A",
+        "Backtest":   "#2E7D32",
+    }
+    for ph in phases:
+        ph_rows = sub_t[sub_t["phase"] == ph]
+        if ph_rows.empty:
+            continue
+        x0 = ph_rows["date"].iloc[0]
+        x1 = ph_rows["date"].iloc[-1]
+        for r in [1, 2, 3, 4]:
+            fig.add_vrect(
+                x0=x0, x1=x1,
+                fillcolor=_phase_bg.get(ph, "rgba(0,0,0,0.04)"),
+                line_width=0,
+                row=r, col=1,
+            )
+        # Phase label centred above chart
+        mid_idx = len(ph_rows) // 2
+        fig.add_annotation(
+            x=ph_rows["date"].iloc[mid_idx], y=1.01, yref="paper",
+            text=f"<b>{ph}</b>", showarrow=False,
+            font=dict(size=11, color=_phase_lc.get(ph, "gray")),
+            xanchor="center", yanchor="bottom",
+        )
+    # Phase boundary vertical lines
+    for i, ph in enumerate(phases[1:], 1):
+        ph_rows = sub_t[sub_t["phase"] == ph]
+        if not ph_rows.empty:
+            bnd = ph_rows["date"].iloc[0]
+            for r in [1, 2, 3, 4]:
+                fig.add_vline(
+                    x=bnd, line_dash="dash", line_color="gray",
+                    line_width=1.0, row=r, col=1,
+                )
+
+    # ── Row 1: Nifty 50 close price ───────────────────────────────────────────
+    fig.add_trace(go.Scatter(
+        x=sub_t["date"], y=sub_t["close"],
+        name="Nifty 50", line=dict(color="#455A64", width=1.2),
+        hovertemplate="%{x|%Y-%m-%d}  ₹%{y:,.0f}<extra></extra>",
+    ), row=1, col=1)
+
+    # Merge close price onto trade events for y-position of markers
+    sub_tr = sub_tr.merge(sub_t[["date", "close"]], on="date", how="left")
+
+    entries   = sub_tr[sub_tr["trade_type"] == "entry"]
+    profit_ex = sub_tr[sub_tr["trade_type"] == "profit_exit"]
+    loss_ex   = sub_tr[sub_tr["trade_type"] == "loss_exit"]
+
+    if not entries.empty:
+        fig.add_trace(go.Scatter(
+            x=entries["date"], y=entries["close"],
+            mode="markers", name="Entry",
+            marker=dict(
+                symbol="triangle-up", color="#43A047", size=9,
+                line=dict(width=1, color="white"),
+            ),
+            hovertemplate=(
+                "<b>ENTRY</b>  %{x|%Y-%m-%d}<br>"
+                "Close: ₹%{y:,.0f}<br>"
+                "<extra></extra>"
+            ),
+        ), row=1, col=1)
+
+    if not profit_ex.empty:
+        fig.add_trace(go.Scatter(
+            x=profit_ex["date"], y=profit_ex["close"],
+            mode="markers", name="Profit Exit",
+            marker=dict(
+                symbol="triangle-down", color="#1E88E5", size=9,
+                line=dict(width=1, color="white"),
+            ),
+            hovertemplate=(
+                "<b>PROFIT EXIT</b>  %{x|%Y-%m-%d}<br>"
+                "Close: ₹%{y:,.0f}<br>"
+                "<extra></extra>"
+            ),
+        ), row=1, col=1)
+
+    if not loss_ex.empty:
+        fig.add_trace(go.Scatter(
+            x=loss_ex["date"], y=loss_ex["close"],
+            mode="markers", name="Loss Exit",
+            marker=dict(
+                symbol="x-thin-open", color="#E53935", size=9,
+                line=dict(width=2, color="#E53935"),
+            ),
+            hovertemplate=(
+                "<b>LOSS EXIT</b>  %{x|%Y-%m-%d}<br>"
+                "Close: ₹%{y:,.0f}<br>"
+                "<extra></extra>"
+            ),
+        ), row=1, col=1)
+
+    # ── Row 2: Portfolio value (normalised) ───────────────────────────────────
+    fig.add_trace(go.Scatter(
+        x=sub_t["date"], y=sub_t["portfolio_value_norm"],
+        name="Portfolio", line=dict(color="#1565C0", width=1.5),
+        fill="tozeroy", fillcolor="rgba(21,101,192,0.07)",
+        hovertemplate="%{x|%Y-%m-%d}  %{y:.4f}<extra></extra>",
+    ), row=2, col=1)
+    fig.add_hline(y=1.0, line_dash="dot", line_color="gray", line_width=0.8, row=2, col=1)
+
+    # ── Row 3: Rolling 63-day Sharpe ──────────────────────────────────────────
+    fig.add_trace(go.Scatter(
+        x=sub_t["date"], y=sub_t["rolling_sharpe"],
+        name="63d Sharpe", line=dict(color="#8E24AA", width=1.4),
+        fill="tozeroy", fillcolor="rgba(142,36,170,0.07)",
+        hovertemplate="%{x|%Y-%m-%d}  %{y:.2f}<extra></extra>",
+    ), row=3, col=1)
+    fig.add_hline(y=1.0, line_dash="dash", line_color="#2E7D32", line_width=1,
+                  annotation_text="1.0 target", annotation_position="top right",
+                  row=3, col=1)
+    fig.add_hline(y=0.0, line_color="gray", line_width=0.5, row=3, col=1)
+
+    # ── Row 4: Drawdown (%) ───────────────────────────────────────────────────
+    fig.add_trace(go.Scatter(
+        x=sub_t["date"], y=sub_t["current_drawdown_pct"],
+        name="Drawdown", line=dict(color="#E53935", width=1.2),
+        fill="tozeroy", fillcolor="rgba(229,57,53,0.10)",
+        hovertemplate="%{x|%Y-%m-%d}  %{y:.2f}%<extra></extra>",
+    ), row=4, col=1)
+    fig.add_hline(y=-10, line_dash="dash", line_color="darkred", line_width=1,
+                  annotation_text="−10% limit", annotation_position="bottom right",
+                  row=4, col=1)
+
+    # ── Layout ────────────────────────────────────────────────────────────────
+    fig.update_yaxes(title_text="Price (₹)", row=1, col=1)
+    fig.update_yaxes(title_text="Norm. Value", row=2, col=1)
+    fig.update_yaxes(title_text="Sharpe", row=3, col=1)
+    fig.update_yaxes(title_text="DD (%)", row=4, col=1)
+    fig.update_xaxes(showticklabels=True, row=4, col=1)
+
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=13)),
+        height=820,
+        hovermode="x unified",
+        legend=dict(x=1.01, y=1, xanchor="left", font=dict(size=11)),
+        margin=dict(t=80, b=30, r=160),
+    )
+    return fig
+
+
+def render_trade_journal_tab(output_dir: str, csv_path: str):
+    """Render the 📊 Trade Journal tab — trade signals overlaid on price + metrics."""
+    rt, te = build_trade_journal_data(output_dir, csv_path)
+
+    if rt is None:
+        st.info(
+            "Trade journal data not yet available. "
+            "Run the full pipeline (Steps 1–7) to generate this view.",
+            icon="ℹ️",
+        )
+        return
+
+    # ── Summary KPIs ─────────────────────────────────────────────────────────
+    entries   = te[te["trade_type"] == "entry"]
+    profit_ex = te[te["trade_type"] == "profit_exit"]
+    loss_ex   = te[te["trade_type"] == "loss_exit"]
+    total_ex  = len(profit_ex) + len(loss_ex)
+    win_rate  = round(len(profit_ex) / total_ex * 100, 1) if total_ex else 0.0
+
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("Total Entries", str(len(entries)))
+    k2.metric("Profit Exits", str(len(profit_ex)))
+    k3.metric("Loss Exits", str(len(loss_ex)))
+    k4.metric("Exit Win Rate", f"{win_rate}%")
+    k5.metric("Total Trade Events", str(len(te)))
+
+    st.caption(
+        "**▲ Entry** — allocation increased  ·  "
+        "**▼ Profit Exit** — allocation reduced, portfolio ↑ from entry  ·  "
+        "**✕ Loss Exit** — allocation reduced, portfolio ↓ from entry  ·  "
+        "No programmatic stop-loss; exits are model-driven allocation reductions."
+    )
+    st.divider()
+
+    # ── Chart 1: Train + Validation ───────────────────────────────────────────
+    st.subheader("Train + Validation  (2010–2024)")
+    fig_tv = chart_trade_journal(
+        rt, te,
+        ["Train", "Validation"],
+        "Trade Journal — Train (2010–2022) · Validation (2023–2024)",
+    )
+    st.plotly_chart(fig_tv, use_container_width=True)
+
+    st.divider()
+
+    # ── Chart 2: Backtest ─────────────────────────────────────────────────────
+    st.subheader("Backtest  (2025)")
+    fig_bt = chart_trade_journal(
+        rt, te,
+        ["Backtest"],
+        "Trade Journal — Backtest (Apr–Dec 2025)",
+    )
+    st.plotly_chart(fig_bt, use_container_width=True)
+
+    # ── Per-phase trade stats table ───────────────────────────────────────────
+    st.divider()
+    st.markdown("**Per-Phase Trade Statistics**")
+    rows_ph = []
+    for ph in ["Train", "Validation", "Backtest"]:
+        ph_te = te[te["phase"] == ph]
+        ph_en = ph_te[ph_te["trade_type"] == "entry"]
+        ph_pe = ph_te[ph_te["trade_type"] == "profit_exit"]
+        ph_le = ph_te[ph_te["trade_type"] == "loss_exit"]
+        ph_ex = len(ph_pe) + len(ph_le)
+        rows_ph.append({
+            "Phase":        ph,
+            "Entries":      len(ph_en),
+            "Profit Exits": len(ph_pe),
+            "Loss Exits":   len(ph_le),
+            "Win Rate":     f"{round(len(ph_pe)/ph_ex*100,1)}%" if ph_ex else "—",
+        })
+    st.dataframe(pd.DataFrame(rows_ph), use_container_width=True, hide_index=True)
+
+    # ── Full trade log (collapsed) ────────────────────────────────────────────
+    with st.expander("Full trade log"):
+        disp = te[[
+            "date", "phase", "trade_type", "prev_allocation", "allocation",
+            "portfolio_value_inr", "current_drawdown_pct", "regime",
+        ]].copy()
+        disp.columns = ["Date", "Phase", "Type", "From Alloc", "To Alloc",
+                        "Portfolio (₹)", "DD%", "Regime"]
+        disp["Portfolio (₹)"] = disp["Portfolio (₹)"].round(0)
+        disp["DD%"] = disp["DD%"].round(2)
+        st.dataframe(disp, use_container_width=True, hide_index=True)
+        st.download_button(
+            "⬇ Download trade_journal.csv",
+            data=disp.to_csv(index=False),
+            file_name="trade_journal.csv",
+            mime="text/csv",
+        )
 
 
 # ─── Risk View tab renderer ────────────────────────────────────────────────────
@@ -1878,7 +2223,7 @@ def render_devops_tab(output_dir: str):
     st.markdown("### 🚀 Deployment Manifest")
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("App Version", "0.2.0")
+    c1.metric("App Version", "1.0.0")
     c2.metric("Python", platform.python_version())
     c3.metric("Platform", platform.system())
     c4.metric("Output Dir", output_dir[:24] + "…" if len(output_dir) > 24 else output_dir)
@@ -2167,11 +2512,11 @@ def render_kpi_strip(perf: dict, risk_summary: dict = None, history=None):
 # ─── HTML report builder ──────────────────────────────────────────────────────
 
 def build_html_report(summary: dict) -> str:
-    perf = summary.get("performance", {})
-    goal = summary.get("goal", {})
-    updated = summary.get("updated_goal", {})
-    period = summary.get("simulation_period", {})
-    constraints = summary.get("constraint_check", {})
+    perf = summary.get("performance") or {}
+    goal = summary.get("goal") or {}
+    updated = summary.get("updated_goal") or {}
+    period = summary.get("simulation_period") or {}
+    constraints = summary.get("constraint_check") or {}
 
     rows = "\n".join(
         f"<tr><td>{k.replace('_', ' ').title()}</td><td><b>{v}</b></td></tr>"
@@ -2269,10 +2614,10 @@ def render_dashboard(orch: WorkflowOrchestrator, step_results: dict):
 
     # ── 9-tab navigation ──────────────────────────────────────────────────────
     st.subheader("Results Dashboard")
-    (tab_dash, tab_steps, tab_perf, tab_risk, tab_explain,
+    (tab_dash, tab_steps, tab_perf, tab_risk, tab_trade, tab_explain,
      tab_train, tab_export, tab_obs, tab_devops, tab_mcp) = st.tabs([
         "🏠 Dashboard", "📋 Steps", "📈 Performance", "🛡️ Risk View",
-        "🔍 Explainability", "📉 Training", "📥 Export",
+        "📊 Trade Journal", "🔍 Explainability", "📉 Training", "📥 Export",
         "🔭 Observability", "🚀 DevOps", "🔌 MCP Calls",
     ])
 
@@ -2415,6 +2760,10 @@ def render_dashboard(orch: WorkflowOrchestrator, step_results: dict):
                             for ph, v in per_phase.items()
                         ]
                         st.dataframe(pd.DataFrame(rows_ph), use_container_width=True, hide_index=True)
+
+    # ── 📊 Trade Journal ──────────────────────────────────────────────────────
+    with tab_trade:
+        render_trade_journal_tab(OUTPUT_DIR, CSV_PATH)
 
     # ── 🔍 Explainability ─────────────────────────────────────────────────────
     with tab_explain:
@@ -2662,7 +3011,12 @@ def render_dashboard(orch: WorkflowOrchestrator, step_results: dict):
 
     # ── 🔭 Observability ──────────────────────────────────────────────────────
     with tab_obs:
-        render_observability_tab(OUTPUT_DIR)
+        try:
+            render_observability_tab(OUTPUT_DIR)
+        except Exception as _obs_exc:
+            import traceback
+            st.error(f"Observability render error: {_obs_exc}")
+            st.code(traceback.format_exc())
 
     # ── 🚀 DevOps & Deployment ────────────────────────────────────────────────
     with tab_devops:
@@ -2752,8 +3106,250 @@ def run_pipeline(orch: WorkflowOrchestrator, config: dict, progress_slot):
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
+def _restore_from_disk(orch: WorkflowOrchestrator) -> tuple[dict, set]:
+    """
+    Restore step_results and completed_steps from persisted output files so the
+    dashboard is visible immediately on a fresh UI load without re-running the pipeline.
+
+    Returns (step_results, completed_steps) — both empty if no saved data is found.
+    """
+    backtest_csv = os.path.join(OUTPUT_DIR, "backtest_daily.csv")
+    perf_csv = os.path.join(OUTPUT_DIR, "performance_summary.csv")
+
+    if not os.path.exists(backtest_csv) or not os.path.exists(perf_csv):
+        return {}, set()
+
+    try:
+        # 1. Restore scalar session keys (goal, research, strategy, model_path, etc.)
+        orch.session.load()
+
+        # 2. Reconstruct performance dict from performance_summary.csv
+        perf_df = pd.read_csv(perf_csv)
+        perf: dict = {}
+        for _, row in perf_df.iterrows():
+            val = row["value"]
+            if isinstance(val, str):
+                if val.lower() == "true":
+                    val = True
+                elif val.lower() == "false":
+                    val = False
+                else:
+                    try:
+                        val = int(val) if "." not in val else float(val)
+                    except (ValueError, TypeError):
+                        pass
+            perf[row["metric"]] = val
+
+        # 3. Reconstruct backtest_results arrays from backtest_daily.csv
+        bt_df = pd.read_csv(backtest_csv, parse_dates=["date"])
+        bt_df = bt_df.dropna(subset=["portfolio_value"])
+        port_vals = bt_df["portfolio_value"].tolist()
+        bench_vals = bt_df["benchmark_value"].tolist()
+        allocs = bt_df["allocation"].fillna(0.0).tolist()
+        closes = bt_df["close_price"].tolist()
+        dates = pd.DatetimeIndex(bt_df["date"])
+
+        port_arr = np.array(port_vals)
+        daily_rets = (np.diff(port_arr) / np.where(port_arr[:-1] != 0, port_arr[:-1], 1)).tolist()
+
+        backtest_results = {
+            "dates": dates,
+            "portfolio_values": port_vals,
+            "benchmark_values": bench_vals,
+            "allocations": allocs,
+            "close_prices": closes,
+            "daily_returns": daily_rets,
+            "q_values_by_feature": {},
+            "performance": perf,
+        }
+        orch.session.set("backtest_results", backtest_results)
+
+        # 4. Build step_results from session + computed data
+        step_results: dict = {}
+        completed: set = set()
+
+        goal = orch.session.get("goal")
+        if goal:
+            step_results["step1"] = {"step": 1, "name": "Set Financial Goal", "result": goal}
+            completed.add(1)
+
+        research = orch.session.get("research")
+        if research:
+            step_results["step2"] = {"step": 2, "name": "Analyze Market Conditions", "result": research}
+            completed.add(2)
+
+        strategy = orch.session.get("strategy")
+        if strategy:
+            step_results["step3"] = {"step": 3, "name": "Design Strategy", "result": strategy}
+            completed.add(3)
+
+        model_path = orch.session.get("model_path")
+        val_metrics = orch.session.get("validation_metrics")
+        if model_path and os.path.exists(model_path):
+            step_results["step4"] = {
+                "step": 4,
+                "name": "Train DDQN Model",
+                "result": {
+                    "model_path": model_path,
+                    "source": orch.session.get("model_source", "loaded_existing"),
+                    "validation": val_metrics or {},
+                },
+            }
+            completed.add(4)
+
+        sim_period = orch.session.get("simulation_period")
+        if sim_period:
+            step_results["step5"] = {"step": 5, "name": "Set Simulation Period", "result": sim_period}
+            completed.add(5)
+
+        step_results["step6"] = {
+            "step": 6,
+            "name": "Run Backtest",
+            "result": {"performance": perf, "days_simulated": perf.get("total_days", len(port_vals))},
+        }
+        completed.add(6)
+
+        plots_dir = os.path.join(OUTPUT_DIR, "plots")
+        plots = (
+            [os.path.join(plots_dir, f) for f in os.listdir(plots_dir) if f.endswith(".html")]
+            if os.path.exists(plots_dir)
+            else []
+        )
+        constraint_check = {
+            "all_constraints_met": bool(perf.get("sharpe_constraint_met", False))
+                                   and bool(perf.get("drawdown_constraint_met", True)),
+            "recommendations": [],
+        }
+        step_results["step7"] = {
+            "step": 7,
+            "name": "Get Results",
+            "result": {
+                "performance": perf,
+                "constraint_check": constraint_check,
+                "plots": plots,
+                "output_dir": OUTPUT_DIR,
+            },
+        }
+        completed.add(7)
+
+        updated_goal = orch.session.get("updated_goal")
+        if updated_goal:
+            step_results["step8"] = {"step": 8, "name": "Update Financial Goal", "result": updated_goal}
+            completed.add(8)
+
+        return step_results, completed
+
+    except Exception as exc:
+        # Never block the UI — just show a warning and fall through to blank state
+        st.warning(f"Could not restore previous results from disk: {exc}", icon="⚠️")
+        return {}, set()
+
+
+# ─── Data Preparation Section ─────────────────────────────────────────────────
+
+def _render_data_prep_section():
+    """
+    Data Preparation panel for the data science workflow.
+    - Shows current active dataset (base vs extended) and its date range.
+    - Lets users upload new NSE-format CSVs (saved to rita_input/).
+    - Runs prepare_data() to merge and extend the dataset.
+    - Resets the orchestrator to pick up the new CSV automatically.
+    """
+    prepared_exists = os.path.exists(_PREPARED_CSV)
+    label = "📂 Data Preparation" + (" — Extended dataset active" if prepared_exists else " — Base dataset active")
+
+    with st.expander(label, expanded=False):
+        # ── Active dataset info ───────────────────────────────────────────────
+        active_csv = _get_active_csv()
+        col_src, col_rows, col_from, col_to = st.columns(4)
+        if os.path.exists(active_csv):
+            try:
+                _hdr = pd.read_csv(active_csv, usecols=[0])
+                _dates = pd.to_datetime(_hdr.iloc[:, 0], errors="coerce").dropna()
+                col_src.metric("Source", "Extended" if prepared_exists else "Base")
+                col_rows.metric("Rows", f"{len(_dates):,}")
+                col_from.metric("From", str(_dates.min())[:10])
+                col_to.metric("To", str(_dates.max())[:10])
+            except Exception as exc:
+                st.warning(f"Could not read active CSV: {exc}")
+        else:
+            st.warning(f"Active CSV not found: `{active_csv}`")
+
+        st.divider()
+
+        # ── Input files in rita_input/ ────────────────────────────────────────
+        import glob as _glob
+        os.makedirs(INPUT_DIR, exist_ok=True)
+        input_files = sorted(_glob.glob(os.path.join(INPUT_DIR, "*.csv")))
+
+        col_files, col_upload = st.columns([1, 1])
+        with col_files:
+            st.markdown(f"**Files in `{INPUT_DIR}/`**")
+            if input_files:
+                for f in input_files:
+                    size_kb = round(os.path.getsize(f) / 1024, 1)
+                    st.markdown(f"📄 `{os.path.basename(f)}` — {size_kb} KB")
+            else:
+                st.caption("No CSV files found. Upload one below.")
+
+        with col_upload:
+            st.markdown("**Upload new NSE CSV**")
+            uploaded = st.file_uploader(
+                "Drop NSE-format CSV here",
+                type=["csv"],
+                label_visibility="collapsed",
+                help="Standard NSE export: Date, Open, High, Low, Close, Shares Traded, Turnover (₹ Cr)",
+            )
+            if uploaded is not None:
+                dest = os.path.join(INPUT_DIR, uploaded.name)
+                with open(dest, "wb") as fh:
+                    fh.write(uploaded.read())
+                st.success(f"Saved `{uploaded.name}` to `{INPUT_DIR}/`")
+                st.rerun()
+
+        st.divider()
+
+        # ── Prepare Data button ───────────────────────────────────────────────
+        col_btn, col_msg = st.columns([1, 3])
+        with col_btn:
+            prep_clicked = st.button(
+                "▶ Prepare Data",
+                type="primary",
+                use_container_width=True,
+                help="Merge files in rita_input/ with the base CSV and save to rita_output/nifty_merged.csv",
+            )
+        if prep_clicked:
+            if not input_files:
+                col_msg.warning("No CSV files in `rita_input/` — upload at least one first.")
+            else:
+                with st.spinner("Merging CSV files…"):
+                    result = prepare_data(
+                        input_dir=INPUT_DIR,
+                        base_csv=CSV_PATH,
+                        output_csv=_PREPARED_CSV,
+                    )
+                if result.get("status") == "ok":
+                    st.success(
+                        f"✅ Done — {result['rows_added']} rows added | "
+                        f"{result['total_rows']:,} total | "
+                        f"{result['date_from']} → {result['date_to']}"
+                    )
+                    if result.get("skipped"):
+                        st.warning(f"Skipped: {', '.join(result['skipped'])}")
+                    # Reset orchestrator to pick up the new extended CSV
+                    st.session_state.orch = WorkflowOrchestrator(_PREPARED_CSV, OUTPUT_DIR)
+                    st.session_state.step_results = {}
+                    st.session_state.completed_steps = set()
+                    st.session_state._disk_restore_done = True
+                    st.info("Orchestrator reset — run the pipeline to use the extended dataset.")
+                elif result.get("status") == "no_input_files":
+                    st.warning("No input files found after glob — check rita_input/.")
+                else:
+                    st.error(f"Error: {result.get('message', result)}")
+
+
 def main():
-    st.title("RITA — Nifty 50 RL Investment System")
+    st.title("RIIA — Risk Informed Investment Approach for Nifty 50 using RL model")
     st.caption("Double DQN · Train 2010–2022 · Validate 2023–2024 · Backtest 2025")
 
     config = render_sidebar()
@@ -2763,14 +3359,30 @@ def main():
         st.session_state.step_results = {}
     if "completed_steps" not in st.session_state:
         st.session_state.completed_steps = set()
+    if "_disk_restore_done" not in st.session_state:
+        st.session_state._disk_restore_done = False
     if "orch" not in st.session_state:
-        if not os.path.exists(CSV_PATH):
-            st.error(f"**Data file not found:** `{CSV_PATH}`")
+        active_csv = _get_active_csv()
+        if not os.path.exists(active_csv):
+            st.error(f"**Data file not found:** `{active_csv}`")
             st.info("Set `NIFTY_CSV_PATH` env var or update the path in the source.")
             st.stop()
-        st.session_state.orch = WorkflowOrchestrator(CSV_PATH, OUTPUT_DIR)
+        st.session_state.orch = WorkflowOrchestrator(active_csv, OUTPUT_DIR)
 
     orch: WorkflowOrchestrator = st.session_state.orch
+
+    # Auto-restore from disk on the very first load if saved output files exist
+    if not st.session_state._disk_restore_done and not st.session_state.step_results:
+        st.session_state._disk_restore_done = True
+        restored_results, restored_completed = _restore_from_disk(orch)
+        if restored_results:
+            st.session_state.step_results = restored_results
+            st.session_state.completed_steps = restored_completed
+
+    # ─── Data Preparation ─────────────────────────────────────────────────────
+    _render_data_prep_section()
+
+    st.divider()
 
     # Action buttons
     btn_build, btn_reuse, btn_reset = st.columns([2, 2, 1])
@@ -2790,7 +3402,8 @@ def main():
     if reset_clicked:
         st.session_state.step_results = {}
         st.session_state.completed_steps = set()
-        st.session_state.orch = WorkflowOrchestrator(CSV_PATH, OUTPUT_DIR)
+        st.session_state._disk_restore_done = True  # prevent re-restore after explicit reset
+        st.session_state.orch = WorkflowOrchestrator(_get_active_csv(), OUTPUT_DIR)
         st.rerun()
 
     run_clicked = build_clicked or reuse_clicked
@@ -2809,7 +3422,7 @@ def main():
     if run_clicked:
         st.session_state.step_results = {}
         st.session_state.completed_steps = set()
-        st.session_state.orch = WorkflowOrchestrator(CSV_PATH, OUTPUT_DIR)
+        st.session_state.orch = WorkflowOrchestrator(_get_active_csv(), OUTPUT_DIR)
         orch = st.session_state.orch
         try:
             results, completed = run_pipeline(orch, config, progress_slot)

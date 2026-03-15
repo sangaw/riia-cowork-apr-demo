@@ -43,7 +43,21 @@ CSV_PATH = os.getenv(
     r"C:\Users\Sandeep\Documents\Work\code\claude-pattern-trading\data\raw-data\nifty\merged.csv",
 )
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "./rita_output")
+INPUT_DIR  = os.getenv("RITA_INPUT_DIR", "./rita_input")
 API_LOG_PATH = os.path.join(OUTPUT_DIR, "api_request_log.csv")
+
+# Path where prepare_data() writes the extended merged CSV
+_PREPARED_CSV = os.path.join(OUTPUT_DIR, "nifty_merged.csv")
+
+
+def _get_active_csv() -> str:
+    """Return the extended CSV if prepare_data() has been run, else the base CSV."""
+    return _PREPARED_CSV if os.path.exists(_PREPARED_CSV) else CSV_PATH
+
+# ─── Market signals cache ─────────────────────────────────────────────────────
+# Recompute only when the CSV file changes (mtime-based invalidation).
+# Avoids re-running load_nifty_csv + calculate_indicators (~2 s) on every request.
+_market_signals_cache: dict = {"df": None, "csv_mtime": -1.0}
 
 # ─── Request Logging Middleware ───────────────────────────────────────────────
 
@@ -88,9 +102,10 @@ _orchestrator: Optional[WorkflowOrchestrator] = None
 def get_orchestrator() -> WorkflowOrchestrator:
     global _orchestrator
     if _orchestrator is None:
-        if not os.path.exists(CSV_PATH):
-            raise RuntimeError(f"Data CSV not found: {CSV_PATH}. Set NIFTY_CSV_PATH env var.")
-        _orchestrator = WorkflowOrchestrator(CSV_PATH, OUTPUT_DIR)
+        active_csv = _get_active_csv()
+        if not os.path.exists(active_csv):
+            raise RuntimeError(f"Data CSV not found: {active_csv}. Set NIFTY_CSV_PATH env var.")
+        _orchestrator = WorkflowOrchestrator(active_csv, OUTPUT_DIR)
     return _orchestrator
 
 
@@ -109,7 +124,7 @@ app = FastAPI(
         "Double DQN investment system for Nifty 50 index. "
         "8-step workflow: goal → market → strategy → train → period → backtest → results → update."
     ),
-    version="0.2.0",
+    version="1.0.0",
     lifespan=lifespan,
 )
 
@@ -151,6 +166,18 @@ def _wrap(step_result: dict) -> dict:
     """Ensure result is JSON-serialisable (convert non-serialisable types to str)."""
     import json
     return json.loads(json.dumps(step_result, default=str))
+
+
+def _sanitize(obj):
+    """Recursively replace NaN/Inf floats with None for JSON safety."""
+    import math
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize(v) for v in obj]
+    return obj
 
 
 # ─── Health ───────────────────────────────────────────────────────────────────
@@ -229,7 +256,7 @@ def progress():
 def reset():
     """Reset orchestrator session (clears in-memory state, keeps saved files)."""
     global _orchestrator
-    _orchestrator = WorkflowOrchestrator(CSV_PATH, OUTPUT_DIR)
+    _orchestrator = WorkflowOrchestrator(_get_active_csv(), OUTPUT_DIR)
     return {"status": "reset", "message": "Orchestrator session cleared."}
 
 
@@ -298,7 +325,7 @@ def metrics():
     detector = DriftDetector(OUTPUT_DIR, CSV_PATH)
     result["api_requests"] = detector.api_request_stats()
 
-    return result
+    return _sanitize(result)
 
 
 # ─── Drift ────────────────────────────────────────────────────────────────────
@@ -321,7 +348,7 @@ def check_drift():
         detector = DriftDetector(OUTPUT_DIR, CSV_PATH)
         report   = detector.full_report()
         summary  = detector.health_summary(report)
-        return {"health": summary, "report": report}
+        return _sanitize({"health": summary, "report": report})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -516,3 +543,227 @@ def run_pipeline(body: PipelineRequest):
         return _wrap(results)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Data endpoints for HTML dashboard ────────────────────────────────────────
+
+def _df_to_json(df):
+    """Convert DataFrame to JSON-safe list of dicts (NaN → null via pandas encoder)."""
+    import json
+    return json.loads(df.to_json(orient="records"))
+
+
+# ─── Data Preparation ─────────────────────────────────────────────────────────
+
+@app.get("/api/v1/data-prep/status", tags=["Data"])
+def data_prep_status():
+    """
+    Return current data status: input files available, active CSV info,
+    and whether an extended (prepared) CSV already exists.
+    """
+    import glob as _glob
+    import pandas as pd
+
+    # Input files
+    input_files = sorted(_glob.glob(os.path.join(INPUT_DIR, "*.csv")))
+    file_info = []
+    for f in input_files:
+        stat = os.stat(f)
+        file_info.append({
+            "name": os.path.basename(f),
+            "size_kb": round(stat.st_size / 1024, 1),
+        })
+
+    # Active CSV info
+    active_csv = _get_active_csv()
+    csv_info = {"path": active_csv, "source": "prepared" if os.path.exists(_PREPARED_CSV) else "base"}
+    if os.path.exists(active_csv):
+        try:
+            df = pd.read_csv(active_csv, usecols=[0])
+            dates = pd.to_datetime(df.iloc[:, 0], errors="coerce").dropna()
+            csv_info.update({
+                "total_rows": len(dates),
+                "date_from": str(dates.min())[:10],
+                "date_to":   str(dates.max())[:10],
+            })
+        except Exception as exc:
+            csv_info["error"] = str(exc)
+
+    return {
+        "input_dir": INPUT_DIR,
+        "input_files": file_info,
+        "active_csv": csv_info,
+        "prepared_csv_exists": os.path.exists(_PREPARED_CSV),
+    }
+
+
+@app.post("/api/v1/data-prep/run", tags=["Data"])
+def data_prep_run():
+    """
+    Merge all CSV files in rita_input/ with the base merged CSV and save
+    the result to rita_output/nifty_merged.csv.
+
+    After a successful run the orchestrator is reset so subsequent pipeline
+    steps automatically use the extended dataset.
+    """
+    from rita.core.data_loader import prepare_data
+
+    result = prepare_data(
+        input_dir  = INPUT_DIR,
+        base_csv   = CSV_PATH,
+        output_csv = _PREPARED_CSV,
+    )
+
+    if result.get("status") == "ok":
+        # Reset orchestrator + market signals cache so they pick up new data
+        global _orchestrator
+        _orchestrator = None
+        _market_signals_cache["df"] = None
+        _market_signals_cache["csv_mtime"] = -1.0
+
+    return result
+
+
+@app.get("/api/v1/backtest-daily", tags=["Data"])
+def get_backtest_daily():
+    """Serve backtest_daily.csv as JSON for the HTML dashboard."""
+    import pandas as pd
+    path = os.path.join(OUTPUT_DIR, "backtest_daily.csv")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="backtest_daily.csv not found — run pipeline first")
+    return _df_to_json(pd.read_csv(path))
+
+
+@app.get("/api/v1/performance-summary", tags=["Data"])
+def get_performance_summary():
+    """Serve performance_summary.csv as a flat JSON dict."""
+    import pandas as pd
+    path = os.path.join(OUTPUT_DIR, "performance_summary.csv")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="performance_summary.csv not found — run pipeline first")
+    df = pd.read_csv(path)
+    return df.set_index("metric")["value"].to_dict()
+
+
+@app.get("/api/v1/training-history", tags=["Data"])
+def get_training_history():
+    """Serve training_history.csv as JSON."""
+    import pandas as pd
+    path = os.path.join(OUTPUT_DIR, "training_history.csv")
+    if not os.path.exists(path):
+        return []
+    return _df_to_json(pd.read_csv(path))
+
+
+@app.get("/api/v1/mcp-calls", tags=["Data"])
+def get_mcp_calls(limit: int = 100):
+    """Serve mcp_call_log.csv as JSON (latest N calls, newest first)."""
+    import pandas as pd
+    path = os.path.join(OUTPUT_DIR, "mcp_call_log.csv")
+    if not os.path.exists(path):
+        return []
+    df = pd.read_csv(path)
+    tail = df.tail(limit).iloc[::-1].reset_index(drop=True)
+    return _df_to_json(tail)
+
+
+@app.get("/api/v1/step-log", tags=["Data"])
+def get_step_log():
+    """Serve monitor_log.csv as JSON."""
+    import pandas as pd
+    path = os.path.join(OUTPUT_DIR, "monitor_log.csv")
+    if not os.path.exists(path):
+        return []
+    df = pd.read_csv(path)
+    df.columns = [c.strip() for c in df.columns]
+    return _df_to_json(df)
+
+
+@app.get("/api/v1/shap", tags=["Data"])
+def get_shap():
+    """Serve shap_importance.csv as JSON (feature, importance columns)."""
+    import pandas as pd
+    path = os.path.join(OUTPUT_DIR, "shap_importance.csv")
+    if not os.path.exists(path):
+        return []
+    df = pd.read_csv(path)
+    df.rename(columns={df.columns[0]: "feature"}, inplace=True)
+    return _df_to_json(df)
+
+
+@app.get("/api/v1/risk-timeline", tags=["Data"])
+def get_risk_timeline():
+    """Serve risk_timeline.csv as JSON (backtest phase only)."""
+    import pandas as pd
+    path = os.path.join(OUTPUT_DIR, "risk_timeline.csv")
+    if not os.path.exists(path):
+        return []
+    df = pd.read_csv(path)
+    if "phase" in df.columns:
+        df = df[df["phase"] == "Backtest"]
+    return _df_to_json(df)
+
+
+@app.get("/api/v1/market-signals", tags=["Data"])
+def get_market_signals(timeframe: str = "daily", periods: int = 300):
+    """
+    Technical indicator time series for the HTML dashboard Market Signals page.
+
+    timeframe: daily | weekly | monthly
+    periods:   number of bars to return (default 300)
+
+    The daily indicator DataFrame is cached in memory and only recomputed when
+    the source CSV changes on disk (mtime-based invalidation).
+    """
+    try:
+        import pandas as pd
+        from rita.core.data_loader import load_nifty_csv
+        from rita.core.technical_analyzer import calculate_indicators
+
+        # --- Cache check (daily base only; weekly/monthly derived from it) ---
+        active_csv = _get_active_csv()
+        csv_mtime = os.path.getmtime(active_csv) if os.path.exists(active_csv) else -1.0
+        if _market_signals_cache["df"] is None or _market_signals_cache["csv_mtime"] != csv_mtime:
+            raw = load_nifty_csv(active_csv)
+            _market_signals_cache["df"] = calculate_indicators(raw)
+            _market_signals_cache["csv_mtime"] = csv_mtime
+
+        df = _market_signals_cache["df"]
+
+        if timeframe == "weekly":
+            df = df.resample("W").agg(
+                {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
+            ).dropna(subset=["Close"])
+            df = calculate_indicators(df)
+        elif timeframe == "monthly":
+            df = df.resample("ME").agg(
+                {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
+            ).dropna(subset=["Close"])
+            df = calculate_indicators(df)
+
+        df = df.tail(periods).copy()
+        df = df.reset_index()
+        df.rename(columns={"Date": "date"}, inplace=True)
+        df["date"] = df["date"].astype(str).str[:10]
+
+        keep = [c for c in [
+            "date", "Close", "Volume", "rsi_14",
+            "macd", "macd_signal", "macd_hist",
+            "bb_upper", "bb_lower", "bb_mid", "bb_pct_b",
+            "ema_5", "ema_13", "ema_26", "ema_50", "ema_200",
+            "atr_14", "trend_score",
+        ] if c in df.columns]
+
+        return _df_to_json(df[keep])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Static dashboard files ────────────────────────────────────────────────────
+
+_DASHBOARD_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "../../..", "dashboard")
+)
+if os.path.isdir(_DASHBOARD_DIR):
+    from fastapi.staticfiles import StaticFiles as _SF
+    app.mount("/dashboard", _SF(directory=_DASHBOARD_DIR, html=True), name="dashboard")

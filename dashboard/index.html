@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RITA — Risk Informed Trading Approach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@300;400;500&family=Epilogue:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F5F3EE;--surface:#FFFFFF;--surface2:#F9F8F5;--border:#E4E0D8;--border2:#D0CBBC;
+  --text:#1A1814;--t2:#4A4640;--t3:#8C877A;--t4:#B8B2A6;
+  --build:#1A6B3C;--build-bg:#EDF7F2;--build-bd:#B6DEC9;
+  --run:#0056B8;--run-bg:#EDF4FF;--run-bd:#AECBF5;
+  --mon:#6B2FA0;--mon-bg:#F5EFFE;--mon-bd:#CFADF0;
+  --warn:#92480A;--warn-bg:#FEF4EB;--warn-bd:#F5C99A;
+  --danger:#9B1C1C;--danger-bg:#FEF2F2;--danger-bd:#FCA5A5;
+  --fd:'Epilogue',sans-serif;--fm:'IBM Plex Mono',monospace;--fs:'Instrument Serif',serif;
+  --r:6px;--sh:0 1px 3px rgba(0,0,0,.07),0 1px 2px rgba(0,0,0,.04);
+  --shm:0 4px 12px rgba(0,0,0,.08),0 2px 4px rgba(0,0,0,.05);
+}
+body{background:var(--bg);color:var(--text);font-family:var(--fd);font-size:13px;line-height:1.5;min-height:100vh;display:flex;flex-direction:column;}
+
+/* Topbar */
+.topbar{background:var(--surface);border-bottom:1.5px solid var(--border);display:flex;align-items:center;padding:0 28px;height:52px;box-shadow:var(--sh);}
+.logo{display:flex;align-items:center;gap:10px;}
+.logo-icon{width:28px;height:28px;background:var(--text);border-radius:5px;display:flex;align-items:center;justify-content:center;}
+.logo-icon svg{fill:var(--surface);}
+.logo-name{font-family:var(--fs);font-size:17px;letter-spacing:-.01em;}
+.logo-sub{color:var(--t3);font-size:11px;margin-left:2px;}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:14px;}
+.status-pill{display:flex;align-items:center;gap:6px;font-family:var(--fm);font-size:11px;color:var(--t2);background:var(--surface2);border:1px solid var(--border);border-radius:100px;padding:3px 10px;}
+.status-dot{width:7px;height:7px;border-radius:50%;background:#aaa;}
+.status-dot.ok{background:var(--build);}
+
+/* Hero */
+.hero{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;}
+.hero-title{font-family:var(--fs);font-size:40px;letter-spacing:-.02em;text-align:center;margin-bottom:10px;}
+.hero-sub{color:var(--t2);font-size:14px;text-align:center;margin-bottom:48px;max-width:480px;}
+
+/* Option cards */
+.options{display:grid;grid-template-columns:1fr 1fr;gap:24px;width:100%;max-width:760px;}
+.opt-card{background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:32px;box-shadow:var(--sh);cursor:pointer;transition:box-shadow .15s,border-color .15s,transform .12s;text-decoration:none;color:inherit;display:block;}
+.opt-card:hover{box-shadow:var(--shm);transform:translateY(-2px);}
+.opt-card.classic:hover{border-color:var(--run-bd);}
+.opt-card.html:hover{border-color:var(--build-bd);}
+.opt-badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--fm);font-size:10px;font-weight:500;padding:3px 8px;border-radius:4px;margin-bottom:16px;text-transform:uppercase;letter-spacing:.04em;}
+.opt-badge.classic{background:var(--run-bg);color:var(--run);border:1px solid var(--run-bd);}
+.opt-badge.html{background:var(--build-bg);color:var(--build);border:1px solid var(--build-bd);}
+.opt-title{font-family:var(--fs);font-size:22px;margin-bottom:8px;}
+.opt-desc{color:var(--t2);font-size:12px;line-height:1.6;margin-bottom:20px;}
+.opt-features{list-style:none;margin-bottom:24px;}
+.opt-features li{font-size:12px;color:var(--t3);padding:3px 0;display:flex;align-items:center;gap:7px;}
+.opt-features li::before{content:'';width:4px;height:4px;border-radius:50%;background:var(--t4);flex-shrink:0;}
+.opt-link{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:8px 16px;border-radius:var(--r);border:none;cursor:pointer;transition:opacity .12s;}
+.opt-link.classic{background:var(--run);color:#fff;}
+.opt-link.html{background:var(--build);color:#fff;}
+.opt-link:hover{opacity:.88;}
+.opt-link svg{width:13px;height:13px;fill:currentColor;}
+
+/* Footer */
+.footer{text-align:center;padding:20px;color:var(--t4);font-size:11px;font-family:var(--fm);}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-icon">
+      <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 1.8L13.5 6 8 9.2 2.5 6 8 2.8zM2 7.1l5.5 3.2v3.9L2 11V7.1zm7.5 7.1v-3.9L15 7.1V11l-5.5 3.2z"/></svg>
+    </div>
+    <span class="logo-name">RITA</span>
+    <span class="logo-sub">v1.0.0</span>
+  </div>
+  <div class="topbar-right">
+    <div class="status-pill">
+      <span class="status-dot ok" id="status-dot"></span>
+      <span id="status-text">Checking...</span>
+    </div>
+  </div>
+</div>
+
+<div class="hero">
+  <div class="hero-title">Risk Informed Trading Approach</div>
+  <div class="hero-sub">Double DQN reinforcement learning system for Nifty 50 index investment. Choose your preferred interface below.</div>
+
+  <div class="options">
+
+    <a class="opt-card html" href="/dashboard/rita.html">
+      <div class="opt-badge html">
+        <svg width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M5 2v3l2 1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none"/></svg>
+        New UI
+      </div>
+      <div class="opt-title">HTML Dashboard</div>
+      <div class="opt-desc">Modern, responsive dashboard with real-time data from the FastAPI backend. Phase-organized navigation with financial charts.</div>
+      <ul class="opt-features">
+        <li>Phase-grouped sidebar navigation</li>
+        <li>Live API data — no page reloads</li>
+        <li>Interactive financial charts (Chart.js)</li>
+        <li>Full pipeline controls in-browser</li>
+        <li>Served at port 8000</li>
+      </ul>
+      <span class="opt-link html">
+        Open Dashboard
+        <svg viewBox="0 0 13 13"><path d="M7 2l4 4.5L7 11M11 6.5H2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>
+      </span>
+    </a>
+
+    <a class="opt-card classic" href="http://localhost:8501" target="_blank">
+      <div class="opt-badge classic">
+        <svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M3 4h4M3 6h2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        Classic UI
+      </div>
+      <div class="opt-title">Streamlit App</div>
+      <div class="opt-desc">Full-featured Streamlit dashboard with 50+ Plotly charts, 11 tabs, and rich interactive visualizations for deep analysis.</div>
+      <ul class="opt-features">
+        <li>11 analysis tabs</li>
+        <li>50+ Plotly interactive charts</li>
+        <li>Training progress tracking</li>
+        <li>MCP calls monitoring</li>
+        <li>Served at port 8501</li>
+      </ul>
+      <span class="opt-link classic">
+        Open Streamlit
+        <svg viewBox="0 0 13 13"><path d="M7 2l4 4.5L7 11M11 6.5H2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>
+      </span>
+    </a>
+
+  </div>
+</div>
+
+<div class="footer">RITA v1.0.0 &nbsp;·&nbsp; Nifty 50 RL Investment System &nbsp;·&nbsp; API at <span style="color:var(--t2)">localhost:8000</span></div>
+
+<script>
+async function checkStatus() {
+  try {
+    const r = await fetch('/health');
+    const d = await r.json();
+    const dot = document.getElementById('status-dot');
+    const txt = document.getElementById('status-text');
+    if (d.status === 'ok') {
+      dot.className = 'status-dot ok';
+      txt.textContent = d.model_exists ? 'Model loaded' : 'API online';
+    } else {
+      dot.className = 'status-dot';
+      txt.textContent = 'API error';
+    }
+  } catch {
+    document.getElementById('status-dot').className = 'status-dot';
+    document.getElementById('status-text').textContent = 'API offline';
+  }
+}
+checkStatus();
+</script>
+</body>
+</html>

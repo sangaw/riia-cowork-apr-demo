@@ -37,7 +37,7 @@ except ImportError:
 
 CSV_PATH = os.getenv(
     "NIFTY_CSV_PATH",
-    r"C:\Users\Sandeep\Documents\Work\code\claude-pattern-trading\data\raw-data\nifty\merged.csv",
+    "",
 )
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "./rita_output")
 INPUT_DIR  = os.getenv("RITA_INPUT_DIR", "./rita_input")
@@ -2355,7 +2355,11 @@ def render_devops_tab(output_dir: str):
 
     # Library versions
     try:
-        import stable_baselines3, torch, streamlit as _st, fastapi, shap
+        import stable_baselines3
+        import torch
+        import streamlit as _st
+        import fastapi
+        import shap
         lib_rows = [
             {"Library": "stable-baselines3", "Version": stable_baselines3.__version__},
             {"Library": "torch",             "Version": torch.__version__},
@@ -2381,7 +2385,8 @@ def render_devops_tab(output_dir: str):
     with api_col2:
         if ping_clicked:
             try:
-                import urllib.request, json as _json
+                import urllib.request
+                import json as _json
                 with urllib.request.urlopen(f"{api_url}/health", timeout=3) as resp:
                     health_data = _json.loads(resp.read().decode())
                 st.success(f"✅ API reachable — status: {health_data.get('status', '?')}")
@@ -2450,14 +2455,15 @@ def render_devops_tab(output_dir: str):
 
     gh_col1, gh_col2 = st.columns([1, 2])
     with gh_col1:
-        repo = st.text_input("GitHub repo (owner/repo)", value="sangaw/riia-cowork-apr-demo",
+        repo = st.text_input("GitHub repo (owner/repo)", value="your-org/rita-cowork-demo",
                              key="devops_gh_repo")
         ci_clicked = st.button("🔄 Fetch CI Status", width="stretch")
 
     with gh_col2:
         if ci_clicked:
             try:
-                import urllib.request, json as _json
+                import urllib.request
+                import json as _json
                 url = f"https://api.github.com/repos/{repo}/actions/runs?per_page=5"
                 req = urllib.request.Request(url, headers={"User-Agent": "RITA-Dashboard"})
                 with urllib.request.urlopen(req, timeout=5) as resp:

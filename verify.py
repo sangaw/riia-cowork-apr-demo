@@ -2,7 +2,8 @@
 import sys
 sys.path.insert(0, "src")
 
-CSV = r"C:\Users\Sandeep\Documents\Work\code\claude-pattern-trading\data\raw-data\nifty\merged.csv"
+import os
+CSV = os.environ.get("NIFTY_CSV_PATH", "")
 
 print("=== Test 1: Data Loader ===")
 from rita.core.data_loader import load_nifty_csv, get_historical_stats, get_training_data, get_validation_data, get_backtest_data

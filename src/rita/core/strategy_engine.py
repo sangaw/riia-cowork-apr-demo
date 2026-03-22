@@ -4,9 +4,6 @@ Step 3: Design a trading strategy and validate it meets the constraints
 (Sharpe ratio > 1, max drawdown < 10%) using an in-sample quick-check.
 """
 
-from .performance import sharpe_ratio, max_drawdown
-import numpy as np
-import pandas as pd
 
 
 # Allocation rules keyed by (risk_tolerance, trend)

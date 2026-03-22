@@ -24,7 +24,7 @@ from rita.core.rl_agent import (
     train_agent, train_best_of_n, train_bear_model, load_agent,
     run_episode, run_regime_episode, validate_agent,
 )
-from rita.core.performance import generate_full_report, compute_all_metrics
+from rita.core.performance import generate_full_report
 from rita.core.goal_engine import set_goal, update_goal_from_results
 from rita.core.strategy_engine import design_strategy, validate_strategy_constraints
 from rita.core.risk_engine import RiskEngine

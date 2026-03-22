@@ -2,14 +2,14 @@
 
 ## Prerequisites
 
-- **Python env:** `C:\Users\Sandeep\pyenv-envs\poc` (shared POC env — rita package already installed here)
+- **Python 3.10+** with the `rita` package installed (editable install via `pip install -e .`)
 - **Claude Desktop:** For MCP integration
 - **Nifty 50 CSV:** OHLCV data file; path set via `NIFTY_CSV_PATH` env var
 
 ## 1. Activate Environment
 
 ```powershell
-cd C:\Users\Sandeep\Documents\Work\code\poc\rita-cowork-demo
+cd C:\path\to\rita-cowork-demo
 . .\activate-env.ps1
 ```
 
@@ -67,12 +67,12 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json`:
 {
   "mcpServers": {
     "rita-cowork": {
-      "command": "C:\\Users\\Sandeep\\pyenv-envs\\poc\\Scripts\\python.exe",
+      "command": "C:\\path\\to\\your\\python.exe",
       "args": ["-m", "rita.interfaces.mcp_server"],
       "env": {
-        "NIFTY_CSV_PATH": "C:\\Users\\Sandeep\\Documents\\Work\\code\\poc\\rita-cowork-demo\\rita_output\\nifty_merged.csv",
-        "OUTPUT_DIR": "C:\\Users\\Sandeep\\Documents\\Work\\code\\poc\\rita-cowork-demo\\rita_output",
-        "PYTHONPATH": "C:\\Users\\Sandeep\\Documents\\Work\\code\\poc\\rita-cowork-demo\\src",
+        "NIFTY_CSV_PATH": "C:\\path\\to\\rita-cowork-demo\\rita_output\\nifty_merged.csv",
+        "OUTPUT_DIR": "C:\\path\\to\\rita-cowork-demo\\rita_output",
+        "PYTHONPATH": "C:\\path\\to\\rita-cowork-demo\\src",
         "PYTHON_ENV": "development"
       }
     }
@@ -102,12 +102,12 @@ A template is at `config/claude_desktop_config.json.example`. Restart Claude Des
 
 **`rita` package not found:**
 ```powershell
-pip install -e .    # run from project root with poc env active
+pip install -e .    # run from project root with your Python env active
 ```
 
 **Claude Desktop doesn't see RITA tools:**
 1. Check absolute paths in `claude_desktop_config.json`
-2. Verify the Python binary path exists: `C:\Users\Sandeep\pyenv-envs\poc\Scripts\python.exe`
+2. Verify the Python binary path you configured actually exists
 3. Restart Claude Desktop fully (close and reopen)
 
 **API returns 500 errors on performance/risk pages:**

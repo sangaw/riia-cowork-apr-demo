@@ -45,7 +45,7 @@ PORTFOLIO_API_KEY = os.getenv("PORTFOLIO_API_KEY", "")
 
 CSV_PATH = os.getenv(
     "NIFTY_CSV_PATH",
-    r"C:\Users\Sandeep\Documents\Work\code\claude-pattern-trading\data\raw-data\nifty\merged.csv",
+    "",
 )
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "./rita_output")
 INPUT_DIR  = os.getenv("RITA_INPUT_DIR", "./rita_input")
@@ -234,7 +234,6 @@ def health():
     Returns model age, data freshness, last pipeline run, and Sharpe trend
     in addition to the basic liveness indicators.
     """
-    import json
     from datetime import datetime
 
     orch = get_orchestrator()
@@ -760,7 +759,6 @@ def get_market_signals(timeframe: str = "daily", periods: int = 300):
     the source CSV changes on disk (mtime-based invalidation).
     """
     try:
-        import pandas as pd
         from rita.core.data_loader import load_nifty_csv
         from rita.core.technical_analyzer import calculate_indicators
 

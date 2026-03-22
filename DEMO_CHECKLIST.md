@@ -7,7 +7,7 @@
 ## Pre-Demo Setup
 
 ```powershell
-cd C:\Users\Sandeep\Documents\Work\code\poc\rita-cowork-demo
+cd C:\path\to\rita-cowork-demo
 . .\activate-env.ps1
 
 # Start both servers

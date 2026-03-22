@@ -14,7 +14,7 @@ Status levels:  "ok" | "warn" | "alert"
 """
 
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 import numpy as np

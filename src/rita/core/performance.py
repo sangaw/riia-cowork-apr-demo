@@ -63,7 +63,6 @@ def compute_all_metrics(portfolio_values: np.ndarray, benchmark_values: np.ndarr
     bench = np.asarray(benchmark_values, dtype=float)
 
     daily_rets = np.diff(port) / port[:-1]
-    bench_rets = np.diff(bench) / bench[:-1]
 
     years = len(port) / TRADING_DAYS
 
@@ -256,7 +255,6 @@ def build_performance_feedback(
     days_invested = int((alloc > 0).sum())
 
     port   = bt["portfolio_value"].values
-    closes = bt["close_price"].values
     daily_rets = np.diff(port) / port[:-1] * 100
 
     # ── Training round context ────────────────────────────────────────────────

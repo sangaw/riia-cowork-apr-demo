@@ -36,7 +36,6 @@ Backward compatibility:
   run_episode() detects model obs-space shape and builds obs accordingly.
 """
 
-import math
 import os
 from typing import Optional, Tuple
 
@@ -45,9 +44,9 @@ import pandas as pd
 import gymnasium as gym
 from gymnasium import spaces
 from stable_baselines3 import DQN
-from stable_baselines3.common.callbacks import BaseCallback, EvalCallback, StopTrainingOnNoModelImprovement
+from stable_baselines3.common.callbacks import BaseCallback
 
-from .performance import sharpe_ratio, max_drawdown, compute_all_metrics
+from .performance import compute_all_metrics
 
 
 # ─── Training progress callback ───────────────────────────────────────────────

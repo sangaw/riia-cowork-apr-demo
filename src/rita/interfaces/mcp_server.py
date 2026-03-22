@@ -39,7 +39,7 @@ _load_env()
 
 NIFTY_CSV_PATH = os.getenv(
     "NIFTY_CSV_PATH",
-    r"C:\Users\Sandeep\Documents\Work\code\claude-pattern-trading\data\raw-data\nifty\merged.csv",
+    "",
 )
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "./rita_output")
 MCP_LOG_PATH = os.path.join(OUTPUT_DIR, "mcp_call_log.csv")

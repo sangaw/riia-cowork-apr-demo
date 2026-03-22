@@ -20,7 +20,6 @@ Output files saved to output_dir:
   shap_phase_importance.csv — same, broken out by phase
 """
 
-import json
 import os
 
 import numpy as np

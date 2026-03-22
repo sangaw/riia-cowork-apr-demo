@@ -185,7 +185,7 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json`:
 {
   "mcpServers": {
     "rita-cowork": {
-      "command": "C:\\Users\\Sandeep\\pyenv-envs\\poc\\Scripts\\python.exe",
+      "command": "C:\\path\\to\\your\\python.exe",
       "args": ["-m", "rita.interfaces.mcp_server"],
       "env": {
         "NIFTY_CSV_PATH": "C:\\path\\to\\nifty_merged.csv",

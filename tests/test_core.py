@@ -2,7 +2,6 @@
 Core layer unit tests — no RL training, runs in seconds.
 Uses a small synthetic DataFrame so no CSV file is needed.
 """
-import math
 import sys
 import os
 
@@ -289,13 +288,13 @@ def api_client():
     """TestClient for the FastAPI app — uses real CSV if available, skips if not."""
     csv_path = os.getenv(
         "NIFTY_CSV_PATH",
-        r"C:\Users\Sandeep\Documents\Work\code\claude-pattern-trading\data\raw-data\nifty\merged.csv",
+        "",
     )
     if not os.path.exists(csv_path):
         pytest.skip("NIFTY_CSV_PATH not found — skipping API integration tests")
 
     from fastapi.testclient import TestClient
-    from rita.interfaces.rest_api import app, _orchestrator
+    from rita.interfaces.rest_api import app
     import rita.interfaces.rest_api as api_module
     # Reset orchestrator for clean test state
     api_module._orchestrator = None

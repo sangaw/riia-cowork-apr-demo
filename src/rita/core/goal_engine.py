@@ -4,7 +4,6 @@ Step 1: Set financial goal anchored to real Nifty 50 historical data.
 Step 8: Update goal based on backtest results (closed feedback loop).
 """
 
-from .data_loader import RISK_FREE_RATE
 
 
 def set_goal(

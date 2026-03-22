@@ -10,7 +10,6 @@ No database required — plain stdlib csv module only.
 
 import csv
 import os
-from collections import defaultdict
 from datetime import datetime, timezone
 
 COLUMNS = [

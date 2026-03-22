@@ -2,7 +2,8 @@
 import sys
 sys.path.insert(0, "src")
 
-CSV = r"C:\Users\Sandeep\Documents\Work\code\claude-pattern-trading\data\raw-data\nifty\merged.csv"
+import os
+CSV = os.environ.get("NIFTY_CSV_PATH", "")
 
 from rita.interfaces.python_client import RITAClient
 import json

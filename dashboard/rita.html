@@ -279,9 +279,9 @@ tr:hover td{background:var(--surface2);}
   </div>
 
   <div class="nav-section">
-    <div class="nav-label" style="color:var(--warn)">Phase 02 — Build</div>
-    <div class="nav-item p02" data-s="train" onclick="show('train',this)">
-      <span class="nav-icon">◎</span> Train Model
+    <div class="nav-label" style="color:var(--warn)">Phase 02 — Backtest</div>
+    <div class="nav-item p02" data-s="scenarios" onclick="show('scenarios',this)">
+      <span class="nav-icon">◎</span> Scenarios
     </div>
   </div>
 
@@ -588,34 +588,42 @@ tr:hover td{background:var(--surface2);}
 </section>
 
 <!-- ════════════════ TRAIN MODEL ════════════════ -->
-<section class="section" id="sec-train">
+<section class="section" id="sec-scenarios">
   <div class="page-hdr">
-    <div><div class="page-title">Train Model</div><div class="page-sub">Step 4 — Train the Double DQN agent (2010–2022 data)</div></div>
-    <div class="hdr-actions"><span id="train-status-badge" class="badge neu">Not Run</span></div>
+    <div><div class="page-title">Scenarios</div><div class="page-sub">Run backtest for a custom date range using the loaded model</div></div>
+    <div class="hdr-actions"><span id="scenario-status" class="badge neu">Ready</span></div>
   </div>
 
-  <div class="card">
-    <div class="card-hdr"><span class="card-title">Training Configuration</span></div>
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-hdr"><span class="card-title">Backtest Period</span></div>
+    <!-- Quick-select preset periods -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <span style="font-size:11px;color:var(--t3);align-self:center">Quick select:</span>
+      <button class="btn btn-ghost btn-sm" onclick="setScenarioPeriod('2025-01-01','2025-03-31')">Q1 2025</button>
+      <button class="btn btn-ghost btn-sm" onclick="setScenarioPeriod('2025-04-01','2025-06-30')">Q2 2025</button>
+      <button class="btn btn-ghost btn-sm" onclick="setScenarioPeriod('2025-07-01','2025-09-30')">Q3 2025</button>
+      <button class="btn btn-ghost btn-sm" onclick="setScenarioPeriod('2025-10-01','2025-12-31')">Q4 2025</button>
+      <button class="btn btn-ghost btn-sm" onclick="setScenarioPeriod('2025-01-01','2025-12-31')">Full 2025</button>
+      <button class="btn btn-ghost btn-sm" onclick="setScenarioPeriod('2024-01-01','2024-12-31')">Full 2024</button>
+    </div>
     <div class="form-grid">
       <div class="form-group">
-        <label class="form-label">Training Timesteps</label>
-        <input class="form-input" type="number" id="inp-timesteps" value="200000" min="10000" max="500000" step="50000">
-        <span class="form-hint">200k ≈ 6 min on CPU</span>
+        <label class="form-label">From Date</label>
+        <input class="form-input" type="date" id="inp-bt-from" value="2025-01-01" min="2023-01-01" max="2026-12-31">
       </div>
-      <div class="form-group" style="justify-content:flex-end;padding-bottom:2px">
-        <label class="form-label">Force Retrain</label>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:4px">
-          <input type="checkbox" id="inp-retrain" style="width:14px;height:14px;accent-color:var(--run)">
-          <span style="font-size:12px;color:var(--t2)">Ignore saved model</span>
-        </label>
-        <span class="form-hint">Unchecked = reuse existing model</span>
+      <div class="form-group">
+        <label class="form-label">To Date</label>
+        <input class="form-input" type="date" id="inp-bt-to" value="2025-12-31" min="2023-01-01" max="2026-12-31">
       </div>
     </div>
-    <button class="btn btn-build" onclick="runTrain()" id="btn-train">Train Model →</button>
-    <span id="train-spinner" style="display:none;margin-left:12px;font-size:12px;color:var(--t3);font-family:var(--fm)">Training... this may take ~6 min</span>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <button class="btn btn-build" onclick="runScenarioBacktest()" id="btn-scenario">▶ Run Backtest</button>
+      <span id="scenario-spinner" style="display:none;font-size:12px;color:var(--t3);font-family:var(--fm)">Running backtest…</span>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--t3)">Requires a loaded model. Build or load a model in the Data Scientist App first.</div>
   </div>
 
-  <div id="train-result"></div>
+  <div id="scenario-result"></div>
 </section>
 
 <!-- ════════════════ PERFORMANCE ════════════════ -->
@@ -656,12 +664,25 @@ tr:hover td{background:var(--surface2);}
 <!-- ════════════════ TRADE JOURNAL ════════════════ -->
 <section class="section" id="sec-trades">
   <div class="page-hdr">
-    <div><div class="page-title">Trade Journal</div><div class="page-sub">Day-by-day allocation decisions during backtest period</div></div>
-    <div class="hdr-actions"><button class="btn btn-ghost btn-sm" onclick="loadTrades()">↺ Reload</button></div>
+    <div><div class="page-title">Trade Journal</div><div class="page-sub">Allocation decisions across Train · Validation · Backtest periods</div></div>
+    <div class="hdr-actions">
+      <button class="btn btn-ghost btn-sm" id="btn-tj-download" onclick="downloadTradeJournal()" style="display:none">⬇ Snapshot</button>
+      <button class="btn btn-ghost btn-sm" onclick="loadTrades()">↺ Reload</button>
+    </div>
   </div>
 
+  <!-- Phase legend -->
+  <div style="display:flex;gap:20px;margin-bottom:12px;font-size:12px;align-items:center">
+    <span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:2px;background:#1565C0;display:inline-block"></span>Train (2010–2022)</span>
+    <span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:2px;background:#6A1B9A;display:inline-block"></span>Validation (2023–2024)</span>
+    <span style="display:flex;align-items:center;gap:6px"><span style="width:12px;height:12px;border-radius:2px;background:#2E7D32;display:inline-block"></span>Backtest (2025)</span>
+  </div>
+
+  <!-- Phase summary KPIs -->
+  <div id="trades-kpi-strip" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px"></div>
+
   <div class="chart-wrap">
-    <div class="chart-title">Allocation Over Time (0% / 50% / 100% in Nifty)</div>
+    <div class="chart-title">Allocation Over Time — all phases (0% / 50% / 100% in Nifty)</div>
     <div class="chart-box"><canvas id="chart-allocation"></canvas></div>
   </div>
 
@@ -922,6 +943,7 @@ async function api(path, method = 'GET', body = null) {
 let _currentSection = 'home';
 const _sectionLoaders = {
   'market-signals': loadMarketSignals,
+  scenarios: loadScenarios,
   performance: loadPerformance,
   trades: loadTrades,
   explain: loadExplain,
@@ -1479,41 +1501,113 @@ function chartOpts(label, tickCb, labels) {
 }
 
 // ── Trade Journal ──────────────────────────────────────────
+const TJ_PHASE = {
+  Train:      { color: '#1565C0', bg: 'rgba(21,101,192,0.13)',  rowBg: '#E3F2FD' },
+  Validation: { color: '#6A1B9A', bg: 'rgba(106,27,154,0.13)', rowBg: '#F3E5F5' },
+  Backtest:   { color: '#2E7D32', bg: 'rgba(46,125,50,0.15)',   rowBg: '#E8F5E9' },
+};
+let _tjRows = [];  // cached for snapshot
+
 async function loadTrades() {
   try {
-    const rows = await api('/api/v1/backtest-daily');
-    if (!rows || !rows.length) { setEl('trades-table-wrap', '<div class="empty">No backtest data — run pipeline first.</div>'); return; }
+    const rows = await api('/api/v1/risk-timeline?phase=all');
+    if (!rows || !rows.length) {
+      setEl('trades-table-wrap', '<div class="empty">No data — run pipeline first.</div>');
+      return;
+    }
+    _tjRows = rows;
+    document.getElementById('btn-tj-download').style.display = '';
 
-    const dates = rows.map(r => r.date);
-    const allocPct = rows.map(r => r.allocation != null ? r.allocation * 100 : null);
+    // ── Phase KPI strip ─────────────────────────────────────────────────────
+    const phases = ['Train', 'Validation', 'Backtest'];
+    const kpiHtml = phases.map(ph => {
+      const ph_rows = rows.filter(r => r.phase === ph);
+      if (!ph_rows.length) return '';
+      const cfg = TJ_PHASE[ph] || {};
+      const days = ph_rows.length;
+      const cashDays = ph_rows.filter(r => parseFloat(r.allocation||0) === 0).length;
+      const halfDays = ph_rows.filter(r => parseFloat(r.allocation||0) === 0.5).length;
+      const fullDays = ph_rows.filter(r => parseFloat(r.allocation||0) === 1.0).length;
+      const maxDD = Math.min(...ph_rows.map(r => parseFloat(r.current_drawdown_pct||0)));
+      return `<div style="border:1px solid ${cfg.color};border-radius:7px;padding:12px 14px;background:${cfg.bg}">
+        <div style="font-weight:700;color:${cfg.color};margin-bottom:8px;font-size:12px">${ph}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px">
+          <div><span style="color:var(--t3)">Days</span><div style="font-weight:600">${days}</div></div>
+          <div><span style="color:var(--t3)">Max DD</span><div style="font-weight:600">${maxDD.toFixed(2)}%</div></div>
+          <div><span style="color:var(--t3)">Cash</span><div style="font-weight:600">${cashDays}d</div></div>
+          <div><span style="color:var(--t3)">Half / Full</span><div style="font-weight:600">${halfDays}d / ${fullDays}d</div></div>
+        </div>
+      </div>`;
+    }).join('');
+    setEl('trades-kpi-strip', kpiHtml);
+
+    // ── Chart — one dataset per phase, string labels (no time adapter needed) ─
+    const allDates = rows.map(r => r.date);
+    const phaseByDate = {};
+    rows.forEach(r => { phaseByDate[r.date] = r.phase; });
+
+    const datasets = phases.map(ph => {
+      const cfg = TJ_PHASE[ph] || {};
+      return {
+        label: ph,
+        data: rows.map(r => r.phase === ph && r.allocation != null ? parseFloat(r.allocation) * 100 : null),
+        borderColor: cfg.color,
+        backgroundColor: cfg.color,
+        fill: false, stepped: false, pointRadius: 0, borderWidth: 2, spanGaps: false, tension: 0.3,
+      };
+    }).filter(d => d.data.some(v => v != null));
 
     mkChart('chart-allocation', {
       type: 'line',
-      data: {
-        labels: dates,
-        datasets: [{ label: 'Allocation %', data: allocPct, borderColor: C.build, backgroundColor: 'rgba(26,107,60,0.08)', fill: true, stepped: true, pointRadius: 0, borderWidth: 2 }]
+      data: { labels: allDates, datasets },
+      options: {
+        ...chartOpts('Allocation (%)', v => v + '%', allDates),
+        scales: {
+          x: { ticks: { maxTicksLimit: 24, font: { family: C.mono, size: 10 } }, grid: { color: 'rgba(0,0,0,.04)' } },
+          y: { min: 0, max: 110, ticks: { callback: v => v + '%', font: { family: C.mono, size: 10 } }, grid: { color: 'rgba(0,0,0,.04)' } },
+        },
       },
-      options: chartOpts('Allocation (%)', v => v + '%', dates),
     });
 
-    // Show last 50 rows as table
-    const recent = rows.slice(-50).reverse();
+    // ── Table — all rows, color-coded by phase ─────────────────────────────
     setEl('trades-table-wrap', `
       <table>
-        <thead><tr><th>Date</th><th>Allocation</th><th>Portfolio</th><th>Benchmark</th><th>Nifty Close</th></tr></thead>
-        <tbody>${recent.map(r => `
-          <tr>
+        <thead><tr>
+          <th>Date</th><th>Phase</th><th>Allocation</th>
+          <th>Portfolio (norm)</th><th>Drawdown %</th><th>Regime</th>
+        </tr></thead>
+        <tbody>${rows.map(r => {
+          const cfg = TJ_PHASE[r.phase] || {};
+          const portPct = r.portfolio_value_norm != null ? ((parseFloat(r.portfolio_value_norm) - 1) * 100).toFixed(2) + '%' : '—';
+          const dd = r.current_drawdown_pct != null ? parseFloat(r.current_drawdown_pct).toFixed(2) + '%' : '—';
+          const ddColor = parseFloat(r.current_drawdown_pct||0) < -5 ? 'color:#9B1C1C;font-weight:600' : '';
+          return `<tr>
             <td class="td-mono">${r.date || '—'}</td>
+            <td><span style="font-size:10px;font-weight:700;color:${cfg.color || ''}">${r.phase || '—'}</span></td>
             <td>${allocBadge(r.allocation)}</td>
-            <td class="td-mono">${r.portfolio_value != null ? ((r.portfolio_value - 1) * 100).toFixed(2) + '%' : '—'}</td>
-            <td class="td-mono">${r.benchmark_value != null ? ((r.benchmark_value - 1) * 100).toFixed(2) + '%' : '—'}</td>
-            <td class="td-mono">${r.close_price != null ? '₹' + parseFloat(r.close_price).toLocaleString('en-IN', { maximumFractionDigits: 0 }) : '—'}</td>
-          </tr>`).join('')}
+            <td class="td-mono">${portPct}</td>
+            <td class="td-mono" style="${ddColor}">${dd}</td>
+            <td style="font-size:11px;color:var(--t3)">${r.regime || '—'}</td>
+          </tr>`;
+        }).join('')}
         </tbody>
       </table>`);
   } catch (e) {
     setEl('trades-table-wrap', '<div class="empty">Error loading trade data.</div>');
   }
+}
+
+function downloadTradeJournal() {
+  if (!_tjRows.length) return;
+  const cols = ['date','phase','allocation','portfolio_value_norm','current_drawdown_pct','regime'];
+  const header = cols.join(',');
+  const body = _tjRows.map(r => cols.map(c => r[c] ?? '').join(',')).join('\n');
+  const ts = new Date().toISOString().slice(0,19).replace(/[-:T]/g, c => c === 'T' ? '_' : c);
+  const blob = new Blob([header + '\n' + body], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `trade_journal_${ts}.csv`;
+  a.click();
 }
 
 function allocBadge(v) {
@@ -1924,29 +2018,104 @@ async function runStrategy() {
   }
 }
 
-async function runTrain() {
-  const btn = document.getElementById('btn-train');
-  const spinner = document.getElementById('train-spinner');
-  btn.disabled = true; btn.textContent = 'Training...';
-  spinner.style.display = '';
-  document.getElementById('train-status-badge').className = 'badge run';
-  setEl('train-status-badge', 'Training');
+// ── Scenarios ──────────────────────────────────────────────
+function setScenarioPeriod(from, to) {
+  document.getElementById('inp-bt-from').value = from;
+  document.getElementById('inp-bt-to').value = to;
+}
+
+async function loadScenarios() {
+  // Show last backtest results on page load if available
   try {
-    const d = await api('/api/v1/train', 'POST', {
-      timesteps: parseInt(document.getElementById('inp-timesteps').value),
-      force_retrain: document.getElementById('inp-retrain').checked,
-    });
-    document.getElementById('train-status-badge').className = 'badge ok';
-    setEl('train-status-badge', 'Done');
-    renderStepResult('train-result', d);
-  } catch (e) {
-    document.getElementById('train-status-badge').className = 'badge err';
-    setEl('train-status-badge', 'Error');
-    setEl('train-result', `<div class="result-panel"><div style="color:var(--danger);font-size:12px">Error: ${e.message}</div></div>`);
-  } finally {
-    btn.disabled = false; btn.textContent = 'Train Model →';
-    spinner.style.display = 'none';
+    const perf  = await api('/api/v1/performance-summary');
+    const daily = await api('/api/v1/backtest-daily');
+    if (perf && typeof perf === 'object' && Object.keys(perf).length) renderScenarioResults(perf, daily);
+  } catch (_) {}
+}
+
+async function runScenarioBacktest() {
+  const from = document.getElementById('inp-bt-from').value;
+  const to   = document.getElementById('inp-bt-to').value;
+  if (!from || !to)   { alert('Select both start and end dates.'); return; }
+  if (from >= to)     { alert('Start date must be before end date.'); return; }
+
+  const btn     = document.getElementById('btn-scenario');
+  const spinner = document.getElementById('scenario-spinner');
+  const badge   = document.getElementById('scenario-status');
+  btn.disabled = true; btn.textContent = '⏳ Running…';
+  spinner.style.display = '';
+  badge.className = 'badge run'; badge.textContent = 'Running';
+  setEl('scenario-result', '');
+
+  try {
+    await api('/api/v1/period',   'POST', { start: from, end: to });
+    await api('/api/v1/backtest', 'POST', {});
+    const [perf, daily] = await Promise.all([
+      api('/api/v1/performance-summary'),
+      api('/api/v1/backtest-daily'),
+    ]);
+    badge.className = 'badge ok'; badge.textContent = 'Done';
+    renderScenarioResults(perf, daily, from, to);
     loadProgress(); loadHealth();
+  } catch (e) {
+    badge.className = 'badge err'; badge.textContent = 'Error';
+    setEl('scenario-result', `<div class="result-panel"><div style="color:var(--danger);font-size:12px">Error: ${e.message}</div></div>`);
+  } finally {
+    btn.disabled = false; btn.textContent = '▶ Run Backtest';
+    spinner.style.display = 'none';
+  }
+}
+
+function renderScenarioResults(perf, daily, from, to) {
+  if (!perf || typeof perf !== 'object' || !Object.keys(perf).length) { setEl('scenario-result', '<div class="empty">No results.</div>'); return; }
+  // perf is a flat dict {metric: value} from /api/v1/performance-summary
+  const m = {};
+  Object.entries(perf).forEach(([k, v]) => { m[k] = parseFloat(v); });
+
+  const sharpe  = m.sharpe_ratio      != null ? m.sharpe_ratio.toFixed(3)            : '—';
+  const mdd     = m.max_drawdown_pct  != null ? m.max_drawdown_pct.toFixed(2) + '%'  : '—';
+  const ret     = m.portfolio_total_return_pct != null ? m.portfolio_total_return_pct.toFixed(2) + '%' : '—';
+  const bnh     = m.benchmark_total_return_pct != null ? m.benchmark_total_return_pct.toFixed(2) + '%' : '—';
+  const cagr    = m.portfolio_cagr_pct != null ? m.portfolio_cagr_pct.toFixed(2) + '%' : '—';
+  const trades  = m.total_trades      != null ? m.total_trades                       : '—';
+  const wr      = m.win_rate_pct      != null ? m.win_rate_pct.toFixed(1) + '%'      : '—';
+  const days    = m.total_days        != null ? m.total_days                          : '—';
+  const sharpeCls = parseFloat(m.sharpe_ratio) >= 1.0 ? 'pos' : 'neu';
+  const mddCls    = Math.abs(parseFloat(m.max_drawdown_pct)) <= 5 ? 'pos' : 'warn';
+  const label = (from && to) ? `${from} → ${to}` : 'Last backtest';
+
+  let html = `
+    <div class="card-hdr" style="margin-bottom:10px">
+      <span class="card-title">Results — ${label}</span>
+      <span class="badge ok" style="margin-left:8px">${days} days</span>
+    </div>
+    <div class="kpi-row-4" style="margin-bottom:14px">
+      <div class="kpi"><div class="kpi-label">Sharpe Ratio</div><div class="kpi-value ${sharpeCls}">${sharpe}</div><div class="kpi-delta">target ≥ 1.0</div></div>
+      <div class="kpi"><div class="kpi-label">Max Drawdown</div><div class="kpi-value ${mddCls}">${mdd}</div><div class="kpi-delta">target &lt; 10%</div></div>
+      <div class="kpi"><div class="kpi-label">Portfolio Return</div><div class="kpi-value neu">${ret}</div><div class="kpi-delta">B&amp;H ${bnh}</div></div>
+      <div class="kpi"><div class="kpi-label">CAGR</div><div class="kpi-value neu">${cagr}</div><div class="kpi-delta">${trades} trades · WR ${wr}</div></div>
+    </div>`;
+
+  if (daily && daily.length) {
+    const labels = daily.map(r => r.date);
+    const portVals = daily.map(r => r.portfolio_value != null ? ((parseFloat(r.portfolio_value) - 1) * 100).toFixed(2) : null);
+    const bnhVals  = daily.map(r => r.benchmark_value  != null ? ((parseFloat(r.benchmark_value)  - 1) * 100).toFixed(2) : null);
+    html += `<div class="chart-wrap"><div class="chart-title">Cumulative Return — RITA vs Buy &amp; Hold</div>
+      <div class="chart-box"><canvas id="chart-scenario-returns"></canvas></div></div>`;
+    setEl('scenario-result', html);
+    mkChart('chart-scenario-returns', {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'RITA',      data: portVals, borderColor: C.build,  backgroundColor: 'rgba(26,107,60,0.07)', fill: true,  pointRadius: 0, borderWidth: 2 },
+          { label: 'Nifty B&H', data: bnhVals,  borderColor: C.warn,   backgroundColor: 'transparent',          fill: false, pointRadius: 0, borderWidth: 1.5, borderDash: [4,3] },
+        ],
+      },
+      options: chartOpts('Return (%)', v => v + '%', labels),
+    });
+  } else {
+    setEl('scenario-result', html);
   }
 }
 

@@ -32,6 +32,7 @@ from rita.core.training_tracker import TrainingTracker
 from rita.core.shap_explainer import SHAPExplainer
 from rita.orchestration.session import SessionManager
 from rita.orchestration.monitor import PhaseMonitor
+from rita.config import TRAIN_TIMESTEPS, BEAR_TRAIN_TIMESTEPS
 
 
 # ─── Episode cache helpers ────────────────────────────────────────────────────
@@ -109,6 +110,7 @@ class WorkflowOrchestrator:
         self.csv_path = csv_path
         self.output_dir = output_dir
         self.session = SessionManager(output_dir)
+        self.session.load()   # restore persisted state across API restarts
         self.monitor = PhaseMonitor(output_dir)
 
         # Load raw + feature-enriched data once
@@ -185,7 +187,7 @@ class WorkflowOrchestrator:
 
     def step4_train_model(
         self,
-        timesteps: int = 500_000,
+        timesteps: int = TRAIN_TIMESTEPS,
         force_retrain: bool = False,
         n_seeds: int = 1,
         model_type: str = "bull",
@@ -227,7 +229,7 @@ class WorkflowOrchestrator:
             self.monitor.fail_step(4, str(e))
             raise
 
-    def _step4_train_bull(self, timesteps: int = 500_000, force_retrain: bool = False, n_seeds: int = 1) -> dict:
+    def _step4_train_bull(self, timesteps: int = TRAIN_TIMESTEPS, force_retrain: bool = False, n_seeds: int = 1) -> dict:
         """Train or load the bull model (rita_ddqn_model.zip)."""
         model_zip = os.path.join(self.output_dir, "rita_ddqn_model.zip")
 
@@ -327,7 +329,7 @@ class WorkflowOrchestrator:
         bear_seeds = min(n_seeds, 3)
         print(f"[RITA] Bear episodes: {len(bear_df)} rows from {len(full_train_df)} training rows (seeds={bear_seeds})")
         model, training_metrics = train_bear_model(
-            bear_df, val_df, self.output_dir, timesteps=200_000, n_seeds=bear_seeds
+            bear_df, val_df, self.output_dir, timesteps=BEAR_TRAIN_TIMESTEPS, n_seeds=bear_seeds
         )
         val_metrics = validate_agent(model, val_df)
 
@@ -388,14 +390,26 @@ class WorkflowOrchestrator:
         self.monitor.start_step(6)
         try:
             model_path = self.session.get("model_path")
+            # Fall back to the model file on disk (survives API restarts)
+            if not model_path:
+                default_zip = os.path.join(self.output_dir, "rita_ddqn_model.zip")
+                if os.path.exists(default_zip):
+                    model_path = default_zip
+                    self.session.set("model_path", model_path)
             sim_period = self.session.get("simulation_period")
             if not model_path or not sim_period:
                 raise RuntimeError("Run step4 and step5 before step6.")
 
             self._ensure_data()
-            backtest_df = calculate_indicators(
-                get_backtest_data(self._raw_df, sim_period["start"], sim_period["end"])
-            )
+            # Fetch 200 extra warmup days before start so indicators (MACD, EMA, ATR)
+            # have enough history to be non-NaN by the time the slice begins.
+            WARMUP_DAYS = 200
+            start_ts = pd.Timestamp(sim_period["start"])
+            warmup_start = (start_ts - pd.offsets.BDay(WARMUP_DAYS)).strftime("%Y-%m-%d")
+            raw_with_warmup = get_backtest_data(self._raw_df, warmup_start, sim_period["end"])
+            full_indicators = calculate_indicators(raw_with_warmup)
+            # Trim back to the requested period after indicators are computed
+            backtest_df = full_indicators[full_indicators.index >= start_ts]
 
             bull_model = load_agent(model_path)
 
@@ -726,7 +740,7 @@ class WorkflowOrchestrator:
         results["step2"] = self.step2_analyze_market()
         results["step3"] = self.step3_design_strategy()
         results["step4"] = self.step4_train_model(
-            timesteps=config.get("timesteps", 500_000)
+            timesteps=config.get("timesteps", TRAIN_TIMESTEPS)
         )
         results["step5"] = self.step5_set_simulation_period(
             start=config.get("sim_start", BACKTEST_START),

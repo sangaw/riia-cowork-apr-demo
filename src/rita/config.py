@@ -12,8 +12,10 @@ RITA_INPUT_DIR   Where raw NSE-format CSVs are dropped        (default: ./rita_i
 RITA_API_PORT    Port for the FastAPI server                   (default: 8000)
 RITA_UI_PORT     Port for the Streamlit UI                     (default: 8501)
 RITA_API_URL     Base URL for the REST API                     (default: http://localhost:{RITA_API_PORT})
-PORTFOLIO_API_KEY  Optional API key for the portfolio endpoint (default: empty = open)
-PYTHON_ENV       Environment name (development / production)   (default: development)
+PORTFOLIO_API_KEY        Optional API key for the portfolio endpoint (default: empty = open)
+PYTHON_ENV               Environment name (development / production)   (default: development)
+RITA_TRAIN_TIMESTEPS     Default bull model training timesteps          (default: 50000)
+RITA_BEAR_TRAIN_TIMESTEPS  Default bear model training timesteps        (default: 50000)
 """
 
 import os
@@ -66,6 +68,14 @@ API_BASE_URL: str = os.getenv("RITA_API_URL", f"http://localhost:{API_PORT}")
 PORTFOLIO_API_KEY: str = os.getenv("PORTFOLIO_API_KEY", "")
 """Optional API key for the /api/v1/portfolio/summary endpoint.
 Leave empty (default) for open local-dev access."""
+
+# ── Training ──────────────────────────────────────────────────────────────────
+
+TRAIN_TIMESTEPS: int = int(os.getenv("RITA_TRAIN_TIMESTEPS", "50000"))
+"""Default training timesteps for the bull model (overridable via UI or env var)."""
+
+BEAR_TRAIN_TIMESTEPS: int = int(os.getenv("RITA_BEAR_TRAIN_TIMESTEPS", "50000"))
+"""Default training timesteps for the bear specialist model."""
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
 

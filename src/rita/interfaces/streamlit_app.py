@@ -95,10 +95,10 @@ def render_sidebar() -> dict:
 
     timesteps = st.sidebar.select_slider(
         "Training timesteps (Build only)",
-        options=[100_000, 200_000, 300_000, 500_000, 1_000_000],
-        value=300_000,
+        options=[50_000, 100_000, 200_000, 300_000, 500_000],
+        value=50_000,
         format_func=lambda x: f"{x:,}",
-        help="Only used when clicking '🏗 Build Model Pipeline'. 300k × 3 seeds ≈ 1–2 hrs.",
+        help="Only used when clicking '🏗 Build Model Pipeline'. 50k timesteps is the recommended default for this dataset size.",
     )
     n_seeds = st.sidebar.select_slider(
         "Seeds to try (best-of-N)",
@@ -881,8 +881,10 @@ def build_trade_journal_data(output_dir: str, csv_path: str):
         rt = pd.read_csv(rt_path, parse_dates=["date"])
 
         # Join Nifty close prices from source CSV
-        src = pd.read_csv(csv_path, parse_dates=["date"])
-        src["date"] = src["date"].dt.tz_localize(None)
+        # Use date-string truncation to strip any timezone info (nifty_merged.csv is IST-aware)
+        src = pd.read_csv(csv_path)
+        src["date"] = pd.to_datetime(src["date"].astype(str).str[:10])
+        rt["date"] = pd.to_datetime(rt["date"].astype(str).str[:10])
         rt = rt.merge(src[["date", "close"]], on="date", how="left")
         rt = rt.sort_values("date").reset_index(drop=True)
 
@@ -941,9 +943,9 @@ def chart_trade_journal(
 
     # ── Phase background shading (all 4 rows) ─────────────────────────────────
     _phase_bg = {
-        "Train":      "rgba(21,101,192,0.06)",
-        "Validation": "rgba(106,27,154,0.06)",
-        "Backtest":   "rgba(46,125,50,0.07)",
+        "Train":      "rgba(21,101,192,0.13)",
+        "Validation": "rgba(106,27,154,0.13)",
+        "Backtest":   "rgba(46,125,50,0.15)",
     }
     _phase_lc = {
         "Train":      "#1565C0",
@@ -1000,12 +1002,13 @@ def chart_trade_journal(
         fig.add_trace(go.Scatter(
             x=entries["date"], y=entries["close"],
             mode="markers", name="Entry",
+            customdata=entries["phase"],
             marker=dict(
                 symbol="triangle-up", color="#43A047", size=9,
                 line=dict(width=1, color="white"),
             ),
             hovertemplate=(
-                "<b>ENTRY</b>  %{x|%Y-%m-%d}<br>"
+                "<b>ENTRY</b>  %{x|%Y-%m-%d}  [%{customdata}]<br>"
                 "Close: ₹%{y:,.0f}<br>"
                 "<extra></extra>"
             ),
@@ -1015,12 +1018,13 @@ def chart_trade_journal(
         fig.add_trace(go.Scatter(
             x=profit_ex["date"], y=profit_ex["close"],
             mode="markers", name="Profit Exit",
+            customdata=profit_ex["phase"],
             marker=dict(
                 symbol="triangle-down", color="#1E88E5", size=9,
                 line=dict(width=1, color="white"),
             ),
             hovertemplate=(
-                "<b>PROFIT EXIT</b>  %{x|%Y-%m-%d}<br>"
+                "<b>PROFIT EXIT</b>  %{x|%Y-%m-%d}  [%{customdata}]<br>"
                 "Close: ₹%{y:,.0f}<br>"
                 "<extra></extra>"
             ),
@@ -1030,33 +1034,44 @@ def chart_trade_journal(
         fig.add_trace(go.Scatter(
             x=loss_ex["date"], y=loss_ex["close"],
             mode="markers", name="Loss Exit",
+            customdata=loss_ex["phase"],
             marker=dict(
                 symbol="x-thin-open", color="#E53935", size=9,
                 line=dict(width=2, color="#E53935"),
             ),
             hovertemplate=(
-                "<b>LOSS EXIT</b>  %{x|%Y-%m-%d}<br>"
+                "<b>LOSS EXIT</b>  %{x|%Y-%m-%d}  [%{customdata}]<br>"
                 "Close: ₹%{y:,.0f}<br>"
                 "<extra></extra>"
             ),
         ), row=1, col=1)
 
-    # ── Row 2: Portfolio value (normalised) ───────────────────────────────────
-    fig.add_trace(go.Scatter(
-        x=sub_t["date"], y=sub_t["portfolio_value_norm"],
-        name="Portfolio", line=dict(color="#1565C0", width=1.5),
-        fill="tozeroy", fillcolor="rgba(21,101,192,0.07)",
-        hovertemplate="%{x|%Y-%m-%d}  %{y:.4f}<extra></extra>",
-    ), row=2, col=1)
+    # ── Row 2: Portfolio value (normalised) — one coloured trace per phase ───────
+    for ph in phases:
+        ph_t = sub_t[sub_t["phase"] == ph]
+        if ph_t.empty:
+            continue
+        fig.add_trace(go.Scatter(
+            x=ph_t["date"], y=ph_t["portfolio_value_norm"],
+            name=ph, legendgroup=ph,
+            line=dict(color=_phase_lc.get(ph, "#1565C0"), width=1.5),
+            fill="tozeroy", fillcolor=_phase_bg.get(ph, "rgba(0,0,0,0.07)"),
+            hovertemplate=f"%{{x|%Y-%m-%d}}  %{{y:.4f}}  [{ph}]<extra></extra>",
+        ), row=2, col=1)
     fig.add_hline(y=1.0, line_dash="dot", line_color="gray", line_width=0.8, row=2, col=1)
 
-    # ── Row 3: Rolling 63-day Sharpe ──────────────────────────────────────────
-    fig.add_trace(go.Scatter(
-        x=sub_t["date"], y=sub_t["rolling_sharpe"],
-        name="63d Sharpe", line=dict(color="#8E24AA", width=1.4),
-        fill="tozeroy", fillcolor="rgba(142,36,170,0.07)",
-        hovertemplate="%{x|%Y-%m-%d}  %{y:.2f}<extra></extra>",
-    ), row=3, col=1)
+    # ── Row 3: Rolling 63-day Sharpe — one coloured trace per phase ───────────
+    for ph in phases:
+        ph_t = sub_t[sub_t["phase"] == ph]
+        if ph_t.empty:
+            continue
+        fig.add_trace(go.Scatter(
+            x=ph_t["date"], y=ph_t["rolling_sharpe"],
+            name=ph, legendgroup=ph, showlegend=False,
+            line=dict(color=_phase_lc.get(ph, "#8E24AA"), width=1.4),
+            fill="tozeroy", fillcolor=_phase_bg.get(ph, "rgba(0,0,0,0.07)"),
+            hovertemplate=f"%{{x|%Y-%m-%d}}  Sharpe %{{y:.2f}}  [{ph}]<extra></extra>",
+        ), row=3, col=1)
     fig.add_hline(y=1.0, line_dash="dash", line_color="#2E7D32", line_width=1,
                   annotation_text="1.0 target", annotation_position="top right",
                   row=3, col=1)
@@ -1144,6 +1159,17 @@ def render_trade_journal_tab(output_dir: str, csv_path: str):
     )
     st.plotly_chart(fig_bt, width="stretch")
 
+    # ── Phase colour helpers ──────────────────────────────────────────────────
+    _PHASE_ROW_BG = {
+        "Train":      "background-color: #E3F2FD",   # light blue
+        "Validation": "background-color: #F3E5F5",   # light purple
+        "Backtest":   "background-color: #E8F5E9",   # light green
+    }
+
+    def _style_phase(row):
+        bg = _PHASE_ROW_BG.get(row.get("Phase", ""), "")
+        return [bg] * len(row)
+
     # ── Per-phase trade stats table ───────────────────────────────────────────
     st.divider()
     st.markdown("**Per-Phase Trade Statistics**")
@@ -1161,7 +1187,8 @@ def render_trade_journal_tab(output_dir: str, csv_path: str):
             "Loss Exits":   len(ph_le),
             "Win Rate":     f"{round(len(ph_pe)/ph_ex*100,1)}%" if ph_ex else "—",
         })
-    st.dataframe(pd.DataFrame(rows_ph), width="stretch", hide_index=True)
+    ph_df = pd.DataFrame(rows_ph)
+    st.dataframe(ph_df.style.apply(_style_phase, axis=1), width="stretch", hide_index=True)
 
     # ── Full trade log (collapsed) ────────────────────────────────────────────
     with st.expander("Full trade log"):
@@ -1173,13 +1200,23 @@ def render_trade_journal_tab(output_dir: str, csv_path: str):
                         "Portfolio (₹)", "DD%", "Regime"]
         disp["Portfolio (₹)"] = disp["Portfolio (₹)"].round(0)
         disp["DD%"] = disp["DD%"].round(2)
-        st.dataframe(disp, width="stretch", hide_index=True)
-        st.download_button(
+        st.dataframe(disp.style.apply(_style_phase, axis=1), width="stretch", hide_index=True)
+
+        from datetime import datetime as _dt
+        _ts = _dt.now().strftime("%Y%m%d_%H%M%S")
+        dl_col, snap_col = st.columns([1, 1])
+        dl_col.download_button(
             "⬇ Download trade_journal.csv",
             data=disp.to_csv(index=False),
-            file_name="trade_journal.csv",
+            file_name=f"trade_journal_{_ts}.csv",
             mime="text/csv",
         )
+        if snap_col.button("📸 Save Snapshot to disk"):
+            _snap_dir = os.path.join(output_dir, "snapshots")
+            os.makedirs(_snap_dir, exist_ok=True)
+            _snap_path = os.path.join(_snap_dir, f"trade_journal_{_ts}.csv")
+            disp.to_csv(_snap_path, index=False)
+            st.success(f"Snapshot saved → {_snap_path}")
 
 
 # ─── Risk View tab renderer ────────────────────────────────────────────────────
@@ -2943,7 +2980,7 @@ def render_dashboard(orch: WorkflowOrchestrator, step_results: dict):
 
     # ── 📊 Trade Journal ──────────────────────────────────────────────────────
     with tab_trade:
-        render_trade_journal_tab(OUTPUT_DIR, CSV_PATH)
+        render_trade_journal_tab(OUTPUT_DIR, _get_active_csv())
 
     # ── 🔍 Explainability ─────────────────────────────────────────────────────
     with tab_explain:

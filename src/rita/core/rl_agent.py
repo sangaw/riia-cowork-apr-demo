@@ -47,6 +47,7 @@ from stable_baselines3 import DQN
 from stable_baselines3.common.callbacks import BaseCallback
 
 from .performance import compute_all_metrics
+from rita.config import TRAIN_TIMESTEPS, BEAR_TRAIN_TIMESTEPS
 
 
 # ─── Training progress callback ───────────────────────────────────────────────
@@ -221,7 +222,7 @@ class NiftyTradingEnv(gym.Env):
 def train_agent(
     train_df: pd.DataFrame,
     output_dir: str,
-    timesteps: int = 500_000,
+    timesteps: int = TRAIN_TIMESTEPS,
     seed: int = 42,
     verbose: int = 1,
     bear_mode: bool = False,
@@ -284,7 +285,7 @@ def train_best_of_n(
     train_df: pd.DataFrame,
     val_df: pd.DataFrame,
     output_dir: str,
-    timesteps: int = 500_000,
+    timesteps: int = TRAIN_TIMESTEPS,
     n_seeds: int = 5,
     verbose: int = 1,
     bear_mode: bool = False,
@@ -345,7 +346,7 @@ def train_bear_model(
     bear_episodes_df: pd.DataFrame,
     val_df: pd.DataFrame,
     output_dir: str,
-    timesteps: int = 200_000,
+    timesteps: int = BEAR_TRAIN_TIMESTEPS,
     n_seeds: int = 3,
     verbose: int = 1,
 ) -> Tuple[DQN, dict]:

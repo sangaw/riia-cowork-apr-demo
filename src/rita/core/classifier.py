@@ -42,6 +42,8 @@ def _get_model():
     """Lazy-load all-MiniLM-L6-v2 once; reuse on every subsequent call."""
     global _model
     if _model is None:
+        # Use cached model only — no HF network calls after first download
+        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
         from sentence_transformers import SentenceTransformer
         _model = SentenceTransformer(EMBED_MODEL)
     return _model

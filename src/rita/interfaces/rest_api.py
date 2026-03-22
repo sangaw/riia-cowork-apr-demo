@@ -34,6 +34,7 @@ from rita.config import (
     OUTPUT_DIR,
     INPUT_DIR,
     PORTFOLIO_API_KEY,
+    TRAIN_TIMESTEPS,
 )
 
 # ─── Configuration ────────────────────────────────────────────────────────────
@@ -178,7 +179,7 @@ class GoalRequest(BaseModel):
 
 
 class TrainRequest(BaseModel):
-    timesteps: int = Field(200_000, description="Training timesteps", ge=10_000)
+    timesteps: int = Field(TRAIN_TIMESTEPS, description="Training timesteps", ge=10_000)
     force_retrain: bool = Field(False, description="Force retrain even if model exists")
     model_type: str = Field("bull", description="Model type: bull | bear | both")
 
@@ -533,7 +534,7 @@ class PipelineRequest(BaseModel):
     target_return_pct: float = Field(15.0, ge=1.0, le=100.0)
     time_horizon_days: int = Field(365, ge=30)
     risk_tolerance: str = Field("moderate")
-    timesteps: int = Field(200_000, ge=10_000)
+    timesteps: int = Field(TRAIN_TIMESTEPS, ge=10_000)
     force_retrain: bool = Field(False)
     sim_start: str = Field(BACKTEST_START)
     sim_end: Optional[str] = Field(None)
@@ -724,15 +725,15 @@ def get_shap():
 
 
 @app.get("/api/v1/risk-timeline", tags=["Data"])
-def get_risk_timeline():
-    """Serve risk_timeline.csv as JSON (backtest phase only)."""
+def get_risk_timeline(phase: str = "Backtest"):
+    """Serve risk_timeline.csv as JSON. Use phase='all' to return all phases."""
     import pandas as pd
     path = os.path.join(OUTPUT_DIR, "risk_timeline.csv")
     if not os.path.exists(path):
         return []
     df = pd.read_csv(path)
-    if "phase" in df.columns:
-        df = df[df["phase"] == "Backtest"]
+    if "phase" in df.columns and phase.lower() != "all":
+        df = df[df["phase"] == phase]
     return _df_to_json(df)
 
 

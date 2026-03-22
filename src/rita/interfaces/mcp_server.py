@@ -24,7 +24,7 @@ from rita.core.data_loader import (
 from rita.core.technical_analyzer import calculate_indicators, get_market_summary, get_sentiment_score
 from rita.core.strategy_engine import get_allocation_recommendation
 from rita.core.performance import build_portfolio_comparison, simulate_stress_scenarios, build_performance_feedback
-from rita.config import NIFTY_CSV_PATH, OUTPUT_DIR
+from rita.config import NIFTY_CSV_PATH, OUTPUT_DIR, TRAIN_TIMESTEPS
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -590,7 +590,7 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
             return _ok(3, "Design Strategy", r)
 
         elif name == "step4_train_model":
-            timesteps = int(args.get("timesteps", 200_000))
+            timesteps = int(args.get("timesteps", TRAIN_TIMESTEPS))
             result = orch.step4_train_model(timesteps=timesteps)
             r = result["result"]
             val = r.get("validation", {})

@@ -666,12 +666,15 @@ body{background:var(--bg);color:var(--text);font-family:var(--fd);font-size:13px
 
   <!-- ══ CHAT ANALYTICS ══ -->
   <section class="sec" id="sec-chat">
-    <div class="ph">
-      <div class="ph-badge" style="background:var(--chat-bg);color:var(--chat);border:1px solid var(--chat-bd)">Chat</div>
-      <div>
-        <div class="ph-t">Chat Analytics</div>
-        <div class="ph-g">Intent classifier monitoring — query volume, confidence scores, recent queries, and function dispatch transparency</div>
+    <div class="ph" style="display:flex;align-items:flex-start;justify-content:space-between">
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <div class="ph-badge" style="background:var(--chat-bg);color:var(--chat);border:1px solid var(--chat-bd)">Chat</div>
+        <div>
+          <div class="ph-t">Chat Analytics</div>
+          <div class="ph-g">Intent classifier monitoring — query volume, confidence scores, recent queries, and function dispatch transparency</div>
+        </div>
       </div>
+      <button onclick="loadChat()" style="font-size:11px;font-family:var(--fm);padding:5px 12px;border:1px solid var(--border2);border-radius:5px;background:var(--surface);cursor:pointer;color:var(--t2);flex-shrink:0;margin-top:2px">↺ Refresh</button>
     </div>
 
     <!-- KPI strip -->
@@ -741,7 +744,11 @@ function nav(el, id) {
     const sec = document.getElementById('sec-' + s);
     if (sec) sec.classList.toggle('on', s === id);
   });
-  if (!loadedSections.has(id)) {
+  // Live data sections always reload; others load once
+  const liveReload = ['chat', 'observability'];
+  if (liveReload.includes(id)) {
+    loadSection(id);
+  } else if (!loadedSections.has(id)) {
     loadedSections.add(id);
     loadSection(id);
   }
@@ -1191,8 +1198,8 @@ async function loadChat() {
             <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.query_text ?? ''}">${r.query_text ?? '—'}</td>
             <td style="font-family:var(--fm);white-space:nowrap">${(r.intent_name ?? '—').replace(/_/g,' ')}</td>
             <td style="font-family:var(--fm);color:var(--t3);white-space:nowrap">${r.handler ?? '—'}</td>
-            <td style="font-family:var(--fm);color:${(r.confidence||0)>=0.6?'var(--ok)':(r.confidence||0)>=0.42?'var(--info)':'var(--warn)'}">${r.confidence != null ? (r.confidence*100).toFixed(0)+'%' : '—'}</td>
-            <td style="font-family:var(--fm)">${r.latency_ms != null ? r.latency_ms.toFixed(0)+'ms' : '—'}</td>
+            <td style="font-family:var(--fm);color:${parseFloat(r.confidence||0)>=0.6?'var(--ok)':parseFloat(r.confidence||0)>=0.42?'var(--info)':'var(--warn)'}">${r.confidence != null ? (parseFloat(r.confidence)*100).toFixed(0)+'%' : '—'}</td>
+            <td style="font-family:var(--fm)">${r.latency_ms != null ? parseFloat(r.latency_ms).toFixed(0)+'ms' : '—'}</td>
             <td style="font-family:var(--fm);color:var(--t3);white-space:nowrap">${(r.timestamp||'').slice(0,16)}</td>
           </tr>`).join('')}</tbody>
         </table>

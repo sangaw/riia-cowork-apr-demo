@@ -21,6 +21,7 @@ import os
 
 from rita.orchestration.workflow import WorkflowOrchestrator
 from rita.core.data_loader import BACKTEST_START
+from rita.config import TRAIN_TIMESTEPS
 
 
 class RITAClient:
@@ -53,7 +54,7 @@ class RITAClient:
         """Step 3: Design strategy based on research and goal."""
         return self.orchestrator.step3_design_strategy()
 
-    def train_model(self, timesteps: int = 200_000, force_retrain: bool = False) -> dict:
+    def train_model(self, timesteps: int = TRAIN_TIMESTEPS, force_retrain: bool = False) -> dict:
         """Step 4: Train DDQN on 2010-2022, validate on 2023-2024.
         Reuses existing model unless force_retrain=True."""
         return self.orchestrator.step4_train_model(timesteps=timesteps, force_retrain=force_retrain)

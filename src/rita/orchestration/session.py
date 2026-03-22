@@ -7,8 +7,33 @@ No database — all state is stored as flat CSV files.
 import csv
 import json
 import os
+import tempfile
 from datetime import datetime
 from typing import Any
+
+
+def _atomic_csv(path: str, header: list, rows: list) -> None:
+    """Write a CSV atomically: write to a temp file, then rename into place.
+
+    Prevents partial-write corruption if the process is killed mid-save.
+    The temp file is created in the same directory so os.replace() is always
+    an atomic rename on the same filesystem.
+    """
+    dir_ = os.path.dirname(os.path.abspath(path))
+    os.makedirs(dir_, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dir_, suffix=".tmp", prefix=".rita_")
+    try:
+        with os.fdopen(fd, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            writer.writerows(rows)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 class SessionManager:
@@ -45,67 +70,69 @@ class SessionManager:
         self._state = {}
 
     def save(self) -> None:
-        """Persist session state to CSV files in output_dir."""
+        """Persist session state to CSV files in output_dir (all writes are atomic)."""
         os.makedirs(self.output_dir, exist_ok=True)
+        ts = datetime.now().isoformat()
 
         # session_state.csv — flat key/value snapshot
-        state_path = os.path.join(self.output_dir, "session_state.csv")
-        with open(state_path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow(["key", "value", "saved_at"])
-            ts = datetime.now().isoformat()
-            for k, v in self._state.items():
-                if k not in ("backtest_results",):  # large dicts handled separately
-                    writer.writerow([k, json.dumps(v, default=str), ts])
+        state_rows = [
+            [k, json.dumps(v, default=str), ts]
+            for k, v in self._state.items()
+            if k not in ("backtest_results",)   # large dicts handled separately
+        ]
+        _atomic_csv(
+            os.path.join(self.output_dir, "session_state.csv"),
+            ["key", "value", "saved_at"],
+            state_rows,
+        )
 
         # backtest_daily.csv — daily time-series from backtest
         backtest = self._state.get("backtest_results", {})
         if backtest:
-            daily_path = os.path.join(self.output_dir, "backtest_daily.csv")
-            dates = backtest.get("dates", [])
-            port_vals = backtest.get("portfolio_values", [])
-            bench_vals = backtest.get("benchmark_values", [])
-            allocs = backtest.get("allocations", [])
+            dates       = backtest.get("dates", [])
+            port_vals   = backtest.get("portfolio_values", [])
+            bench_vals  = backtest.get("benchmark_values", [])
+            allocs      = backtest.get("allocations", [])
             close_prices = backtest.get("close_prices", [])
-
-            with open(daily_path, "w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow(["date", "portfolio_value", "benchmark_value",
-                                 "allocation", "close_price"])
-                for i, date in enumerate(dates):
-                    alloc = allocs[i - 1] if i > 0 and i - 1 < len(allocs) else ""
-                    writer.writerow([
-                        str(date)[:10],
-                        round(port_vals[i], 6) if i < len(port_vals) else "",
-                        round(bench_vals[i], 6) if i < len(bench_vals) else "",
-                        alloc,
-                        round(close_prices[i], 2) if i < len(close_prices) else "",
-                    ])
+            daily_rows = [
+                [
+                    str(date)[:10],
+                    round(port_vals[i], 6) if i < len(port_vals) else "",
+                    round(bench_vals[i], 6) if i < len(bench_vals) else "",
+                    allocs[i - 1] if i > 0 and i - 1 < len(allocs) else "",
+                    round(close_prices[i], 2) if i < len(close_prices) else "",
+                ]
+                for i, date in enumerate(dates)
+            ]
+            _atomic_csv(
+                os.path.join(self.output_dir, "backtest_daily.csv"),
+                ["date", "portfolio_value", "benchmark_value", "allocation", "close_price"],
+                daily_rows,
+            )
 
         # performance_summary.csv
-        perf = backtest.get("performance", {})
+        perf = backtest.get("performance", {}) if backtest else {}
         if perf:
-            perf_path = os.path.join(self.output_dir, "performance_summary.csv")
-            with open(perf_path, "w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow(["metric", "value"])
-                for k, v in perf.items():
-                    writer.writerow([k, v])
+            _atomic_csv(
+                os.path.join(self.output_dir, "performance_summary.csv"),
+                ["metric", "value"],
+                [[k, v] for k, v in perf.items()],
+            )
 
         # goal_history.csv
         goal = self._state.get("goal")
         updated_goal = self._state.get("updated_goal")
         if goal or updated_goal:
-            goal_path = os.path.join(self.output_dir, "goal_history.csv")
-            with open(goal_path, "w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow(["stage", "key", "value"])
-                if goal:
-                    for k, v in goal.items():
-                        writer.writerow(["original", k, json.dumps(v, default=str)])
-                if updated_goal:
-                    for k, v in updated_goal.items():
-                        writer.writerow(["updated", k, json.dumps(v, default=str)])
+            goal_rows = []
+            if goal:
+                goal_rows += [["original", k, json.dumps(v, default=str)] for k, v in goal.items()]
+            if updated_goal:
+                goal_rows += [["updated", k, json.dumps(v, default=str)] for k, v in updated_goal.items()]
+            _atomic_csv(
+                os.path.join(self.output_dir, "goal_history.csv"),
+                ["stage", "key", "value"],
+                goal_rows,
+            )
 
     def load(self) -> bool:
         """Restore session state from CSV files. Returns True if data was found."""

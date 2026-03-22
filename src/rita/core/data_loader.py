@@ -292,6 +292,69 @@ def prepare_data(input_dir: str, base_csv: str, output_csv: str) -> dict:
     }
 
 
+def get_bear_episodes(df: pd.DataFrame, min_duration_days: int = 20, buffer_days: int = 10) -> pd.DataFrame:
+    """
+    Extract bear-market episodes from the training slice (2010-2022) for the bear model.
+
+    A bear episode is defined as a contiguous period where ema_26 / ema_50 < 0.99.
+    Episodes shorter than `min_duration_days` trading days are discarded (noise).
+    `buffer_days` trading days are prepended to each episode so the model sees the
+    run-up before the drawdown begins.
+
+    Args:
+        df: Full DataFrame already processed by calculate_indicators()
+        min_duration_days: Minimum trading days for an episode to be included (default 20)
+        buffer_days: Trading days of context prepended before bear start (default 10)
+
+    Returns:
+        DataFrame containing only bear-episode rows, sorted by date.
+        Rows retain their original index so they can be used directly by NiftyTradingEnv.
+    """
+    # Work within training slice only
+    train = df[(df.index >= pd.Timestamp(TRAIN_START)) & (df.index <= pd.Timestamp(TRAIN_END))].copy()
+    train = train.dropna(subset=["ema_26", "ema_50"])
+
+    if train.empty:
+        raise ValueError("No training data available after dropna on ema columns")
+
+    bear_mask = (train["ema_26"] / train["ema_50"]) < 0.99
+    indices = train.index.tolist()
+
+    # Find contiguous bear runs
+    episodes = []
+    in_bear = False
+    start_idx = None
+    for i, idx in enumerate(indices):
+        if bear_mask[idx] and not in_bear:
+            in_bear = True
+            start_idx = i
+        elif not bear_mask[idx] and in_bear:
+            end_idx = i - 1
+            duration = end_idx - start_idx + 1
+            if duration >= min_duration_days:
+                buf_start = max(0, start_idx - buffer_days)
+                episodes.append(indices[buf_start: end_idx + 1])
+            in_bear = False
+    # Handle case where bear run extends to end
+    if in_bear:
+        end_idx = len(indices) - 1
+        duration = end_idx - start_idx + 1
+        if duration >= min_duration_days:
+            buf_start = max(0, start_idx - buffer_days)
+            episodes.append(indices[buf_start: end_idx + 1])
+
+    if not episodes:
+        raise ValueError(
+            f"No bear episodes found in training data with min_duration={min_duration_days} days"
+        )
+
+    # Combine all episode rows (deduplicated, sorted)
+    all_dates = sorted(set(d for ep in episodes for d in ep))
+    result = train.loc[all_dates]
+
+    return result
+
+
 def get_historical_stats(df: pd.DataFrame) -> dict:
     """
     Calculate full-history performance statistics from the loaded DataFrame.

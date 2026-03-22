@@ -106,10 +106,31 @@ def render_sidebar() -> dict:
 
     timesteps = st.sidebar.select_slider(
         "Training timesteps (Build only)",
-        options=[50_000, 100_000, 200_000, 500_000],
-        value=200_000,
+        options=[100_000, 200_000, 300_000, 500_000, 1_000_000],
+        value=300_000,
         format_func=lambda x: f"{x:,}",
-        help="Only used when clicking '🏗 Build Model Pipeline'.",
+        help="Only used when clicking '🏗 Build Model Pipeline'. 300k × 3 seeds ≈ 1–2 hrs.",
+    )
+    n_seeds = st.sidebar.select_slider(
+        "Seeds to try (best-of-N)",
+        options=[1, 3, 5, 10],
+        value=3,
+        help="Train N models with different random seeds, keep the best validation Sharpe. Higher = more reliable but slower.",
+    )
+    model_type = st.sidebar.radio(
+        "Model type",
+        options=["bull", "bear", "both"],
+        index=0,
+        horizontal=True,
+        help="bull = standard 9-feature model (full training set). bear = specialist model trained on correction episodes. both = train bull then bear.",
+    )
+
+    backtest_mode = st.sidebar.radio(
+        "Backtest mode",
+        options=["auto", "bull", "regime"],
+        index=0,
+        horizontal=True,
+        help="auto = bull only (no bear model) or regime-aware (bear model present). bull = always bull only. regime = force regime switching (requires bear model).",
     )
 
     st.sidebar.divider()
@@ -139,6 +160,9 @@ def render_sidebar() -> dict:
         "risk_tolerance": "moderate",
         "force_retrain": force_retrain,
         "timesteps": timesteps,
+        "n_seeds": n_seeds,
+        "model_type": model_type,
+        "backtest_mode": backtest_mode,
         "sim_start": sim_start,
         "sim_end": sim_end or None,
         "record_run": record_run,
@@ -229,7 +253,7 @@ def render_step_strip(step_results: dict, output_dir: str):
                     if st.button(
                         "▲ Hide" if is_sel else "▼ View",
                         key=f"stepbtn_{key}",
-                        use_container_width=True,
+                        width="stretch",
                         type=btn_type,
                     ):
                         st.session_state[_SEL_KEY] = None if is_sel else key
@@ -251,7 +275,108 @@ def render_step_strip(step_results: dict, output_dir: str):
     if os.path.exists(monitor_log):
         st.divider()
         with st.expander("⏱ Phase timing"):
-            st.dataframe(pd.read_csv(monitor_log), use_container_width=True)
+            st.dataframe(pd.read_csv(monitor_log), width="stretch")
+
+    # ── Model Changelog ───────────────────────────────────────────────────────
+    st.divider()
+    _render_model_changelog(output_dir)
+
+
+_CHANGELOG_COLS = ["date", "version", "category", "change", "notes"]
+_CHANGELOG_CATEGORIES = ["Reward", "Hyperparameter", "Feature", "Architecture", "Data", "Other"]
+
+_CHANGELOG_SEED = [
+    {
+        "date": "2026-03-17",
+        "version": "v1.0",
+        "category": "Hyperparameter",
+        "change": "Baseline: Double DQN, 200k timesteps, lr=1e-4, buffer=50k, net=[128,128], explore=10%",
+        "notes": "Original model. Backtest Sharpe 1.191, MDD -4.55%, Return 13.85% vs B&H 16.65%",
+    },
+    {
+        "date": "2026-03-17",
+        "version": "v1.1",
+        "category": "Reward",
+        "change": "Replace binary cliff reward with Markowitz-style: ret - 50*ret² + smooth DD penalty (scale=5.0)",
+        "notes": "Old reward had 2000x scale mismatch (portfolio_ret~0.001 vs DRAWDOWN_PENALTY=2.0). "
+                 "New reward penalises variance proportionally; smooth DD penalty avoids gradient cliff at -10%.",
+    },
+    {
+        "date": "2026-03-17",
+        "version": "v1.1",
+        "category": "Feature",
+        "change": "Add ATR-14 as 8th observation feature (atr_14 / atr_mean, clipped 0-3)",
+        "notes": "ATR already computed in technical_analyzer. Gives agent live volatility regime signal. "
+                 "Backward-compat: run_episode detects model obs-space shape (7 vs 8).",
+    },
+    {
+        "date": "2026-03-17",
+        "version": "v1.1",
+        "category": "Hyperparameter",
+        "change": "lr=3e-5, buffer=100k, warm-up=2k, explore=20%, net=[256,256], default timesteps=500k",
+        "notes": "Lower lr for stable convergence; wider net for 8-feature obs; more exploration at 500k steps.",
+    },
+]
+
+
+def _render_model_changelog(output_dir: str):
+    """
+    Show the model improvement changelog and allow adding new entries inline.
+    Backed by rita_output/model_changelog.csv.
+    """
+    changelog_path = os.path.join(output_dir, "model_changelog.csv")
+
+    # Seed file on first run
+    if not os.path.exists(changelog_path):
+        os.makedirs(output_dir, exist_ok=True)
+        pd.DataFrame(_CHANGELOG_SEED, columns=_CHANGELOG_COLS).to_csv(changelog_path, index=False)
+
+    df = pd.read_csv(changelog_path)
+    # Ensure all columns present (backward compat)
+    for col in _CHANGELOG_COLS:
+        if col not in df.columns:
+            df[col] = ""
+
+    st.markdown("#### 📝 Model Changelog")
+    st.caption("Track every improvement — reward changes, hyperparameters, new features, data updates.")
+
+    if df.empty:
+        st.info("No entries yet. Use the form below to log your first change.", icon="ℹ️")
+    else:
+        st.dataframe(
+            df[_CHANGELOG_COLS].iloc[::-1].reset_index(drop=True),
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "date":     st.column_config.TextColumn("Date",     width="small"),
+                "version":  st.column_config.TextColumn("Version",  width="small"),
+                "category": st.column_config.TextColumn("Category", width="small"),
+                "change":   st.column_config.TextColumn("Change",   width="large"),
+                "notes":    st.column_config.TextColumn("Notes",    width="large"),
+            },
+        )
+
+    with st.expander("➕ Log a new change"):
+        with st.form("changelog_form", clear_on_submit=True):
+            c1, c2, c3 = st.columns([1, 1, 2])
+            entry_date    = c1.text_input("Date", value=pd.Timestamp.today().strftime("%Y-%m-%d"))
+            entry_version = c2.text_input("Version tag", placeholder="e.g. v1.2")
+            entry_cat     = c3.selectbox("Category", _CHANGELOG_CATEGORIES)
+            entry_change  = st.text_input("Change description", placeholder="What did you change?")
+            entry_notes   = st.text_area("Rationale / notes", height=80,
+                                         placeholder="Why was this changed? What problem does it solve?")
+            submitted = st.form_submit_button("Save entry", type="primary")
+            if submitted:
+                if not entry_change.strip():
+                    st.warning("Change description is required.")
+                else:
+                    new_row = pd.DataFrame([{
+                        "date": entry_date, "version": entry_version,
+                        "category": entry_cat, "change": entry_change, "notes": entry_notes,
+                    }])
+                    pd.concat([df, new_row], ignore_index=True).to_csv(changelog_path, index=False)
+                    st.success("Entry saved.")
+                    st.rerun()
 
 
 # ─── Plotly charts ────────────────────────────────────────────────────────────
@@ -1017,7 +1142,7 @@ def render_trade_journal_tab(output_dir: str, csv_path: str):
         ["Train", "Validation"],
         "Trade Journal — Train (2010–2022) · Validation (2023–2024)",
     )
-    st.plotly_chart(fig_tv, use_container_width=True)
+    st.plotly_chart(fig_tv, width="stretch")
 
     st.divider()
 
@@ -1028,7 +1153,7 @@ def render_trade_journal_tab(output_dir: str, csv_path: str):
         ["Backtest"],
         "Trade Journal — Backtest (Apr–Dec 2025)",
     )
-    st.plotly_chart(fig_bt, use_container_width=True)
+    st.plotly_chart(fig_bt, width="stretch")
 
     # ── Per-phase trade stats table ───────────────────────────────────────────
     st.divider()
@@ -1047,7 +1172,7 @@ def render_trade_journal_tab(output_dir: str, csv_path: str):
             "Loss Exits":   len(ph_le),
             "Win Rate":     f"{round(len(ph_pe)/ph_ex*100,1)}%" if ph_ex else "—",
         })
-    st.dataframe(pd.DataFrame(rows_ph), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(rows_ph), width="stretch", hide_index=True)
 
     # ── Full trade log (collapsed) ────────────────────────────────────────────
     with st.expander("Full trade log"):
@@ -1059,7 +1184,7 @@ def render_trade_journal_tab(output_dir: str, csv_path: str):
                         "Portfolio (₹)", "DD%", "Regime"]
         disp["Portfolio (₹)"] = disp["Portfolio (₹)"].round(0)
         disp["DD%"] = disp["DD%"].round(2)
-        st.dataframe(disp, use_container_width=True, hide_index=True)
+        st.dataframe(disp, width="stretch", hide_index=True)
         st.download_button(
             "⬇ Download trade_journal.csv",
             data=disp.to_csv(index=False),
@@ -1125,34 +1250,34 @@ def render_risk_view_tab(output_dir: str):
             })
         st.dataframe(
             pd.DataFrame(phase_rows),
-            use_container_width=True, hide_index=True,
+            width="stretch", hide_index=True,
         )
 
     st.divider()
 
     # ── Chart 1: Full Arc Risk Evolution ─────────────────────────────────────
-    st.plotly_chart(chart_risk_evolution(combined), use_container_width=True)
+    st.plotly_chart(chart_risk_evolution(combined), width="stretch")
 
     # ── Charts 2 & 3 side by side ─────────────────────────────────────────────
     col1, col2 = st.columns(2)
     with col1:
-        st.plotly_chart(chart_drawdown_budget(combined), use_container_width=True)
+        st.plotly_chart(chart_drawdown_budget(combined), width="stretch")
     with col2:
-        st.plotly_chart(chart_trade_risk_impact(trades), use_container_width=True)
+        st.plotly_chart(chart_trade_risk_impact(trades), width="stretch")
 
     # ── Charts 4 & 5 side by side ─────────────────────────────────────────────
     col3, col4 = st.columns(2)
     with col3:
-        st.plotly_chart(chart_risk_return_scatter(trades, combined), use_container_width=True)
+        st.plotly_chart(chart_risk_return_scatter(trades, combined), width="stretch")
     with col4:
-        st.plotly_chart(chart_regime_confidence(combined), use_container_width=True)
+        st.plotly_chart(chart_regime_confidence(combined), width="stretch")
 
     # ── Raw data expander ────────────────────────────────────────────────────
     with st.expander("Raw risk data (for export / report)"):
         st.caption("Risk Timeline (sampled)")
-        st.dataframe(combined.iloc[::10], use_container_width=True)  # every 10th row
+        st.dataframe(combined.iloc[::10], width="stretch")  # every 10th row
         st.caption("Trade Events")
-        st.dataframe(trades, use_container_width=True, hide_index=True)
+        st.dataframe(trades, width="stretch", hide_index=True)
 
         col_a, col_b = st.columns(2)
         col_a.download_button(
@@ -1160,14 +1285,14 @@ def render_risk_view_tab(output_dir: str):
             data=combined.to_csv(),
             file_name="risk_timeline.csv",
             mime="text/csv",
-            use_container_width=True,
+            width="stretch",
         )
         col_b.download_button(
             "⬇ risk_trade_events.csv",
             data=trades.to_csv(index=False),
             file_name="risk_trade_events.csv",
             mime="text/csv",
-            use_container_width=True,
+            width="stretch",
         )
 
 
@@ -1229,7 +1354,7 @@ def render_training_progress_tab(output_dir: str):
             xaxis_title="Round", yaxis_title="Sharpe Ratio",
             height=320, margin=dict(t=50, b=30),
         )
-        st.plotly_chart(fig_sharpe, use_container_width=True)
+        st.plotly_chart(fig_sharpe, width="stretch")
 
     # ── Chart B: Max Drawdown Progression ────────────────────────────────────
     with col2:
@@ -1253,7 +1378,7 @@ def render_training_progress_tab(output_dir: str):
             xaxis_title="Round", yaxis_title="Max Drawdown (%)",
             height=320, margin=dict(t=50, b=30),
         )
-        st.plotly_chart(fig_mdd, use_container_width=True)
+        st.plotly_chart(fig_mdd, width="stretch")
 
     # ── Chart C: Backtest Return & CAGR ──────────────────────────────────────
     fig_ret = go.Figure()
@@ -1275,7 +1400,7 @@ def render_training_progress_tab(output_dir: str):
         height=340, barmode="group",
         margin=dict(t=50, b=30),
     )
-    st.plotly_chart(fig_ret, use_container_width=True)
+    st.plotly_chart(fig_ret, width="stretch")
 
     # ── Chart D: Constraint pass rate heatmap ─────────────────────────────────
     constraint_data = pd.DataFrame({
@@ -1286,12 +1411,12 @@ def render_training_progress_tab(output_dir: str):
         "MDD < 10%": ["✓" if abs(v) < 10 else "✗" for v in history["backtest_mdd_pct"]],
     })
     st.markdown("**Constraint Checklist per Round**")
-    st.dataframe(constraint_data, use_container_width=True, hide_index=True)
+    st.dataframe(constraint_data, width="stretch", hide_index=True)
 
     # ── Chart E: Training Loss & Reward ──────────────────────────────────────
     fig_tp = chart_training_progress(output_dir)
     if fig_tp is not None:
-        st.plotly_chart(fig_tp, use_container_width=True)
+        st.plotly_chart(fig_tp, width="stretch")
     else:
         st.info(
             "Training Loss & Reward chart not available — model was loaded from cache. "
@@ -1302,7 +1427,7 @@ def render_training_progress_tab(output_dir: str):
     # ── Full history table ────────────────────────────────────────────────────
     st.divider()
     st.markdown("**Full Training History**")
-    st.dataframe(history, use_container_width=True, hide_index=True)
+    st.dataframe(history, width="stretch", hide_index=True)
     st.download_button(
         "⬇ Download training_history.csv",
         data=history.to_csv(index=False),
@@ -1549,7 +1674,7 @@ def render_explainability_tab(output_dir: str):
 
     # ── Chart 1: Global feature importance ───────────────────────────────────
     if imp_df is not None:
-        st.plotly_chart(chart_shap_global_importance(imp_df), use_container_width=True)
+        st.plotly_chart(chart_shap_global_importance(imp_df), width="stretch")
 
     # ── Charts 2 & 3 side by side ────────────────────────────────────────────
     col1, col2 = st.columns(2)
@@ -1561,11 +1686,11 @@ def render_explainability_tab(output_dir: str):
         ai = ACTION_NAMES.index(action_choice)
         st.plotly_chart(
             chart_shap_beeswarm(shap_vals, obs, action_idx=ai),
-            use_container_width=True,
+            width="stretch",
         )
     with col2:
         if imp_df is not None:
-            st.plotly_chart(chart_shap_per_action_comparison(imp_df), use_container_width=True)
+            st.plotly_chart(chart_shap_per_action_comparison(imp_df), width="stretch")
 
     # ── Chart 4: Dependence plot (interactive feature selector) ──────────────
     st.subheader("Feature Dependence")
@@ -1578,7 +1703,7 @@ def render_explainability_tab(output_dir: str):
         dep_data = explainer_tmp.dependence_data(shap_vals, obs)
         st.plotly_chart(
             chart_shap_dependence(dep_data, dep_feat, dep_action),
-            use_container_width=True,
+            width="stretch",
         )
 
     # ── Chart 5: Top decisive trades ─────────────────────────────────────────
@@ -1601,10 +1726,10 @@ def render_explainability_tab(output_dir: str):
             allocs[:n_align], dates_idx[:n_align + 1],
             n=10,
         )
-        st.plotly_chart(chart_shap_top_trades(top_trades), use_container_width=True)
+        st.plotly_chart(chart_shap_top_trades(top_trades), width="stretch")
 
         with st.expander("Full top-trades table"):
-            st.dataframe(top_trades, use_container_width=True, hide_index=True)
+            st.dataframe(top_trades, width="stretch", hide_index=True)
 
     # ── Per-phase importance comparison ──────────────────────────────────────
     phase_imp = shap_data.get("phase_importance", {})
@@ -1616,7 +1741,7 @@ def render_explainability_tab(output_dir: str):
                 st.markdown(f"**{ph}**")
                 st.dataframe(
                     df_ph.style.background_gradient(cmap="Blues", axis=0),
-                    use_container_width=True,
+                    width="stretch",
                 )
 
     # ── Download ─────────────────────────────────────────────────────────────
@@ -1633,89 +1758,89 @@ def render_explainability_tab(output_dir: str):
 # ─── Dialog popups (one per chart — opened via "🔍 Expand" card button) ───────
 
 @st.dialog("📈 Cumulative Returns", width="large")
-def dlg_returns(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_returns(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("📉 Portfolio Drawdown", width="large")
-def dlg_drawdown(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_drawdown(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("📊 Rolling Sharpe Ratio", width="large")
-def dlg_sharpe_chart(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_sharpe_chart(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("🎯 Allocation Decisions", width="large")
-def dlg_allocations(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_allocations(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("🧠 Q-Value Interpretability", width="large")
-def dlg_qvals(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_qvals(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("🛡️ Full Arc Risk Evolution", width="large")
-def dlg_risk_evolution(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_risk_evolution(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("💰 Drawdown Risk Budget", width="large")
-def dlg_dd_budget(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_dd_budget(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("⚡ Trade Risk Impact", width="large")
-def dlg_trade_risk(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_trade_risk(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("🎯 Risk-Return Scatter", width="large")
-def dlg_risk_return(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_risk_return(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("📡 Regime & Confidence", width="large")
-def dlg_regime(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_regime(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("🔍 Global Feature Importance", width="large")
-def dlg_shap_global(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_shap_global(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("🌊 SHAP Beeswarm", width="large")
-def dlg_shap_beeswarm_dlg(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_shap_beeswarm_dlg(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("🕸️ Feature Radar", width="large")
-def dlg_shap_radar(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_shap_radar(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("📐 Dependence Plot", width="large")
-def dlg_shap_dep(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_shap_dep(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("🏆 Top Decisive Trades", width="large")
-def dlg_shap_trades(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_shap_trades(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("📈 Sharpe Progress", width="large")
-def dlg_train_sharpe(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_train_sharpe(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("📉 MDD Progress", width="large")
-def dlg_train_mdd(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_train_mdd(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("💹 Return & CAGR Progress", width="large")
-def dlg_train_return(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_train_return(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("📉 Training Loss & Reward", width="large")
-def dlg_train_progress(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_train_progress(fig): st.plotly_chart(fig, width="stretch")
 
 # ── Observability dialogs ────────────────────────────────────────────────────
 
 @st.dialog("🔭 Pipeline Run Timeline", width="large")
-def dlg_obs_gantt(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_obs_gantt(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("🔥 Step Duration Heatmap", width="large")
-def dlg_obs_heatmap(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_obs_heatmap(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("⚠️ Model Drift Trend", width="large")
-def dlg_obs_drift(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_obs_drift(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("📊 API Latency Breakdown", width="large")
-def dlg_devops_api(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_devops_api(fig): st.plotly_chart(fig, width="stretch")
 
 # ── MCP Calls dialogs ────────────────────────────────────────────────────────
 
 @st.dialog("📅 MCP Call Timeline", width="large")
-def dlg_mcp_timeline(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_mcp_timeline(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("🔧 Tool Usage Breakdown", width="large")
-def dlg_mcp_usage(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_mcp_usage(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("⚡ Latency by Tool", width="large")
-def dlg_mcp_latency(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_mcp_latency(fig): st.plotly_chart(fig, width="stretch")
 
 @st.dialog("✅ Call Status Breakdown", width="large")
-def dlg_mcp_status(fig): st.plotly_chart(fig, use_container_width=True)
+def dlg_mcp_status(fig): st.plotly_chart(fig, width="stretch")
 
 
 # ─── Observability charts ──────────────────────────────────────────────────────
@@ -2001,7 +2126,7 @@ def render_observability_tab(output_dir: str):
             recent_runs = ph.get("recent_runs", [])
             if recent_runs:
                 run_df = pd.DataFrame(recent_runs)
-                st.dataframe(run_df, use_container_width=True, hide_index=True)
+                st.dataframe(run_df, width="stretch", hide_index=True)
             else:
                 st.caption("No run history yet.")
 
@@ -2014,8 +2139,8 @@ def render_observability_tab(output_dir: str):
             failed_rows = mdf[mdf["status"] == "failed"]
             if not failed_rows.empty:
                 st.warning(f"⚠️ {len(failed_rows)} failed step(s) in monitor log")
-                st.dataframe(failed_rows.tail(20), use_container_width=True, hide_index=True)
-            st.dataframe(mdf.tail(50), use_container_width=True, hide_index=True)
+                st.dataframe(failed_rows.tail(20), width="stretch", hide_index=True)
+            st.dataframe(mdf.tail(50), width="stretch", hide_index=True)
 
 
 @st.fragment
@@ -2025,7 +2150,7 @@ def render_mcp_tab(output_dir: str):
     with hdr_col:
         st.markdown("**Live activity from Claude Desktop → rita-cowork MCP server**")
     with btn_col:
-        st.button("🔄 Refresh", key="mcp_refresh", use_container_width=True)
+        st.button("🔄 Refresh", key="mcp_refresh", width="stretch")
 
     log_path = os.path.join(output_dir, "mcp_call_log.csv")
 
@@ -2177,7 +2302,7 @@ def render_mcp_tab(output_dir: str):
             display_df.columns = ["Time", "Tool", "Status", "ms", "Args", "Result"]
             st.dataframe(
                 display_df,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 column_config={
                     "Status": st.column_config.TextColumn(width="small"),
@@ -2200,7 +2325,7 @@ def render_mcp_tab(output_dir: str):
             )
             summary["avg_ms"] = summary["avg_ms"].round(0).astype(int)
             summary.columns = ["Tool", "Calls", "Errors", "Avg ms"]
-            st.dataframe(summary, use_container_width=True, hide_index=True)
+            st.dataframe(summary, width="stretch", hide_index=True)
 
         if error_calls:
             with st.container(border=True):
@@ -2210,7 +2335,7 @@ def render_mcp_tab(output_dir: str):
                 ].head(20).copy()
                 err_df["timestamp"] = err_df["timestamp"].dt.strftime("%H:%M:%S")
                 err_df.columns = ["Time", "Tool", "Error"]
-                st.dataframe(err_df, use_container_width=True, hide_index=True)
+                st.dataframe(err_df, width="stretch", hide_index=True)
 
 
 def render_devops_tab(output_dir: str):
@@ -2239,7 +2364,7 @@ def render_devops_tab(output_dir: str):
             {"Library": "shap",              "Version": shap.__version__},
         ]
         with st.expander("📦 Key Library Versions"):
-            st.dataframe(pd.DataFrame(lib_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(lib_rows), width="stretch", hide_index=True)
     except Exception:
         pass
 
@@ -2251,7 +2376,7 @@ def render_devops_tab(output_dir: str):
 
     with api_col1:
         api_url = st.text_input("API Base URL", value="http://localhost:8000", key="devops_api_url")
-        ping_clicked = st.button("🔄 Ping API", use_container_width=True)
+        ping_clicked = st.button("🔄 Ping API", width="stretch")
 
     with api_col2:
         if ping_clicked:
@@ -2310,7 +2435,7 @@ def render_devops_tab(output_dir: str):
         recent = api_stats.get("recent", [])
         if recent:
             with st.expander("Recent API Requests (last 20)"):
-                st.dataframe(pd.DataFrame(recent), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(recent), width="stretch", hide_index=True)
     else:
         st.info(
             "No API request log found. Start the API server (`python run_api.py`) "
@@ -2327,7 +2452,7 @@ def render_devops_tab(output_dir: str):
     with gh_col1:
         repo = st.text_input("GitHub repo (owner/repo)", value="sangaw/riia-cowork-apr-demo",
                              key="devops_gh_repo")
-        ci_clicked = st.button("🔄 Fetch CI Status", use_container_width=True)
+        ci_clicked = st.button("🔄 Fetch CI Status", width="stretch")
 
     with gh_col2:
         if ci_clicked:
@@ -2354,7 +2479,7 @@ def render_devops_tab(output_dir: str):
                             "Triggered": run.get("event", "?"),
                             "Updated": run.get("updated_at", "")[:16],
                         })
-                    st.dataframe(pd.DataFrame(rows_ci), use_container_width=True, hide_index=True)
+                    st.dataframe(pd.DataFrame(rows_ci), width="stretch", hide_index=True)
                 else:
                     st.caption("No workflow runs found.")
             except Exception as exc:
@@ -2402,7 +2527,7 @@ def render_devops_tab(output_dir: str):
         {"Variable": "NIFTY_CSV_PATH", "Value": CSV_PATH, "Set": "✅" if os.path.exists(CSV_PATH) else "❌ File missing"},
         {"Variable": "OUTPUT_DIR",     "Value": output_dir, "Set": "✅" if os.path.exists(output_dir) else "📁 Will be created"},
     ]
-    st.dataframe(pd.DataFrame(env_rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(env_rows), width="stretch", hide_index=True)
 
 
 def chart_training_progress(output_dir: str):
@@ -2472,7 +2597,7 @@ def chart_card(col, title: str, metrics: list, on_expand, btn_key: str, fig=None
                 preview.update_xaxes(title_text="", showticklabels=False)
                 preview.update_yaxes(title_text="", showticklabels=False)
                 st.plotly_chart(
-                    preview, use_container_width=True,
+                    preview, width="stretch",
                     config={"displayModeBar": False},
                     key=f"{btn_key}_preview",
                 )
@@ -2481,7 +2606,7 @@ def chart_card(col, title: str, metrics: list, on_expand, btn_key: str, fig=None
                     st.metric(item[0], item[1], item[2])
                 else:
                     st.metric(item[0], item[1])
-            if st.button("🔍 Expand", key=btn_key, use_container_width=True):
+            if st.button("🔍 Expand", key=btn_key, width="stretch"):
                 on_expand()
 
 
@@ -2708,6 +2833,66 @@ def render_dashboard(orch: WorkflowOrchestrator, step_results: dict):
                                   delta=f"BnH {perf['benchmark_cagr_pct']:.1f}%", delta_color="off")
                         st.metric("Total Days", str(perf["total_days"]))
 
+        # ── Model Build History ────────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown("#### Model Build History")
+        st.caption("Key parameters and outcomes for each recorded pipeline run.")
+
+        history = TrainingTracker(OUTPUT_DIR).load_history()
+        if history.empty:
+            st.info("No pipeline runs recorded yet. Run the pipeline with 'Record this run to training history' checked.", icon="ℹ️")
+        else:
+            # Summary KPIs
+            trained_runs = history[history["source"] == "trained"]
+            pass_runs    = history[history["backtest_constraints_met"].astype(str).str.lower() == "true"]
+            best_sharpe  = history["backtest_sharpe"].max()
+            latest       = history.iloc[-1]
+
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("Total Runs",      len(history),
+                      f"{len(trained_runs)} trained · {len(history) - len(trained_runs)} re-used")
+            k2.metric("Best Sharpe",     f"{best_sharpe:.3f}",
+                      "✓ target met" if best_sharpe >= 1.0 else "✗ below 1.0")
+            k3.metric("Latest Sharpe",   f"{latest['backtest_sharpe']:.3f}",
+                      latest["timestamp"][:10] if pd.notna(latest["timestamp"]) else "—")
+            k4.metric("Constraints Met", len(pass_runs),
+                      f"{len(history) - len(pass_runs)} failed")
+
+            # Filter toggle
+            trained_only = st.checkbox("Show trained runs only", key="mbh_trained_only")
+            display_df = trained_runs if trained_only else history
+
+            # Build display table — newest first
+            cols_map = {
+                "round":                    "#",
+                "timestamp":                "Timestamp",
+                "source":                   "Source",
+                "timesteps":                "Timesteps",
+                "backtest_sharpe":          "BT Sharpe",
+                "backtest_trade_count":     "Trades",
+                "backtest_mdd_pct":         "Max DD%",
+                "backtest_return_pct":      "Return%",
+                "backtest_cagr_pct":        "CAGR%",
+                "backtest_constraints_met": "Pass",
+                "notes":                    "Notes",
+            }
+            available = [c for c in cols_map if c in display_df.columns]
+            tbl = display_df[available].rename(columns=cols_map).iloc[::-1].reset_index(drop=True)
+
+            # Format numeric columns
+            for col, fmt_str in [("BT Sharpe", "{:.3f}"), ("Max DD%", "{:.2f}"), ("Return%", "{:.2f}"), ("CAGR%", "{:.2f}")]:
+                if col in tbl.columns:
+                    tbl[col] = pd.to_numeric(tbl[col], errors="coerce").map(lambda v: fmt_str.format(v) if pd.notna(v) else "—")
+            if "Timesteps" in tbl.columns:
+                tbl["Timesteps"] = pd.to_numeric(tbl["Timesteps"], errors="coerce").map(
+                    lambda v: f"{int(v):,}" if pd.notna(v) and v > 0 else "—")
+            if "Trades" in tbl.columns:
+                tbl["Trades"] = pd.to_numeric(tbl["Trades"], errors="coerce").map(
+                    lambda v: str(int(v)) if pd.notna(v) and v > 0 else "—")
+
+            st.dataframe(tbl, width="stretch", hide_index=True)
+            st.caption("Trade count captured from the next pipeline run onward (new column). Rows highlighted in blue = trained model.")
+
     # ── 🛡️ Risk View ──────────────────────────────────────────────────────────
     with tab_risk:
         if combined_risk is None:
@@ -2759,7 +2944,7 @@ def render_dashboard(orch: WorkflowOrchestrator, step_results: dict):
                              "Return%":  f"{v.get('total_return_pct', 0):.1f}"}
                             for ph, v in per_phase.items()
                         ]
-                        st.dataframe(pd.DataFrame(rows_ph), use_container_width=True, hide_index=True)
+                        st.dataframe(pd.DataFrame(rows_ph), width="stretch", hide_index=True)
 
     # ── 📊 Trade Journal ──────────────────────────────────────────────────────
     with tab_trade:
@@ -2827,7 +3012,7 @@ def render_dashboard(orch: WorkflowOrchestrator, step_results: dict):
                             st.markdown("**Phase Importance (Overall)**")
                             for ph, df_ph in phase_imp.items():
                                 st.caption(ph)
-                                st.dataframe(df_ph[["Overall"]].head(4), use_container_width=True)
+                                st.dataframe(df_ph[["Overall"]].head(4), width="stretch")
 
     # ── 📉 Training ───────────────────────────────────────────────────────────
     with tab_train:
@@ -2936,7 +3121,7 @@ def render_dashboard(orch: WorkflowOrchestrator, step_results: dict):
 
             # Full history table (collapsed)
             with st.expander("Full training history"):
-                st.dataframe(history, use_container_width=True, hide_index=True)
+                st.dataframe(history, width="stretch", hide_index=True)
                 st.download_button(
                     "⬇ training_history.csv",
                     data=history.to_csv(index=False),
@@ -2962,14 +3147,14 @@ def render_dashboard(orch: WorkflowOrchestrator, step_results: dict):
             data=json.dumps(summary, indent=2, default=str),
             file_name="rita_results.json",
             mime="application/json",
-            use_container_width=True,
+            width="stretch",
         )
         col_b.download_button(
             "⬇ HTML Report",
             data=build_html_report(summary),
             file_name="rita_report.html",
             mime="text/html",
-            use_container_width=True,
+            width="stretch",
         )
 
         if combined_risk is not None:
@@ -2979,14 +3164,14 @@ def render_dashboard(orch: WorkflowOrchestrator, step_results: dict):
                 data=combined_risk.to_csv(),
                 file_name="risk_timeline.csv",
                 mime="text/csv",
-                use_container_width=True,
+                width="stretch",
             )
             col_d.download_button(
                 "⬇ risk_trade_events.csv",
                 data=trades.to_csv(index=False),
                 file_name="risk_trade_events.csv",
                 mime="text/csv",
-                use_container_width=True,
+                width="stretch",
             )
 
         st.divider()
@@ -3007,7 +3192,7 @@ def render_dashboard(orch: WorkflowOrchestrator, step_results: dict):
                 rows.append({"File": f"plots/{fname}", "Size (KB)": round(os.path.getsize(fpath) / 1024, 1)})
 
         if rows:
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
     # ── 🔭 Observability ──────────────────────────────────────────────────────
     with tab_obs:
@@ -3066,12 +3251,21 @@ def run_pipeline(orch: WorkflowOrchestrator, config: dict, progress_slot):
     with st.status(step4_label, expanded=force or not os.path.exists(model_zip)) as s:
         if force or not os.path.exists(model_zip):
             st.write("Training in progress. Please wait...")
-        r = orch.step4_train_model(timesteps=config["timesteps"], force_retrain=force)
+        r = orch.step4_train_model(timesteps=config["timesteps"], force_retrain=force, n_seeds=config.get("n_seeds", 1), model_type=config.get("model_type", "bull"))
         results["step4"] = r
-        val = r["result"]["validation"]
-        source = r["result"].get("source", "trained")
+        # Result structure differs by model_type: bull/bear → r["result"]["validation"]; both → r["result"]["bull"]["validation"]
+        res = r["result"]
+        if "bull" in res and "validation" not in res:
+            # model_type="both"
+            val = res["bull"]["validation"]
+            bear_val = res["bear"]["validation"]
+            label = f"Step 4 ✓ — Bull Sharpe: {val['sharpe_ratio']:.3f} · Bear Sharpe: {bear_val['sharpe_ratio']:.3f}"
+        else:
+            val = res["validation"]
+            source = res.get("source", "trained")
+            label = f"Step 4 ✓ — {'Loaded' if source == 'loaded_existing' else 'Trained'} · Sharpe: {val['sharpe_ratio']:.3f} · MDD: {val['max_drawdown_pct']:.1f}%"
         tick(4)
-        s.update(label=f"Step 4 ✓ — {'Loaded' if source == 'loaded_existing' else 'Trained'} · Sharpe: {val['sharpe_ratio']:.3f} · MDD: {val['max_drawdown_pct']:.1f}%")
+        s.update(label=label)
 
     with st.status("Step 5 — Setting simulation period...", expanded=False) as s:
         r = orch.step5_set_simulation_period(config["sim_start"], config["sim_end"])
@@ -3080,11 +3274,12 @@ def run_pipeline(orch: WorkflowOrchestrator, config: dict, progress_slot):
         s.update(label=f"Step 5 ✓ — {r['result']['start']} → {r['result']['end']}")
 
     with st.status("Step 6 — Running backtest...", expanded=False) as s:
-        r = orch.step6_run_backtest()
+        r = orch.step6_run_backtest(backtest_mode=config.get("backtest_mode", "auto"))
         results["step6"] = r
         perf = r["result"]["performance"]
+        regime_tag = " · Regime-aware" if r["result"].get("regime_aware") else ""
         tick(6)
-        s.update(label=f"Step 6 ✓ — Return: {perf['portfolio_total_return_pct']:.1f}% · Sharpe: {perf['sharpe_ratio']:.3f}")
+        s.update(label=f"Step 6 ✓ — Return: {perf['portfolio_total_return_pct']:.1f}% · Sharpe: {perf['sharpe_ratio']:.3f}{regime_tag}")
 
     with st.status("Step 7 — Generating results, risk arc & plots...", expanded=False) as s:
         r = orch.step7_get_results(
@@ -3315,7 +3510,7 @@ def _render_data_prep_section():
             prep_clicked = st.button(
                 "▶ Prepare Data",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
                 help="Merge files in rita_input/ with the base CSV and save to rita_output/nifty_merged.csv",
             )
         if prep_clicked:
@@ -3389,15 +3584,15 @@ def main():
     build_clicked = btn_build.button(
         "🏗  Build Model Pipeline",
         type="primary",
-        use_container_width=True,
+        width="stretch",
         help="Train a new DDQN model from scratch, then run the full pipeline.",
     )
     reuse_clicked = btn_reuse.button(
         "▶  Re-use Model Pipeline",
-        use_container_width=True,
+        width="stretch",
         help="Skip training — load the existing model and run backtest + results.",
     )
-    reset_clicked = btn_reset.button("↺  Reset", use_container_width=True)
+    reset_clicked = btn_reset.button("↺  Reset", width="stretch")
 
     if reset_clicked:
         st.session_state.step_results = {}

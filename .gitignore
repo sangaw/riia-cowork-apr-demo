@@ -27,3 +27,12 @@ uv.lock
 activate-env.ps1
 .env-name
 config/claude_desktop_config.json
+
+# All data files in rita_input — do not commit
+rita_input/
+
+# Claude Code local memory + session files (contain absolute paths)
+.claude/
+
+# Removed/deprecated dashboard pages
+dashboard/chat.html

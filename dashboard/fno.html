@@ -1,0 +1,1560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RIIA — Portfolio Manager · FnO Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@300;400;500&family=Epilogue:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+:root{
+  --bg:#F5F3EE;--surface:#FFFFFF;--surface2:#F9F8F5;--border:#E4E0D8;--border2:#D0CBBC;
+  --text:#1A1814;--t2:#4A4640;--t3:#8C877A;--t4:#B8B2A6;
+  --p01:#1A6B3C;--p01-bg:#EDF7F2;--p01-bd:#B6DEC9;
+  --p02:#0056B8;--p02-bg:#EDF4FF;--p02-bd:#AECBF5;
+  --p03:#92480A;--p03-bg:#FEF4EB;--p03-bd:#F5C99A;
+  --p04:#6B2FA0;--p04-bg:#F5EFFE;--p04-bd:#CFADF0;
+  --pos:#1A6B3C;--neg:#9B1C1C;--neg-bg:#FEF2F2;--neg-bd:#FCA5A5;
+  --fd:'Epilogue',sans-serif;--fm:'IBM Plex Mono',monospace;--fs:'Instrument Serif',serif;
+  --r:6px;--sh:0 1px 3px rgba(0,0,0,.07),0 1px 2px rgba(0,0,0,.04);
+  --shm:0 4px 12px rgba(0,0,0,.08),0 2px 4px rgba(0,0,0,.05);
+}
+body{background:var(--bg);color:var(--text);font-family:var(--fd);font-size:13px;line-height:1.5;min-height:100vh;}
+.shell{display:grid;grid-template-columns:224px 1fr;grid-template-rows:52px 1fr;min-height:100vh;}
+
+/* ── Topbar ─────────────────────────────────────────────── */
+.topbar{grid-column:1/-1;background:var(--surface);border-bottom:1.5px solid var(--border);display:flex;align-items:center;padding:0 20px;position:sticky;top:0;z-index:200;box-shadow:var(--sh);}
+.logo{display:flex;align-items:center;gap:9px;min-width:206px;text-decoration:none;color:inherit;}
+.logo-icon{width:26px;height:26px;background:var(--text);border-radius:5px;display:flex;align-items:center;justify-content:center;}
+.logo-icon svg{fill:var(--surface);}
+.logo-name{font-family:var(--fs);font-size:16px;letter-spacing:-.01em;}
+.logo-ver{font-family:var(--fm);font-size:10px;color:var(--t3);margin-left:2px;}
+.topbar-mid{flex:1;padding:0 20px;}
+.app-badge{font-family:var(--fm);font-size:10px;font-weight:500;padding:2px 9px;border-radius:4px;background:var(--p04-bg);color:var(--p04);border:1px solid var(--p04-bd);text-transform:uppercase;letter-spacing:.04em;}
+.topbar-right{display:flex;align-items:center;gap:10px;}
+.back-link{font-family:var(--fm);font-size:11px;color:var(--t3);text-decoration:none;display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:var(--r);border:1px solid var(--border);}
+.back-link:hover{color:var(--text);background:var(--surface2);}
+.status-pill{display:flex;align-items:center;gap:6px;font-family:var(--fm);font-size:11px;color:var(--t2);background:var(--surface2);border:1px solid var(--border);border-radius:100px;padding:3px 10px;}
+.status-dot{width:7px;height:7px;border-radius:50%;background:#ccc;flex-shrink:0;}
+.status-dot.ok{background:var(--p01);animation:blink 2s infinite;}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── Sidebar ────────────────────────────────────────────── */
+.sidebar{background:var(--surface);border-right:1.5px solid var(--border);padding:14px 0;overflow-y:auto;display:flex;flex-direction:column;}
+.nav-section{margin-bottom:4px;}
+.nav-label{font-family:var(--fm);font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.1em;color:var(--t4);padding:8px 16px 4px;}
+.nav-item{display:flex;align-items:center;gap:8px;padding:7px 16px;cursor:pointer;font-size:12px;color:var(--t2);transition:background .1s,color .1s;border-left:2px solid transparent;user-select:none;}
+.nav-item:hover{background:var(--surface2);color:var(--text);}
+.nav-item.active{color:var(--text);font-weight:600;}
+.nav-item.active.p01{border-left-color:var(--p01);background:var(--p01-bg);}
+.nav-item.active.p02{border-left-color:var(--p02);background:var(--p02-bg);}
+.nav-item.active.p03{border-left-color:var(--p03);background:var(--p03-bg);}
+.nav-item.active.p04{border-left-color:var(--p04);background:var(--p04-bg);}
+.nav-icon{width:14px;text-align:center;flex-shrink:0;font-size:12px;}
+
+
+.sidebar-footer{margin-top:auto;padding:12px 16px;border-top:1px solid var(--border);}
+.sidebar-footer .lbl{font-family:var(--fm);font-size:10px;color:var(--t4);}
+.sidebar-footer .spot{font-family:var(--fm);font-size:11px;font-weight:500;margin-top:4px;}
+
+/* ── Main ───────────────────────────────────────────────── */
+.main{overflow-y:auto;padding:24px 28px;}
+.section{display:none;}
+.section.active{display:block;}
+
+/* Page header */
+.page-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;}
+.page-title{font-family:var(--fs);font-size:26px;letter-spacing:-.01em;margin-bottom:2px;}
+.page-sub{color:var(--t3);font-size:12px;}
+.phase-tag{display:inline-flex;align-items:center;gap:5px;font-family:var(--fm);font-size:10px;font-weight:500;padding:3px 9px;border-radius:4px;text-transform:uppercase;letter-spacing:.06em;}
+.phase-tag.p01{background:var(--p01-bg);color:var(--p01);border:1px solid var(--p01-bd);}
+.phase-tag.p02{background:var(--p02-bg);color:var(--p02);border:1px solid var(--p02-bd);}
+.phase-tag.p03{background:var(--p03-bg);color:var(--p03);border:1px solid var(--p03-bd);}
+.phase-tag.p04{background:var(--p04-bg);color:var(--p04);border:1px solid var(--p04-bd);}
+
+/* KPI rows */
+.kpi-row{display:grid;gap:14px;margin-bottom:20px;}
+.kpi-row.c3{grid-template-columns:repeat(3,1fr);}
+.kpi-row.c4{grid-template-columns:repeat(4,1fr);}
+.kpi-row.c5{grid-template-columns:repeat(5,1fr);}
+.kpi{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:14px 16px;box-shadow:var(--sh);}
+.kpi-label{font-family:var(--fm);font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;}
+.kpi-value{font-family:var(--fm);font-size:20px;font-weight:500;line-height:1.2;}
+.kpi-value.pos{color:var(--pos);}
+.kpi-value.neg{color:var(--neg);}
+.kpi-value.warn{color:var(--p03);}
+.kpi-sub{font-size:11px;color:var(--t3);margin-top:2px;}
+.kpi-sub.pos{color:var(--pos);}
+.kpi-sub.neg{color:var(--neg);}
+
+/* Market snapshot */
+.mkt-grid{display:grid;gap:14px;margin-bottom:20px;}
+.mkt-grid.c2{grid-template-columns:repeat(2,1fr);}
+.mkt-grid.c1{grid-template-columns:1fr;}
+.mkt-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:16px;box-shadow:var(--sh);}
+.mkt-card.nifty{border-left:4px solid var(--p02);}
+.mkt-card.banknifty{border-left:4px solid var(--p04);}
+.mkt-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.mkt-name{font-family:var(--fs);font-size:18px;}
+.mkt-date{font-family:var(--fm);font-size:10px;color:var(--t3);}
+.mkt-close{font-family:var(--fm);font-size:26px;font-weight:500;margin-bottom:4px;}
+.mkt-chg{font-family:var(--fm);font-size:12px;font-weight:600;}
+.mkt-chg.pos{color:var(--pos);}
+.mkt-chg.neg{color:var(--neg);}
+.mkt-ohlc{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
+.mkt-ohlc-item{text-align:center;}
+.mkt-ohlc-lbl{font-family:var(--fm);font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:.06em;}
+.mkt-ohlc-val{font-family:var(--fm);font-size:12px;font-weight:500;margin-top:2px;}
+.mkt-stats{display:flex;gap:20px;margin-top:8px;font-family:var(--fm);font-size:11px;color:var(--t3);}
+.mkt-range-bar{height:4px;background:var(--border);border-radius:2px;margin:6px 0;position:relative;}
+.mkt-range-fill{position:absolute;height:100%;border-radius:2px;}
+.mkt-range-fill.nifty{background:var(--p02);}
+.mkt-range-fill.banknifty{background:var(--p04);}
+
+/* Cards */
+.card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);box-shadow:var(--sh);margin-bottom:18px;}
+.card-hdr{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);}
+.card-title{font-size:13px;font-weight:600;}
+.card-sub{font-size:11px;color:var(--t3);}
+.card-body{padding:16px;}
+
+/* Tables */
+.tbl-wrap{overflow-x:auto;overflow-y:auto;max-height:260px;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+thead th{font-family:var(--fm);font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--t3);background:var(--surface2);padding:8px 12px;text-align:left;position:sticky;top:0;z-index:1;border-bottom:1px solid var(--border);white-space:nowrap;}
+tbody tr{border-bottom:1px solid var(--border);}
+tbody tr:last-child{border-bottom:none;}
+tbody tr:hover{background:var(--surface2);}
+td{padding:8px 12px;color:var(--t2);white-space:nowrap;}
+td.val{font-family:var(--fm);}
+td.pos{color:var(--pos);font-family:var(--fm);font-weight:500;}
+td.neg{color:var(--neg);font-family:var(--fm);font-weight:500;}
+.tbl-footer{padding:10px 14px;border-top:1.5px solid var(--border);background:var(--surface2);display:flex;gap:20px;flex-wrap:wrap;font-family:var(--fm);font-size:11px;align-items:center;}
+.tbl-footer .lbl{color:var(--t3);}
+.tbl-footer .val{font-weight:600;}
+.tbl-footer .val.pos{color:var(--pos);}
+.tbl-footer .val.neg{color:var(--neg);}
+
+/* Badges */
+.inst-badge{display:inline-flex;font-family:var(--fm);font-size:10px;font-weight:500;padding:2px 7px;border-radius:3px;letter-spacing:.02em;}
+.inst-badge.ce{background:var(--p02-bg);color:var(--p02);border:1px solid var(--p02-bd);}
+.inst-badge.pe{background:var(--neg-bg);color:var(--neg);border:1px solid var(--neg-bd);}
+.inst-badge.fut{background:var(--p01-bg);color:var(--p01);border:1px solid var(--p01-bd);}
+.side-badge{display:inline-flex;font-family:var(--fm);font-size:10px;font-weight:500;padding:2px 7px;border-radius:3px;}
+.side-badge.long{background:var(--p01-bg);color:var(--p01);}
+.side-badge.short{background:var(--neg-bg);color:var(--neg);}
+.exp-badge{display:inline-flex;font-family:var(--fm);font-size:10px;font-weight:500;padding:2px 7px;border-radius:3px;}
+.exp-badge.apr{background:var(--p02-bg);color:var(--p02);}
+.exp-badge.may{background:var(--p04-bg);color:var(--p04);}
+
+/* Filters */
+.filter-row{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;}
+.filter-btn{font-family:var(--fm);font-size:11px;padding:4px 11px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface);color:var(--t2);cursor:pointer;transition:background .1s;}
+.filter-btn.active{background:var(--text);color:var(--surface);border-color:var(--text);}
+.filter-btn:hover:not(.active){background:var(--surface2);}
+
+/* Charts */
+.chart-wrap{position:relative;height:220px;}
+.chart-wrap.tall{height:280px;}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px;}
+
+/* Margin util */
+.util-bar-outer{background:var(--surface2);border-radius:100px;height:16px;overflow:hidden;margin:8px 0;}
+.util-bar{height:100%;border-radius:100px;transition:width .6s ease;}
+.util-bar.low{background:var(--p01);}
+.util-bar.med{background:var(--p03);}
+.util-bar.high{background:var(--neg);}
+.util-legend{display:flex;gap:18px;margin-top:10px;font-size:12px;flex-wrap:wrap;}
+.util-swatch{width:10px;height:10px;border-radius:2px;display:inline-block;}
+
+/* Greeks */
+.greeks-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px;}
+.greek-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:16px;text-align:center;box-shadow:var(--sh);}
+.greek-symbol{font-family:var(--fs);font-size:28px;color:var(--t3);margin-bottom:2px;}
+.greek-name{font-family:var(--fm);font-size:10px;color:var(--t4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;}
+.greek-val{font-family:var(--fm);font-size:20px;font-weight:500;}
+.greek-val.pos{color:var(--pos);}
+.greek-val.neg{color:var(--neg);}
+.greek-sub{font-size:11px;color:var(--t3);margin-top:4px;line-height:1.4;}
+
+/* Stress */
+.scenario-row{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px;}
+.scenario-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:14px 10px;text-align:center;box-shadow:var(--sh);}
+.scenario-card.flat{border-color:var(--border2);background:var(--surface2);}
+.scenario-move{font-family:var(--fm);font-size:10px;color:var(--t3);margin-bottom:4px;}
+.scenario-nifty{font-family:var(--fm);font-size:11px;color:var(--t4);margin-bottom:6px;}
+.scenario-pnl{font-family:var(--fm);font-size:17px;font-weight:600;}
+.scenario-pnl.pos{color:var(--pos);}
+.scenario-pnl.neg{color:var(--neg);}
+
+/* Info notes */
+.info-note{background:var(--p04-bg);border:1px solid var(--p04-bd);border-radius:var(--r);padding:10px 14px;font-size:11px;color:var(--p04);margin-bottom:14px;font-family:var(--fm);}
+.warn-note{background:var(--p03-bg);border:1px solid var(--p03-bd);border-radius:var(--r);padding:10px 14px;font-size:11px;color:var(--p03);margin-bottom:14px;font-family:var(--fm);}
+.section-divider{font-family:var(--fm);font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--t4);padding:14px 0 8px;border-top:1px solid var(--border);margin-top:4px;}
+
+/* Underlying section headers */
+.und-section-hdr{display:flex;align-items:center;gap:10px;margin:18px 0 12px;}
+.und-section-hdr .line{flex:1;height:1px;background:var(--border);}
+.und-section-tag{font-family:var(--fm);font-size:11px;font-weight:600;padding:3px 10px;border-radius:var(--r);}
+.und-section-tag.nifty{background:var(--p02-bg);color:var(--p02);border:1px solid var(--p02-bd);}
+.und-section-tag.banknifty{background:var(--p04-bg);color:var(--p04);border:1px solid var(--p04-bd);}
+
+/* ── Scenario cards ──────────────────────────────────────── */
+.scenario-pair{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px;}
+.scen-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:18px;box-shadow:var(--sh);}
+.scen-card.bull{border-left:4px solid var(--p01);}
+.scen-card.bear{border-left:4px solid var(--neg);}
+.scen-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+.scen-title{font-family:var(--fs);font-size:16px;}
+.scen-badge{font-family:var(--fm);font-size:10px;font-weight:600;padding:2px 9px;border-radius:4px;text-transform:uppercase;letter-spacing:.05em;}
+.scen-badge.bull{background:var(--p01-bg);color:var(--p01);border:1px solid var(--p01-bd);}
+.scen-badge.bear{background:var(--neg-bg);color:var(--neg);border:1px solid var(--neg-bd);}
+.scen-bar-labels{display:flex;justify-content:space-between;font-family:var(--fm);font-size:10px;color:var(--t3);margin-bottom:5px;}
+.scen-bar-wrap{position:relative;margin-bottom:26px;}
+.scen-bar-outer{background:var(--surface2);border-radius:100px;height:12px;overflow:hidden;}
+.scen-bar-fill{height:100%;border-radius:100px;}
+.scen-bar-fill.toward{background:rgba(26,107,60,0.5);}
+.scen-bar-fill.away{background:rgba(146,72,10,0.55);}
+.scen-bar-fill.neutral{background:rgba(0,86,184,0.28);}
+.scen-bar-marker{position:absolute;width:3px;height:20px;top:-4px;border-radius:2px;transform:translateX(-50%);z-index:1;}
+.scen-bar-marker.toward{background:var(--p01);}
+.scen-bar-marker.away{background:var(--p03);}
+.scen-bar-marker.neutral{background:var(--p02);}
+.scen-bar-current{position:absolute;font-family:var(--fm);font-size:9px;font-weight:600;top:16px;transform:translateX(-50%);white-space:nowrap;}
+.scen-bar-current.toward{color:var(--p01);}
+.scen-bar-current.away{color:var(--p03);}
+.scen-bar-current.neutral{color:var(--p02);}
+.scen-progress{font-family:var(--fm);font-size:11px;color:var(--t3);margin-bottom:12px;text-align:center;}
+.scen-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
+.scen-stat{text-align:center;background:var(--surface2);border-radius:var(--r);padding:10px 6px;}
+.scen-stat-lbl{font-family:var(--fm);font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;}
+.scen-stat-val{font-family:var(--fm);font-size:14px;font-weight:600;}
+.scen-impact{border-top:1px solid var(--border);padding-top:12px;}
+.scen-impact-row{display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:4px 0;}
+.scen-impact-lbl{color:var(--t3);font-family:var(--fm);}
+
+/* ── Bull / Bear view grid ───────────────────────────── */
+.rr-view-hdr{display:flex;align-items:center;gap:10px;margin:18px 0 12px;}
+.rr-view-tag{font-family:var(--fm);font-size:11px;font-weight:600;padding:3px 12px;border-radius:var(--r);white-space:nowrap;letter-spacing:.03em;}
+.rr-view-tag.bull{background:var(--p01-bg);color:var(--p01);border:1px solid var(--p01-bd);}
+.rr-view-tag.bear{background:var(--neg-bg);color:var(--neg);border:1px solid var(--neg-bd);}
+.rr-view-grid{display:grid;grid-template-columns:2fr 3fr;gap:18px;margin-bottom:4px;align-items:start;}
+
+/* ── Topbar underlying pills ──────────────────────────── */
+.und-pills{display:flex;gap:4px;align-items:center;}
+.und-pill{font-family:var(--fm);font-size:11px;font-weight:500;padding:4px 12px;border-radius:100px;border:1px solid var(--border);background:var(--surface);color:var(--t2);cursor:pointer;transition:background .1s,color .1s,border-color .1s;white-space:nowrap;}
+.und-pill:hover:not(.active){background:var(--surface2);}
+.und-pill.active.all{background:var(--text);color:var(--surface);border-color:var(--text);}
+.und-pill.active.nifty{background:var(--p02-bg);color:var(--p02);border-color:var(--p02-bd);font-weight:600;}
+.und-pill.active.banknifty{background:var(--p04-bg);color:var(--p04);border-color:var(--p04-bd);font-weight:600;}
+.topbar-divider{width:1px;height:20px;background:var(--border);margin:0 4px;}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- ── Topbar ──────────────────────────────────────────────── -->
+<div class="topbar">
+  <a href="/dashboard/" class="logo">
+    <div class="logo-icon">
+      <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 1.8L13.5 6 8 9.2 2.5 6 8 2.8zM2 7.1l5.5 3.2v3.9L2 11V7.1zm7.5 7.1v-3.9L15 7.1V11l-5.5 3.2z"/></svg>
+    </div>
+    <span class="logo-name">RIIA</span>
+    <span class="logo-ver">v1.0.0</span>
+  </a>
+  <div class="topbar-mid">
+    <span class="app-badge">Portfolio Manager · FnO Tracker</span>
+  </div>
+  <div class="topbar-right">
+    <div class="und-pills">
+      <button class="und-pill active all" onclick="setUnderlying('ALL',this)">All</button>
+      <button class="und-pill nifty" onclick="setUnderlying('NIFTY',this)">NIFTY</button>
+      <button class="und-pill banknifty" onclick="setUnderlying('BANKNIFTY',this)">BANKNIFTY</button>
+    </div>
+    <div class="topbar-divider"></div>
+    <a href="/dashboard/" class="back-link">
+      <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M7 2L3.5 5.5 7 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      Home
+    </a>
+    <div class="status-pill">
+      <span class="status-dot ok" id="sdot"></span>
+      <span id="stxt">Checking...</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Sidebar ─────────────────────────────────────────────── -->
+<div class="sidebar">
+  <div class="nav-section">
+    <div class="nav-label">Pages</div>
+    <div class="nav-item p01 active" data-page="overview">
+      <span class="nav-icon">◈</span> Dashboard
+    </div>
+    <div class="nav-item p02" data-page="positions">
+      <span class="nav-icon">≡</span> Positions
+    </div>
+    <div class="nav-item p03" data-page="margin">
+      <span class="nav-icon">◎</span> Margin Tracker
+    </div>
+    <div class="nav-item p04" data-page="risk">
+      <span class="nav-icon">⬡</span> Risk &amp; Greeks
+    </div>
+    <div class="nav-item p01" data-page="scenarios">
+      <span class="nav-icon">↔</span> Risk-Reward
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="lbl">Portfolio Manager v1.0</div>
+    <div class="lbl" id="sidebar-as-of" style="margin-top:2px;">Loading...</div>
+    <div class="spot" id="spot-nifty" style="color:var(--p02);">NIFTY  —</div>
+    <div class="spot" id="spot-banknifty" style="color:var(--p04);">BNKN  —</div>
+  </div>
+</div>
+
+<!-- ── Main ───────────────────────────────────────────────── -->
+<div class="main">
+
+  <!-- ═══════════════════════════════════════════════
+       DASHBOARD
+  ════════════════════════════════════════════════ -->
+  <div class="section active" id="page-overview">
+    <div class="page-hdr">
+      <div>
+        <div class="page-title">Dashboard</div>
+      </div>
+      <span class="phase-tag p01">Overview</span>
+    </div>
+
+    <!-- KPIs — updated by setUnderlying() -->
+    <div class="kpi-row c5" id="dash-kpis"></div>
+
+    <!-- Market Snapshot — updated by setUnderlying() -->
+    <div class="mkt-grid" id="mkt-grid"></div>
+
+    <div class="two-col">
+      <div class="card">
+        <div class="card-hdr">
+          <span class="card-title" id="seg-chart-title">P&amp;L by Expiry Segment</span>
+          <span class="card-sub">Unrealized + realized</span>
+        </div>
+        <div class="card-body">
+          <div class="chart-wrap"><canvas id="segment-chart"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-hdr">
+          <span class="card-title">Top Movers</span>
+          <span class="card-sub" id="movers-sub">All underlyings</span>
+        </div>
+        <div class="card-body" style="padding:0">
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Instrument</th><th>Exp</th><th>Side</th><th>P&amp;L</th></tr></thead>
+              <tbody id="movers-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title" id="pnl-chart-title">P&amp;L by Underlying</span>
+        <span class="card-sub">NIFTY vs BANKNIFTY, APR vs MAY</span>
+      </div>
+      <div class="card-body">
+        <div class="chart-wrap"><canvas id="underlying-chart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       POSITIONS
+  ════════════════════════════════════════════════ -->
+  <div class="section" id="page-positions">
+    <div class="page-hdr">
+      <div>
+        <div class="page-title">Positions</div>
+        <div class="page-sub" id="pos-page-sub">20 active · 8 closed</div>
+      </div>
+      <span class="phase-tag p02">Track</span>
+    </div>
+
+    <div class="kpi-row c4" id="pos-kpis"></div>
+
+    <div class="filter-row" id="pos-filter-row">
+      <button class="filter-btn active" onclick="filterPos('ALL',this)">All</button>
+      <button class="filter-btn" onclick="filterPos('APR',this)">APR</button>
+      <button class="filter-btn" onclick="filterPos('MAY',this)">MAY</button>
+      <button class="filter-btn" onclick="filterPos('FUT',this)">Futures</button>
+      <button class="filter-btn" onclick="filterPos('CE',this)">Call (CE)</button>
+      <button class="filter-btn" onclick="filterPos('PE',this)">Put (PE)</button>
+    </div>
+
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title">Active Positions</span>
+        <span class="card-sub" id="pos-count-lbl">20 positions</span>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th>Instrument</th><th>Exp</th><th>Type</th><th>Strike</th>
+              <th>Side</th><th>Qty</th><th>Avg</th><th>LTP</th>
+              <th>Chg %</th><th>P&amp;L</th>
+            </tr></thead>
+            <tbody id="pos-tbody"></tbody>
+          </table>
+        </div>
+        <div class="tbl-footer">
+          <span class="lbl">Net Unrealized:</span>
+          <span class="val" id="pos-total">—</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider">Closed Positions — APR 2026 &amp; Legacy</div>
+    <div class="info-note">Expired / closed trades. P&amp;L is realized and booked.</div>
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title">Closed Positions</span>
+        <span class="card-sub" id="closed-card-sub">Realized P&amp;L: —</span>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Instrument</th><th>Expiry</th><th>Type</th><th>Strike</th><th>Realized P&amp;L</th></tr></thead>
+            <tbody id="closed-tbody"></tbody>
+          </table>
+        </div>
+        <div class="tbl-footer">
+          <span class="lbl">Total Realized:</span><span class="val pos" id="closed-total">—</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       MARGIN TRACKER
+  ════════════════════════════════════════════════ -->
+  <div class="section" id="page-margin">
+    <div class="page-hdr">
+      <div>
+        <div class="page-title">Margin Tracker</div>
+        <div class="page-sub">SPAN + Exposure margin · Estimated utilization</div>
+      </div>
+      <span class="phase-tag p03">Margins</span>
+    </div>
+
+    <div class="warn-note">Margin figures are estimated based on standard NSFO SPAN rates. Actual margin may vary with cross-margining benefits from your broker.</div>
+
+    <div class="kpi-row c4" id="margin-kpis"></div>
+
+    <div class="card" id="margin-util-card"></div>
+
+    <!-- NIFTY Margin Table -->
+    <div id="nifty-margin-section">
+      <div class="und-section-hdr">
+        <span class="und-section-tag nifty">NIFTY</span>
+        <div class="line"></div>
+      </div>
+      <div class="card">
+        <div class="card-hdr">
+          <span class="card-title">NIFTY — Futures &amp; Short Options Margin</span>
+          <span class="card-sub">Long options: premium paid, no additional margin</span>
+        </div>
+        <div class="card-body" style="padding:0">
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Instrument</th><th>Exp</th><th>Type</th><th>Side</th><th>Qty</th><th>SPAN (Est.)</th><th>Exposure (Est.)</th><th>Total (Est.)</th></tr></thead>
+              <tbody id="nifty-margin-tbody"></tbody>
+            </table>
+          </div>
+          <div class="tbl-footer" id="nifty-margin-footer"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BANKNIFTY Margin Table -->
+    <div id="banknifty-margin-section">
+      <div class="und-section-hdr">
+        <span class="und-section-tag banknifty">BANKNIFTY</span>
+        <div class="line"></div>
+      </div>
+      <div class="card">
+        <div class="card-hdr">
+          <span class="card-title">BANKNIFTY — Futures &amp; Short Options Margin</span>
+          <span class="card-sub">Long options: premium paid, no additional margin</span>
+        </div>
+        <div class="card-body" style="padding:0">
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Instrument</th><th>Exp</th><th>Type</th><th>Side</th><th>Qty</th><th>SPAN (Est.)</th><th>Exposure (Est.)</th><th>Total (Est.)</th></tr></thead>
+              <tbody id="bnkn-margin-tbody"></tbody>
+            </table>
+          </div>
+          <div class="tbl-footer" id="bnkn-margin-footer"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title" id="margin-chart-title">Margin by Category</span>
+        <span class="card-sub">SPAN vs Exposure — estimated</span>
+      </div>
+      <div class="card-body">
+        <div class="chart-wrap"><canvas id="margin-chart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       RISK & GREEKS
+  ════════════════════════════════════════════════ -->
+  <div class="section" id="page-risk">
+    <div class="page-hdr">
+      <div>
+        <div class="page-title">Risk &amp; Greeks</div>
+        <div class="page-sub">Portfolio Greeks · Stress scenarios · Payoff sensitivity</div>
+      </div>
+      <span class="phase-tag p04">Risk</span>
+    </div>
+
+    <div class="info-note" id="risk-info-note">Greeks are approximate Black-Scholes estimates at current spot. Actual values from broker API recommended for live trading decisions.</div>
+
+    <!-- NIFTY Greeks -->
+    <div id="nifty-risk-section">
+      <div class="und-section-hdr">
+        <span class="und-section-tag nifty">NIFTY</span>
+        <div class="line"></div>
+      </div>
+      <div class="greeks-grid" id="nifty-greeks-grid"></div>
+    </div>
+
+    <!-- BANKNIFTY Greeks -->
+    <div id="banknifty-risk-section">
+      <div class="und-section-hdr">
+        <span class="und-section-tag banknifty">BANKNIFTY</span>
+        <div class="line"></div>
+      </div>
+      <div class="greeks-grid" id="bnkn-greeks-grid"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title">Stress Scenarios</span>
+        <span class="card-sub" id="stress-card-sub">Estimated portfolio P&amp;L for index moves</span>
+      </div>
+      <div class="card-body">
+        <div class="scenario-row" id="stress-row"></div>
+        <!-- Payoff charts: side-by-side (ALL), or single (NIFTY/BANKNIFTY) -->
+        <div id="payoff-charts-grid" style="display:grid;gap:18px;margin-top:4px;">
+          <div id="payoff-nifty-wrap">
+            <div style="font-family:var(--fm);font-size:10px;font-weight:500;color:var(--p02);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">NIFTY Payoff at Expiry</div>
+            <div class="chart-wrap tall"><canvas id="payoff-chart"></canvas></div>
+          </div>
+          <div id="payoff-bnkn-wrap">
+            <div style="font-family:var(--fm);font-size:10px;font-weight:500;color:var(--p04);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">BANKNIFTY Payoff at Expiry</div>
+            <div class="chart-wrap tall"><canvas id="payoff-chart-bnkn"></canvas></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title">Per-Position Greeks</span>
+        <span class="card-sub" id="greeks-table-sub">All positions</span>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Instrument</th><th>Underlying</th><th>Exp</th><th>Type</th><th>Side</th><th>Delta</th><th>Theta/day</th><th>Vega</th><th>IV%</th></tr></thead>
+            <tbody id="greeks-tbody"></tbody>
+          </table>
+        </div>
+        <div class="tbl-footer" id="greeks-footer"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       RISK-REWARD
+  ════════════════════════════════════════════════ -->
+  <div class="section" id="page-scenarios">
+    <div class="page-hdr">
+      <div>
+        <div class="page-title">Risk-Reward</div>
+        <div class="page-sub">Bull &amp; Bear scenario tracking · Portfolio groups · Daily progress</div>
+      </div>
+      <span class="phase-tag p01">Risk-Reward</span>
+    </div>
+
+    <!-- Summary table at top -->
+    <div class="card" id="scen-summary-card" style="margin-bottom:20px;"></div>
+
+    <div class="info-note">Portfolio impact uses first-order delta approximation (Δ × price move). Gamma/vega not captured. Bull bets = FUT Long · CE Long · PE Short &nbsp;·&nbsp; Bear bets = FUT Short · CE Short · PE Long.</div>
+
+    <!-- NIFTY section -->
+    <div id="nifty-scen-section">
+      <div class="und-section-hdr">
+        <span class="und-section-tag nifty">NIFTY</span>
+        <div class="line"></div>
+      </div>
+      <div id="nifty-rr-kpis"></div>
+      <div id="nifty-rr-views"></div>
+    </div>
+
+    <!-- BANKNIFTY section -->
+    <div id="banknifty-scen-section">
+      <div class="und-section-hdr">
+        <span class="und-section-tag banknifty">BANKNIFTY</span>
+        <div class="line"></div>
+      </div>
+      <div id="banknifty-rr-kpis"></div>
+      <div id="banknifty-rr-views"></div>
+    </div>
+
+    <!-- Daily history -->
+    <div id="rr-history"></div>
+  </div>
+
+</div><!-- /main -->
+</div><!-- /shell -->
+
+<script>
+// ── API key (set to match PORTFOLIO_API_KEY env var if configured) ────────────
+// Leave empty string for local dev where the env var is not set.
+const RITA_API_KEY = '';
+
+// ── Global data (populated from API on init) ──────────────
+let marketData     = {};
+let positions      = [];
+let greeksData     = [];
+let closedPositions = [];
+let realizedPnl    = 0;
+let portDelta      = {};
+let netGreeks      = {};
+let scenarioLevels = {};
+let marginData     = {};
+let stressData     = [];
+let payoffData     = {};
+
+// ── Global state ──────────────────────────────────────────
+let currentUnd = 'ALL';
+let currentPosFilter = 'ALL';
+
+// ── API loader ────────────────────────────────────────────
+async function initApp() {
+  try {
+    const resp = await fetch('/api/v1/portfolio/summary',
+      RITA_API_KEY ? { headers: { 'X-API-Key': RITA_API_KEY } } : {});
+    if (!resp.ok) throw new Error(`API ${resp.status}`);
+    const d = await resp.json();
+
+    marketData      = d.market || {};
+    positions       = d.positions || [];
+    greeksData      = d.greeks || [];
+    closedPositions = d.closed_positions || [];
+    realizedPnl     = d.realized_pnl || 0;
+    portDelta       = d.net_delta || {};
+    netGreeks       = d.net_greeks || {};
+    scenarioLevels  = d.scenario_levels || {};
+    marginData      = d.margin || {};
+    stressData      = d.stress || [];
+    payoffData      = d.payoff || {};
+
+    // Update sidebar
+    const asOf = d.as_of || '';
+    document.getElementById('sidebar-as-of').textContent = asOf ? `As of ${asOf}` : '';
+    const nClose = (marketData.NIFTY||{}).close;
+    const bClose = (marketData.BANKNIFTY||{}).close;
+    if (nClose) document.getElementById('spot-nifty').textContent =
+      `NIFTY  ${nClose.toLocaleString('en-IN',{minimumFractionDigits:2})}`;
+    if (bClose) document.getElementById('spot-banknifty').textContent =
+      `BNKN  ${bClose.toLocaleString('en-IN',{minimumFractionDigits:2})}`;
+
+    // Update info note with actual spot
+    const nSpot = nClose ? nClose.toLocaleString('en-IN',{minimumFractionDigits:0}) : '—';
+    const bSpot = bClose ? bClose.toLocaleString('en-IN',{minimumFractionDigits:0}) : '—';
+    document.getElementById('risk-info-note').textContent =
+      `Greeks are approximate Black-Scholes estimates at current spot (NIFTY ~${nSpot} · BANKNIFTY ~${bSpot}). Actual values from broker API recommended for live trading decisions.`;
+
+  } catch (e) {
+    console.error('Portfolio API error:', e);
+    document.getElementById('sidebar-as-of').textContent = 'API error — check server';
+  }
+
+  // Render all sections
+  saveToday();
+  renderDashboard();
+  renderPositionsKpis();
+  renderPositionsTable();
+  renderClosedPositions();
+  renderMarginKpis();
+  updateMarginSections();
+  renderMarginTables();
+  updateRiskSections();
+  renderGreeksCards();
+  renderGreeksTable();
+  renderStressScenarios();
+  renderScenarios();
+  renderPayoffChart();
+}
+
+// Chart references
+let segChart = null, undChart = null, marginChart = null, payoffChart = null, payoffChartBnkn = null;
+
+// ── Helpers ───────────────────────────────────────────────
+function fmt(n) { return Math.abs(n).toLocaleString('en-IN',{minimumFractionDigits:0,maximumFractionDigits:2}); }
+function fmtPnl(n) { return n>=0 ? `+₹${fmt(n)}` : `−₹${fmt(Math.abs(n))}`; }
+function pnlClass(n) { return n>=0 ? 'pos' : 'neg'; }
+
+// ── Navigation ────────────────────────────────────────────
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    item.classList.add('active');
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.getElementById('page-' + item.dataset.page).classList.add('active');
+  });
+});
+
+// ── Underlying selector ───────────────────────────────────
+function setUnderlying(und, btn) {
+  currentUnd = und;
+  document.querySelectorAll('.und-pill').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderDashboard();
+  renderPositionsKpis();
+  renderPositionsTable();
+  renderClosedPositions();
+  renderMarginKpis();
+  updateMarginSections();
+  renderMarginTables();
+  updateRiskSections();
+  renderGreeksCards();
+  renderGreeksTable();
+  renderStressScenarios();
+  renderPayoffChart();
+  renderScenarios();
+}
+
+// ── DASHBOARD ─────────────────────────────────────────────
+function renderDashboard() {
+  renderDashKpis();
+  renderMarketSnapshot();
+  renderSegmentChart();
+  renderUnderlyingChart();
+  renderMovers();
+}
+
+function renderDashKpis() {
+  const filtered   = currentUnd==='ALL' ? positions : positions.filter(p=>p.und===currentUnd);
+  const unreal     = filtered.reduce((s,p)=>s+p.pnl, 0);
+  const realized   = currentUnd==='BANKNIFTY' ? 0 : realizedPnl;
+  const net        = unreal + realized;
+  const netDelta   = currentUnd==='ALL'
+    ? Object.values(portDelta).reduce((s,v)=>s+v,0)
+    : (portDelta[currentUnd] || 0);
+  const nCnt  = positions.filter(p=>p.und==='NIFTY').length;
+  const bCnt  = positions.filter(p=>p.und==='BANKNIFTY').length;
+  const subLine = currentUnd==='ALL' ? `${nCnt} NIFTY · ${bCnt} BANKNIFTY`
+                : `${filtered.length} ${currentUnd} positions`;
+  const closedCnt = closedPositions.filter(p=>currentUnd==='ALL'||p.underlying===currentUnd).length;
+
+  document.getElementById('dash-kpis').innerHTML = `
+    <div class="kpi"><div class="kpi-label">Active Positions</div><div class="kpi-value">${filtered.length}</div><div class="kpi-sub">${subLine}</div></div>
+    <div class="kpi"><div class="kpi-label">Unrealized P&amp;L</div><div class="kpi-value ${pnlClass(unreal)}">${fmtPnl(unreal)}</div><div class="kpi-sub">Open positions</div></div>
+    <div class="kpi"><div class="kpi-label">Realized P&amp;L</div><div class="kpi-value ${pnlClass(realized)}">${fmtPnl(realized)}</div><div class="kpi-sub ${realized>0?'pos':''}">${currentUnd==='BANKNIFTY'?'No closed BANKNIFTY trades':`${closedCnt} closed trades`}</div></div>
+    <div class="kpi"><div class="kpi-label">Net P&amp;L</div><div class="kpi-value ${pnlClass(net)}">${fmtPnl(net)}</div><div class="kpi-sub">Realized + Unrealized</div></div>
+    <div class="kpi"><div class="kpi-label">Net Delta</div><div class="kpi-value ${netDelta<0?'neg':'pos'}">${netDelta>0?'+':''}${netDelta}</div><div class="kpi-sub ${netDelta<0?'neg':'pos'}">${netDelta<0?'Net short / bearish':'Net long / bullish'}</div></div>
+  `;
+}
+
+function renderMarketSnapshot() {
+  const grid = document.getElementById('mkt-grid');
+  const underlyings = currentUnd === 'ALL' ? ['NIFTY','BANKNIFTY'] :
+                      currentUnd === 'NIFTY' ? ['NIFTY'] : ['BANKNIFTY'];
+  grid.className = `mkt-grid ${underlyings.length===1?'c1':'c2'}`;
+
+  grid.innerHTML = underlyings.map(u => {
+    const d        = marketData[u];
+    const dayChg   = parseFloat(d.chgFromOpen);          // open → close
+    const prevChg  = d.chgFromPrev != null ? parseFloat(d.chgFromPrev) : null;  // prev close → close
+    const range    = d.high - d.low;
+    const rangePct = Math.round(((d.close - d.low) / (d.high - d.low)) * 100);
+    const prevPts  = prevChg != null ? (d.close - d.prevClose).toFixed(2) : null;
+    const dayPts   = (d.close - d.open).toFixed(2);
+    const prevLine = prevChg != null
+      ? `<div class="mkt-chg ${prevChg>=0?'pos':'neg'}" style="margin-top:2px;">
+           ${prevChg>=0?'▲ +':'▼ '}${Math.abs(prevChg).toFixed(2)}% vs prev close
+           &nbsp;<span style="font-weight:400;opacity:.75">(${prevChg>=0?'+':''}${prevPts} pts · prev ${d.prevClose.toLocaleString('en-IN',{minimumFractionDigits:2})})</span>
+         </div>`
+      : '';
+    return `<div class="mkt-card ${u.toLowerCase()}">
+      <div class="mkt-hdr">
+        <span class="mkt-name">${u==='BANKNIFTY'?'BANK NIFTY':u}</span>
+        <span class="mkt-date">${d.date}</span>
+      </div>
+      <div class="mkt-close">${d.close.toLocaleString('en-IN',{minimumFractionDigits:2})}</div>
+      ${prevLine}
+      <div class="mkt-chg ${dayChg>=0?'pos':'neg'}" style="margin-top:2px;">
+        ${dayChg>=0?'▲ +':'▼ '}${Math.abs(dayChg).toFixed(2)}% day move
+        &nbsp;<span style="font-weight:400;opacity:.75">(${dayChg>=0?'+':''}${dayPts} pts · open ${d.open.toLocaleString('en-IN',{minimumFractionDigits:2})})</span>
+      </div>
+      <div class="mkt-range-bar" style="margin-top:8px;"><div class="mkt-range-fill ${u.toLowerCase()}" style="left:0;width:${rangePct}%;"></div></div>
+      <div class="mkt-ohlc">
+        <div class="mkt-ohlc-item"><div class="mkt-ohlc-lbl">Open</div><div class="mkt-ohlc-val">${d.open.toLocaleString('en-IN',{minimumFractionDigits:2})}</div></div>
+        <div class="mkt-ohlc-item"><div class="mkt-ohlc-lbl">High</div><div class="mkt-ohlc-val" style="color:var(--pos)">${d.high.toLocaleString('en-IN',{minimumFractionDigits:2})}</div></div>
+        <div class="mkt-ohlc-item"><div class="mkt-ohlc-lbl">Low</div><div class="mkt-ohlc-val" style="color:var(--neg)">${d.low.toLocaleString('en-IN',{minimumFractionDigits:2})}</div></div>
+        <div class="mkt-ohlc-item"><div class="mkt-ohlc-lbl">Close</div><div class="mkt-ohlc-val">${d.close.toLocaleString('en-IN',{minimumFractionDigits:2})}</div></div>
+      </div>
+      <div class="mkt-stats">
+        <span>Range: ${range.toFixed(2)} pts</span>
+        <span>Vol: ${d.shares}</span>
+        <span>T/O: ₹${d.turnover} Cr</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderSegmentChart() {
+  const sumPnl = (und, exp) => positions
+    .filter(p=>(und==='ALL'||p.und===und)&&(exp==='ALL'||p.exp===exp))
+    .reduce((s,p)=>s+p.pnl, 0);
+
+  let labels, data;
+  if (currentUnd === 'NIFTY') {
+    labels = ['NIFTY APR','Realized','NIFTY MAY'];
+    data   = [sumPnl('NIFTY','APR'), realizedPnl, sumPnl('NIFTY','MAY')];
+  } else if (currentUnd === 'BANKNIFTY') {
+    labels = ['BANKNIFTY APR','BANKNIFTY MAY'];
+    data   = [sumPnl('BANKNIFTY','APR'), sumPnl('BANKNIFTY','MAY')];
+  } else {
+    labels = ['NIFTY APR','Realized','BNKN APR','NIFTY MAY','BNKN MAY'];
+    data   = [sumPnl('NIFTY','APR'), realizedPnl, sumPnl('BANKNIFTY','APR'), sumPnl('NIFTY','MAY'), sumPnl('BANKNIFTY','MAY')];
+  }
+
+  const colors = data.map(v => v>=0 ? 'rgba(26,107,60,0.75)' : 'rgba(155,28,28,0.75)');
+  const borders = data.map(v => v>=0 ? '#1A6B3C' : '#9B1C1C');
+
+  if (segChart) segChart.destroy();
+  segChart = new Chart(document.getElementById('segment-chart'), {
+    type:'bar',
+    data:{labels, datasets:[{label:'P&L (₹)',data,backgroundColor:colors,borderColor:borders,borderWidth:1.5,borderRadius:4}]},
+    options:{
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:d=>fmtPnl(d.raw)}}},
+      scales:{
+        x:{grid:{color:'rgba(0,0,0,.05)'},ticks:{font:{family:'IBM Plex Mono',size:10},callback:v=>`₹${(v/1000).toFixed(0)}K`}},
+        y:{grid:{display:false},ticks:{font:{family:'IBM Plex Mono',size:11}}}
+      }
+    }
+  });
+}
+
+function renderUnderlyingChart() {
+  const sumPnl = (und, exp) => positions
+    .filter(p=>p.und===und&&p.exp===exp).reduce((s,p)=>s+p.pnl, 0);
+  let labels, data;
+  if (currentUnd === 'NIFTY') {
+    labels = ['NIFTY APR','NIFTY MAY'];
+    data   = [sumPnl('NIFTY','APR'), sumPnl('NIFTY','MAY')];
+  } else if (currentUnd === 'BANKNIFTY') {
+    labels = ['BANKNIFTY APR','BANKNIFTY MAY'];
+    data   = [sumPnl('BANKNIFTY','APR'), sumPnl('BANKNIFTY','MAY')];
+  } else {
+    labels = ['NIFTY APR','NIFTY MAY','BANKNIFTY APR','BANKNIFTY MAY'];
+    data   = [sumPnl('NIFTY','APR'), sumPnl('NIFTY','MAY'), sumPnl('BANKNIFTY','APR'), sumPnl('BANKNIFTY','MAY')];
+  }
+  const colors = data.map(v=>v>=0?'rgba(26,107,60,0.72)':'rgba(155,28,28,0.72)');
+  const borders = data.map(v=>v>=0?'#1A6B3C':'#9B1C1C');
+
+  if (undChart) undChart.destroy();
+  undChart = new Chart(document.getElementById('underlying-chart'), {
+    type:'bar',
+    data:{labels,datasets:[{label:'Unrealized P&L',data,backgroundColor:colors,borderColor:borders,borderWidth:1.5,borderRadius:4}]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:d=>fmtPnl(d.raw)}}},
+      scales:{
+        x:{grid:{display:false},ticks:{font:{family:'IBM Plex Mono',size:11}}},
+        y:{grid:{color:'rgba(0,0,0,.05)'},ticks:{font:{family:'IBM Plex Mono',size:10},callback:v=>`₹${(v/1000).toFixed(0)}K`}}
+      }
+    }
+  });
+}
+
+function renderMovers() {
+  const filtered = currentUnd==='ALL' ? positions : positions.filter(p=>p.und===currentUnd);
+  const sorted = [...filtered].sort((a,b)=>b.pnl-a.pnl);
+  const top3 = sorted.slice(0,3);
+  const bot3 = sorted.slice(-3).reverse();
+  document.getElementById('movers-sub').textContent = currentUnd==='ALL'?'All underlyings':currentUnd+' positions';
+  document.getElementById('movers-tbody').innerHTML = [
+    ...top3.map(p=>`<tr><td>${p.full}</td><td><span class="exp-badge ${p.exp.toLowerCase()}">${p.exp}</span></td><td><span class="side-badge ${p.side.toLowerCase()}">${p.side}</span></td><td class="pos">${fmtPnl(p.pnl)}</td></tr>`),
+    `<tr><td colspan="4" style="padding:2px 12px;"><div style="border-top:1.5px dashed var(--border2);"></div></td></tr>`,
+    ...bot3.map(p=>`<tr><td>${p.full}</td><td><span class="exp-badge ${p.exp.toLowerCase()}">${p.exp}</span></td><td><span class="side-badge ${p.side.toLowerCase()}">${p.side}</span></td><td class="neg">${fmtPnl(p.pnl)}</td></tr>`)
+  ].join('');
+}
+
+// ── POSITIONS ─────────────────────────────────────────────
+function renderPositionsKpis() {
+  const byExp = (und, exp) => positions.filter(p=>(und==='ALL'||p.und===und)&&p.exp===exp).reduce((s,p)=>s+p.pnl,0);
+  const cntExp = (und, exp) => positions.filter(p=>(und==='ALL'||p.und===und)&&p.exp===exp).length;
+  if (currentUnd === 'ALL') {
+    document.getElementById('pos-kpis').className = 'kpi-row c4';
+    document.getElementById('pos-kpis').innerHTML = `
+      <div class="kpi"><div class="kpi-label">NIFTY APR</div><div class="kpi-value ${pnlClass(byExp('NIFTY','APR'))}">${fmtPnl(byExp('NIFTY','APR'))}</div><div class="kpi-sub">${cntExp('NIFTY','APR')} positions</div></div>
+      <div class="kpi"><div class="kpi-label">NIFTY MAY</div><div class="kpi-value ${pnlClass(byExp('NIFTY','MAY'))}">${fmtPnl(byExp('NIFTY','MAY'))}</div><div class="kpi-sub">${cntExp('NIFTY','MAY')} positions</div></div>
+      <div class="kpi"><div class="kpi-label">BANKNIFTY APR</div><div class="kpi-value ${pnlClass(byExp('BANKNIFTY','APR'))}">${fmtPnl(byExp('BANKNIFTY','APR'))}</div><div class="kpi-sub">${cntExp('BANKNIFTY','APR')} positions</div></div>
+      <div class="kpi"><div class="kpi-label">BANKNIFTY MAY</div><div class="kpi-value ${pnlClass(byExp('BANKNIFTY','MAY'))}">${fmtPnl(byExp('BANKNIFTY','MAY'))}</div><div class="kpi-sub">${cntExp('BANKNIFTY','MAY')} positions</div></div>`;
+  } else if (currentUnd === 'NIFTY') {
+    const apr = byExp('NIFTY','APR'), may = byExp('NIFTY','MAY'), tot = apr+may;
+    document.getElementById('pos-kpis').className = 'kpi-row c4';
+    document.getElementById('pos-kpis').innerHTML = `
+      <div class="kpi"><div class="kpi-label">NIFTY APR</div><div class="kpi-value ${pnlClass(apr)}">${fmtPnl(apr)}</div><div class="kpi-sub">${cntExp('NIFTY','APR')} positions</div></div>
+      <div class="kpi"><div class="kpi-label">NIFTY MAY</div><div class="kpi-value ${pnlClass(may)}">${fmtPnl(may)}</div><div class="kpi-sub">${cntExp('NIFTY','MAY')} positions</div></div>
+      <div class="kpi"><div class="kpi-label">Net Unrealized</div><div class="kpi-value ${pnlClass(tot)}">${fmtPnl(tot)}</div><div class="kpi-sub">NIFTY total</div></div>
+      <div class="kpi"><div class="kpi-label">Realized</div><div class="kpi-value pos">${fmtPnl(realizedPnl)}</div><div class="kpi-sub pos">${closedPositions.length} closed trades</div></div>`;
+  } else {
+    const apr = byExp('BANKNIFTY','APR'), may = byExp('BANKNIFTY','MAY'), tot = apr+may;
+    document.getElementById('pos-kpis').className = 'kpi-row c4';
+    document.getElementById('pos-kpis').innerHTML = `
+      <div class="kpi"><div class="kpi-label">BANKNIFTY APR</div><div class="kpi-value ${pnlClass(apr)}">${fmtPnl(apr)}</div><div class="kpi-sub">${cntExp('BANKNIFTY','APR')} positions</div></div>
+      <div class="kpi"><div class="kpi-label">BANKNIFTY MAY</div><div class="kpi-value ${pnlClass(may)}">${fmtPnl(may)}</div><div class="kpi-sub">${cntExp('BANKNIFTY','MAY')} positions</div></div>
+      <div class="kpi"><div class="kpi-label">Net Unrealized</div><div class="kpi-value ${pnlClass(tot)}">${fmtPnl(tot)}</div><div class="kpi-sub">BANKNIFTY total</div></div>
+      <div class="kpi"><div class="kpi-label">Realized</div><div class="kpi-value">₹0</div><div class="kpi-sub">No closed BANKNIFTY trades</div></div>`;
+  }
+}
+
+function renderPositionsTable() {
+  const filtered = positions.filter(p => {
+    const undOk = currentUnd==='ALL' || p.und===currentUnd;
+    if (!undOk) return false;
+    if (currentPosFilter==='ALL') return true;
+    if (currentPosFilter==='APR'||currentPosFilter==='MAY') return p.exp===currentPosFilter;
+    return p.type===currentPosFilter;
+  });
+  document.getElementById('pos-tbody').innerHTML = filtered.map(p => {
+    const chgClass = p.chg>=0?'pos':'neg';
+    return `<tr>
+      <td>${p.full}</td>
+      <td><span class="exp-badge ${p.exp.toLowerCase()}">${p.exp}</span></td>
+      <td><span class="inst-badge ${p.type.toLowerCase()}">${p.type}</span></td>
+      <td class="val">${p.strike}</td>
+      <td><span class="side-badge ${p.side.toLowerCase()}">${p.side}</span></td>
+      <td class="val">${fmt(p.qty)}</td>
+      <td class="val">${p.type==='FUT'?'₹'+fmt(p.avg):p.avg.toFixed(2)}</td>
+      <td class="val">${p.type==='FUT'?'₹'+fmt(p.ltp):p.ltp.toFixed(2)}</td>
+      <td class="${chgClass} val">${p.chg>=0?'+':''}${p.chg.toFixed(2)}%</td>
+      <td class="${pnlClass(p.pnl)}">${fmtPnl(p.pnl)}</td>
+    </tr>`;
+  }).join('');
+  const total = filtered.reduce((s,p)=>s+p.pnl,0);
+  document.getElementById('pos-count-lbl').textContent = `${filtered.length} position${filtered.length!==1?'s':''}`;
+  const el = document.getElementById('pos-total');
+  el.textContent = fmtPnl(total);
+  el.className = `val ${pnlClass(total)}`;
+}
+
+function filterPos(f, btn) {
+  currentPosFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderPositionsTable();
+}
+
+// ── MARGIN ────────────────────────────────────────────────
+function renderMarginKpis() {
+  const summary = (marginData.summary || {});
+  const ledger  = marginData.ledger || 3500000;
+  const utilMap = marginData.utilization || {};
+
+  const key = currentUnd === 'ALL' ? 'ALL' : currentUnd;
+  const s   = summary[key] || {};
+  let span  = s.span     || 0;
+  let exp   = s.exposure || 0;
+  let total = s.total    || 0;
+  let util  = utilMap[key] || 0;
+  let available = Math.max(0, ledger - total);
+  let utilClass = util < 60 ? 'low' : util < 80 ? 'med' : 'high';
+
+  document.getElementById('margin-kpis').innerHTML = `
+    <div class="kpi"><div class="kpi-label">Assumed Ledger</div><div class="kpi-value">₹${(ledger/100000).toFixed(0)}L</div><div class="kpi-sub">Total capital estimate</div></div>
+    <div class="kpi"><div class="kpi-label">SPAN Margin (Est.)</div><div class="kpi-value">₹${(span/100000).toFixed(2)}L</div><div class="kpi-sub">Futures + short options</div></div>
+    <div class="kpi"><div class="kpi-label">Exposure Margin (Est.)</div><div class="kpi-value">₹${(exp/100000).toFixed(2)}L</div><div class="kpi-sub">~20% of SPAN</div></div>
+    <div class="kpi"><div class="kpi-label">Available (Est.)</div><div class="kpi-value ${util>75?'warn':'pos'}">₹${(available/100000).toFixed(2)}L</div><div class="kpi-sub ${util>75?'':'pos'}">${(100-util).toFixed(1)}% free${util>75?' — Caution':''}</div></div>`;
+
+  document.getElementById('margin-util-card').innerHTML = `
+    <div class="card-hdr">
+      <span class="card-title">Margin Utilization${currentUnd!=='ALL'?' — '+currentUnd:''}</span>
+      <span class="card-sub">₹${(total/100000).toFixed(2)}L of ₹${(ledger/100000).toFixed(0)}L estimated used · ${util}%</span>
+    </div>
+    <div class="card-body">
+      <div style="display:flex;justify-content:space-between;font-family:var(--fm);font-size:11px;color:var(--t3);margin-bottom:4px;">
+        <span>0%</span>
+        <span style="color:var(--${utilClass==='med'?'p03':'p01'});font-weight:600;">${util}% used${util>80?' — Caution':' — Healthy'}</span>
+        <span>100%</span>
+      </div>
+      <div class="util-bar-outer"><div class="util-bar ${utilClass}" style="width:${util}%"></div></div>
+      <div class="util-legend">
+        <span><span class="util-swatch" style="background:var(--p01)"></span> &lt;60% — Healthy</span>
+        <span><span class="util-swatch" style="background:var(--p03)"></span> 60–80% — Caution</span>
+        <span><span class="util-swatch" style="background:var(--neg)"></span> &gt;80% — Critical</span>
+      </div>
+    </div>`;
+}
+
+function updateMarginSections() {
+  document.getElementById('nifty-margin-section').style.display     = currentUnd==='BANKNIFTY' ? 'none' : '';
+  document.getElementById('banknifty-margin-section').style.display = currentUnd==='NIFTY'     ? 'none' : '';
+  // Rebuild margin chart from API data
+  const byPos = (marginData.by_position || [])
+    .filter(p => currentUnd==='ALL' || p.und===currentUnd)
+    .filter(p => p.span > 0 || p.type==='FUT');
+  const cats  = byPos.map(p => p.full.length > 16 ? p.full.slice(0,15)+'…' : p.full);
+  const spanD = byPos.map(p => p.span);
+  const expD  = byPos.map(p => p.exposure);
+
+  if (marginChart) marginChart.destroy();
+  marginChart = new Chart(document.getElementById('margin-chart'), {
+    type:'bar',
+    data:{labels:cats,datasets:[
+      {label:'SPAN',data:spanD,backgroundColor:'rgba(0,86,184,0.72)',borderRadius:3},
+      {label:'Exposure',data:expD,backgroundColor:'rgba(146,72,10,0.72)',borderRadius:3}
+    ]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'top',labels:{font:{family:'IBM Plex Mono',size:11},boxWidth:10,padding:14}}},
+      scales:{
+        x:{stacked:true,grid:{display:false},ticks:{font:{family:'IBM Plex Mono',size:9}}},
+        y:{stacked:true,grid:{color:'rgba(0,0,0,.05)'},ticks:{font:{family:'IBM Plex Mono',size:10},callback:v=>`₹${(v/100000).toFixed(1)}L`}}
+      }
+    }
+  });
+}
+
+// ── Closed positions ──────────────────────────────────────
+function renderClosedPositions() {
+  const filtered = currentUnd==='ALL'
+    ? closedPositions
+    : closedPositions.filter(p=>p.underlying===currentUnd);
+  const total = filtered.reduce((s,p)=>s+p.pnl, 0);
+
+  document.getElementById('closed-card-sub').textContent =
+    `Realized P&L: ${fmtPnl(realizedPnl)}`;
+
+  document.getElementById('closed-tbody').innerHTML = filtered.map(p => {
+    const typeCls = p.type.toLowerCase();
+    return `<tr>
+      <td>${p.full || p.instrument}</td>
+      <td>${p.expDate || ''}</td>
+      <td><span class="inst-badge ${typeCls}">${p.type}</span></td>
+      <td class="val">${p.strike || '—'}</td>
+      <td class="${pnlClass(p.pnl)}">${fmtPnl(p.pnl)}</td>
+    </tr>`;
+  }).join('');
+
+  const footer = document.getElementById('closed-total');
+  if (footer) { footer.textContent = fmtPnl(realizedPnl); footer.className = `val ${pnlClass(realizedPnl)}`; }
+}
+
+// ── Margin tables ────────────────────────────────────────
+function renderMarginTables() {
+  const fmtL = v => `₹${(v/100000).toFixed(2)}L`;
+  const byPos = marginData.by_position || [];
+
+  function fillTable(und, tbodyId, footerId) {
+    const rows = byPos.filter(p => p.und === und && (p.span > 0 || p.type==='FUT'));
+    document.getElementById(tbodyId).innerHTML = rows.map(p => `<tr>
+      <td>${p.full}</td>
+      <td><span class="exp-badge ${p.exp.toLowerCase()}">${p.exp}</span></td>
+      <td><span class="inst-badge ${p.type.toLowerCase()}">${p.type}</span></td>
+      <td><span class="side-badge ${p.side.toLowerCase()}">${p.side}</span></td>
+      <td class="val">${p.qty.toLocaleString('en-IN')}</td>
+      <td class="val">${fmtL(p.span)}</td>
+      <td class="val">${fmtL(p.exposure)}</td>
+      <td class="val" style="font-weight:600">${fmtL(p.total)}</td>
+    </tr>`).join('');
+    const s = (marginData.summary || {})[und] || {};
+    document.getElementById(footerId).innerHTML = `
+      <span class="lbl">${und} SPAN:</span><span class="val">${fmtL(s.span||0)}</span>
+      <span class="lbl">Exposure:</span><span class="val">${fmtL(s.exposure||0)}</span>
+      <span class="lbl">Total:</span><span class="val" style="font-weight:700">${fmtL(s.total||0)}</span>`;
+  }
+
+  fillTable('NIFTY',     'nifty-margin-tbody', 'nifty-margin-footer');
+  fillTable('BANKNIFTY', 'bnkn-margin-tbody',  'bnkn-margin-footer');
+}
+
+// ── Greeks summary cards ─────────────────────────────────
+function renderGreeksCards() {
+  function fillGrid(und, gridId) {
+    const g = (netGreeks[und]) || {};
+    const delta = g.delta || 0;
+    const gamma = g.gamma || 0;
+    const theta = g.theta || 0;
+    const vega  = g.vega  || 0;
+    const ptMove = Math.abs(delta) * 100;
+    document.getElementById(gridId).innerHTML = `
+      <div class="greek-card">
+        <div class="greek-symbol">Δ</div><div class="greek-name">Net Delta</div>
+        <div class="greek-val ${delta<0?'neg':'pos'}">${delta>=0?'+':''}${delta}</div>
+        <div class="greek-sub">Per 100pt move: ~${delta<0?'−':''}₹${Math.abs(ptMove).toLocaleString('en-IN')}</div>
+      </div>
+      <div class="greek-card">
+        <div class="greek-symbol">Γ</div><div class="greek-name">Gamma</div>
+        <div class="greek-val ${gamma<0?'neg':'pos'}">${gamma>=0?'+':''}${gamma.toFixed(4)}</div>
+        <div class="greek-sub">${gamma<0?'Short options drive negative gamma':'Long options drive positive gamma'}</div>
+      </div>
+      <div class="greek-card">
+        <div class="greek-symbol">Θ</div><div class="greek-name">Theta / day</div>
+        <div class="greek-val ${theta>=0?'pos':'neg'}">${theta>=0?'+₹':'−₹'}${Math.abs(theta).toLocaleString('en-IN')}</div>
+        <div class="greek-sub">Daily time decay ${theta>=0?'earned':'paid'}</div>
+      </div>
+      <div class="greek-card">
+        <div class="greek-symbol">V</div><div class="greek-name">Vega</div>
+        <div class="greek-val ${vega>=0?'pos':'neg'}">${vega>=0?'+₹':'−₹'}${Math.abs(vega).toLocaleString('en-IN')}</div>
+        <div class="greek-sub">Per 1% IV rise, ${und} book ${vega>=0?'gains':'loses'} ₹${Math.abs(vega).toLocaleString('en-IN')}</div>
+      </div>`;
+  }
+  fillGrid('NIFTY',     'nifty-greeks-grid');
+  fillGrid('BANKNIFTY', 'bnkn-greeks-grid');
+}
+
+// ── Stress scenarios ─────────────────────────────────────
+function renderStressScenarios() {
+  document.getElementById('stress-row').innerHTML = stressData.map(s => {
+    const isFlat = s.move_pct === 0;
+    const niftyLbl = s.nifty_level ? `~${s.nifty_level.toLocaleString('en-IN')}` : '—';
+    return `<div class="scenario-card${isFlat?' flat':''}">
+      <div class="scenario-move">${isFlat?'Flat':s.move_label}</div>
+      <div class="scenario-nifty">${niftyLbl}</div>
+      <div class="scenario-pnl ${pnlClass(s.pnl)}">${fmtPnl(s.pnl)}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Payoff chart ─────────────────────────────────────────
+function _buildPayoffChart(canvasId, pd, label, lineColor, spotLabel) {
+  const labels = pd.labels || [];
+  const data   = pd.data   || [];
+  const el = document.getElementById(canvasId);
+  if (!labels.length || !el) return null;
+  return new Chart(el, {
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        {label,data,borderColor:lineColor,backgroundColor:lineColor.replace(')',',0.05)').replace('rgb','rgba'),
+         borderWidth:2.5,pointRadius:3.5,pointBackgroundColor:data.map(v=>v>=0?'#1A6B3C':'#9B1C1C'),
+         tension:0.3,fill:true},
+        {label:'Break-even',data:Array(labels.length).fill(0),borderColor:'rgba(0,0,0,0.2)',
+         borderWidth:1,borderDash:[5,4],pointRadius:0,fill:false}
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'top',labels:{font:{family:'IBM Plex Mono',size:11},boxWidth:10,padding:14}},
+               tooltip:{callbacks:{label:d=>fmtPnl(d.raw)}}},
+      scales:{
+        x:{grid:{display:false},title:{display:true,text:spotLabel,font:{family:'IBM Plex Mono',size:10}},
+           ticks:{font:{family:'IBM Plex Mono',size:10}}},
+        y:{grid:{color:'rgba(0,0,0,.05)'},ticks:{font:{family:'IBM Plex Mono',size:10},
+           callback:v=>`₹${(v/1000).toFixed(0)}K`}}
+      }
+    }
+  });
+}
+
+function renderPayoffChart() {
+  if (payoffChart)     { payoffChart.destroy();     payoffChart     = null; }
+  if (payoffChartBnkn) { payoffChartBnkn.destroy(); payoffChartBnkn = null; }
+  // Support both new keyed format {NIFTY:{labels,data}, BANKNIFTY:{…}}
+  // and old flat format {labels, data} (before API restart)
+  const niftyPd = payoffData.NIFTY     || (payoffData.labels ? payoffData : {});
+  const bnknPd  = payoffData.BANKNIFTY || {};
+  payoffChart     = _buildPayoffChart('payoff-chart',      niftyPd, 'Est. NIFTY P&L (₹)',     'rgb(0,86,184)',   'NIFTY Level');
+  payoffChartBnkn = _buildPayoffChart('payoff-chart-bnkn', bnknPd,  'Est. BANKNIFTY P&L (₹)', 'rgb(107,47,160)', 'BANKNIFTY Level');
+}
+
+// ── RISK & GREEKS ─────────────────────────────────────────
+function updateRiskSections() {
+  const showNifty   = currentUnd !== 'BANKNIFTY';
+  const showBnkn    = currentUnd !== 'NIFTY';
+  const sideBySide  = currentUnd === 'ALL';
+
+  document.getElementById('nifty-risk-section').style.display     = showNifty ? '' : 'none';
+  document.getElementById('banknifty-risk-section').style.display = showBnkn  ? '' : 'none';
+
+  // Payoff charts layout
+  document.getElementById('payoff-nifty-wrap').style.display = showNifty ? '' : 'none';
+  document.getElementById('payoff-bnkn-wrap').style.display  = showBnkn  ? '' : 'none';
+  document.getElementById('payoff-charts-grid').style.gridTemplateColumns = sideBySide ? '1fr 1fr' : '1fr';
+
+  // Update stress subtitle
+  const nSpot = (marketData.NIFTY||{}).close;
+  const bSpot = (marketData.BANKNIFTY||{}).close;
+  const subParts = [];
+  if (showNifty && nSpot) subParts.push(`NIFTY ~${nSpot.toLocaleString('en-IN',{maximumFractionDigits:0})}`);
+  if (showBnkn  && bSpot) subParts.push(`BANKNIFTY ~${bSpot.toLocaleString('en-IN',{maximumFractionDigits:0})}`);
+  document.getElementById('stress-card-sub').textContent =
+    `Estimated portfolio P&L for index moves · ${subParts.join(' · ')}`;
+}
+
+function renderGreeksTable() {
+  const filtered = currentUnd==='ALL' ? greeksData : greeksData.filter(g=>g.und===currentUnd);
+  document.getElementById('greeks-table-sub').textContent = currentUnd==='ALL'?'All positions':currentUnd+' positions';
+  document.getElementById('greeks-tbody').innerHTML = filtered.map(g => {
+    const dStr = g.delta>=0?`+${g.delta}`:String(g.delta);
+    const tStr = g.theta>0?`+₹${g.theta}`:g.theta===0?'₹0':`−₹${Math.abs(g.theta)}`;
+    const vStr = g.vega>0?`+₹${g.vega}`:g.vega===0?'₹0':`−₹${Math.abs(g.vega)}`;
+    return `<tr>
+      <td>${g.full}</td>
+      <td><span style="font-family:var(--fm);font-size:10px;font-weight:500;padding:2px 7px;border-radius:3px;background:${g.und==='NIFTY'?'var(--p02-bg)':'var(--p04-bg)'};color:${g.und==='NIFTY'?'var(--p02)':'var(--p04)'};">${g.und}</span></td>
+      <td><span class="exp-badge ${g.exp.toLowerCase()}">${g.exp}</span></td>
+      <td><span class="inst-badge ${g.type.toLowerCase()}">${g.type}</span></td>
+      <td><span class="side-badge ${g.side.toLowerCase()}">${g.side}</span></td>
+      <td class="${g.delta>=0?'pos':'neg'} val">${dStr}</td>
+      <td class="${g.theta>=0?'pos':'neg'} val">${tStr}</td>
+      <td class="${g.vega>=0?'pos':'neg'} val">${vStr}</td>
+      <td class="val">${g.iv}</td>
+    </tr>`;
+  }).join('');
+  const totDelta = filtered.reduce((s,g)=>s+g.delta,0);
+  const totTheta = filtered.reduce((s,g)=>s+g.theta,0);
+  const totVega  = filtered.reduce((s,g)=>s+g.vega,0);
+  document.getElementById('greeks-footer').innerHTML = `
+    <span class="lbl">Net Delta:</span><span class="val ${pnlClass(totDelta)}">${totDelta>=0?'+':''}${totDelta}</span>
+    <span class="lbl">Net Theta:</span><span class="val ${pnlClass(totTheta)}">${totTheta>=0?'+₹':'−₹'}${Math.abs(totTheta)}/day</span>
+    <span class="lbl">Net Vega:</span><span class="val ${pnlClass(totVega)}">${totVega>=0?'+₹':'−₹'}${Math.abs(totVega)}</span>`;
+}
+
+// ── RISK-REWARD ───────────────────────────────────────────
+// scenarioLevels and portDelta are populated from API in initApp()
+
+// Bull = FUT Long, CE Long, PE Short  |  Bear = FUT Short, CE Short, PE Long
+function getBullBear(p) {
+  if (p.type === 'FUT') return p.side === 'Long' ? 'bull' : 'bear';
+  if (p.type === 'CE')  return p.side === 'Long' ? 'bull' : 'bear';
+  if (p.type === 'PE')  return p.side === 'Short' ? 'bull' : 'bear';
+  return 'bull';
+}
+
+// ── localStorage history (persists daily close prices) ───
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem('rrHistory') || '[]'); } catch { return []; }
+}
+function saveToday() {
+  const history = loadHistory();
+  const todayStr = marketData.NIFTY.date;
+  const niftyPnl  = positions.filter(p => p.und === 'NIFTY').reduce((s, p) => s + p.pnl, 0);
+  const bnknPnl   = positions.filter(p => p.und === 'BANKNIFTY').reduce((s, p) => s + p.pnl, 0);
+  if (!history.find(h => h.date === todayStr)) {
+    history.push({ date: todayStr, nifty: marketData.NIFTY.close, banknifty: marketData.BANKNIFTY.close, niftyPnl, bnknPnl });
+    if (history.length > 30) history.shift();
+    try { localStorage.setItem('rrHistory', JSON.stringify(history)); } catch {}
+  }
+}
+function getProgressDir(und, mode) {
+  const history = loadHistory();
+  if (history.length < 2) return 'neutral';
+  const key = und === 'NIFTY' ? 'nifty' : 'banknifty';
+  const todayC = history[history.length - 1][key];
+  const yestC  = history[history.length - 2][key];
+  const { sl, target } = scenarioLevels[und][mode];
+  const isBull = target > sl;
+  const todayPct = isBull ? (todayC - sl) / (target - sl) : (sl - todayC) / (sl - target);
+  const yestPct  = isBull ? (yestC  - sl) / (target - sl) : (sl - yestC)  / (sl - target);
+  return todayPct > yestPct ? 'toward' : todayPct < yestPct ? 'away' : 'neutral';
+}
+
+function computeScen(sl, target, current, delta) {
+  const isBull = target > sl;
+  // pct = progress from SL toward Target (0% = at SL, 100% = at Target)
+  const pct = isBull
+    ? Math.max(0, Math.min(100, (current - sl)   / (target - sl)   * 100))
+    : Math.max(0, Math.min(100, (sl   - current) / (sl   - target) * 100));
+  const risk    = Math.abs(current - sl);
+  const reward  = Math.abs(target  - current);
+  const rr      = reward / risk;
+  const pnlTgt  = Math.round(delta * (target - current));
+  const pnlSL   = Math.round(delta * (sl     - current));
+  return { isBull, pct, risk, reward, rr, pnlTgt, pnlSL };
+}
+
+function renderScenCard(und, mode) {
+  const current = marketData[und].close;
+  const isBull  = mode === 'bull';
+  const { sl, target } = scenarioLevels[und][mode];
+  const sc  = computeScen(sl, target, current, portDelta[und]);
+  const dir = getProgressDir(und, mode);
+  const pct = sc.pct.toFixed(1);
+  const rrColor    = sc.rr >= 1 ? 'var(--pos)' : 'var(--neg)';
+  const dirLabel   = dir==='toward' ? '↑ Moving toward target' : dir==='away' ? '↓ Moving away from target' : '— No prior data (opens daily)';
+  const dirColor   = dir==='toward' ? 'var(--pos)' : dir==='away' ? 'var(--p03)' : 'var(--t3)';
+  const groupPnl   = positions.filter(p => p.und===und && getBullBear(p)===mode).reduce((s,p) => s+p.pnl, 0);
+  const cls        = isBull ? 'bull' : 'bear';
+  return `<div class="scen-card ${cls}">
+    <div class="scen-hdr">
+      <div class="scen-title">${isBull ? 'Bull View' : 'Bear View'}</div>
+      <span class="scen-badge ${cls}">${isBull ? 'BULLISH' : 'BEARISH'}</span>
+    </div>
+    <div class="scen-bar-labels">
+      <span>SL: ${sl.toLocaleString('en-IN')}</span>
+      <span>Target: ${target.toLocaleString('en-IN')}</span>
+    </div>
+    <div class="scen-bar-wrap">
+      <div class="scen-bar-outer">
+        <div class="scen-bar-fill ${dir}" style="width:${pct}%"></div>
+      </div>
+      <div class="scen-bar-marker ${dir}" style="left:${pct}%"></div>
+      <div class="scen-bar-current ${dir}" style="left:${pct}%">▲ ${current.toLocaleString('en-IN',{minimumFractionDigits:2})}</div>
+    </div>
+    <div class="scen-progress" style="color:${dirColor}">${dirLabel} &nbsp;·&nbsp; ${pct}%</div>
+    <div class="scen-stats">
+      <div class="scen-stat">
+        <div class="scen-stat-lbl">Risk (pts)</div>
+        <div class="scen-stat-val neg">${sc.risk.toFixed(0)}</div>
+      </div>
+      <div class="scen-stat">
+        <div class="scen-stat-lbl">Reward (pts)</div>
+        <div class="scen-stat-val pos">${sc.reward.toFixed(0)}</div>
+      </div>
+      <div class="scen-stat">
+        <div class="scen-stat-lbl">R : R</div>
+        <div class="scen-stat-val" style="color:${rrColor}">1 : ${sc.rr.toFixed(2)}</div>
+      </div>
+      <div class="scen-stat">
+        <div class="scen-stat-lbl">Progress</div>
+        <div class="scen-stat-val" style="color:${dirColor}">${pct}%</div>
+      </div>
+    </div>
+    <div class="scen-impact">
+      <div class="scen-impact-row">
+        <span class="scen-impact-lbl">Current ${isBull?'bull':'bear'} bets P&amp;L:</span>
+        <span class="${groupPnl>=0?'pos':'neg'}" style="font-family:var(--fm);font-size:12px;font-weight:600">${fmtPnl(groupPnl)}</span>
+      </div>
+      <div class="scen-impact-row">
+        <span class="scen-impact-lbl">Portfolio Δ at Target (${target.toLocaleString('en-IN')}):</span>
+        <span class="${sc.pnlTgt>=0?'pos':'neg'}" style="font-family:var(--fm);font-size:12px;font-weight:600">${fmtPnl(sc.pnlTgt)}</span>
+      </div>
+      <div class="scen-impact-row">
+        <span class="scen-impact-lbl">Portfolio Δ at Stop Loss (${sl.toLocaleString('en-IN')}):</span>
+        <span class="${sc.pnlSL>=0?'pos':'neg'}" style="font-family:var(--fm);font-size:12px;font-weight:600">${fmtPnl(sc.pnlSL)}</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderView(und, mode) {
+  const isBull = mode === 'bull';
+  const tagCls = isBull ? 'bull' : 'bear';
+  const label  = isBull ? '▲ Bull View' : '▼ Bear View';
+  return `
+    <div class="rr-view-hdr">
+      <span class="rr-view-tag ${tagCls}">${label}</span>
+      <div class="line"></div>
+    </div>
+    <div class="rr-view-grid">
+      <div>${renderScenCard(und, mode)}</div>
+      <div>${renderBullBearTable(und, mode)}</div>
+    </div>`;
+}
+
+function renderBullBearKpis(und) {
+  const bullPnl = positions.filter(p=>p.und===und&&getBullBear(p)==='bull').reduce((s,p)=>s+p.pnl,0);
+  const bearPnl = positions.filter(p=>p.und===und&&getBullBear(p)==='bear').reduce((s,p)=>s+p.pnl,0);
+  const bullCnt = positions.filter(p=>p.und===und&&getBullBear(p)==='bull').length;
+  const bearCnt = positions.filter(p=>p.und===und&&getBullBear(p)==='bear').length;
+  const spot    = marketData[und].close;
+  return `<div class="kpi-row c4" style="margin-bottom:16px;">
+    <div class="kpi"><div class="kpi-label">Bull Bets P&amp;L</div><div class="kpi-value ${pnlClass(bullPnl)}">${fmtPnl(bullPnl)}</div><div class="kpi-sub">${bullCnt} pos · FUT Long · CE Long · PE Short</div></div>
+    <div class="kpi"><div class="kpi-label">Bear Bets P&amp;L</div><div class="kpi-value ${pnlClass(bearPnl)}">${fmtPnl(bearPnl)}</div><div class="kpi-sub">${bearCnt} pos · FUT Short · CE Short · PE Long</div></div>
+    <div class="kpi"><div class="kpi-label">Net ${und==='BANKNIFTY'?'BANKNIFTY':'NIFTY'} P&amp;L</div><div class="kpi-value ${pnlClass(bullPnl+bearPnl)}">${fmtPnl(bullPnl+bearPnl)}</div><div class="kpi-sub">Bull + Bear combined</div></div>
+    <div class="kpi"><div class="kpi-label">${und==='BANKNIFTY'?'BANKNIFTY':'NIFTY'} Spot</div><div class="kpi-value" style="font-family:var(--fm)">${spot.toLocaleString('en-IN',{minimumFractionDigits:2})}</div><div class="kpi-sub">${marketData[und].date}</div></div>
+  </div>`;
+}
+
+function renderBullBearTable(und, mode) {
+  const grp    = positions.filter(p=>p.und===und&&getBullBear(p)===mode);
+  const isBull = mode==='bull';
+  const total  = grp.reduce((s,p)=>s+p.pnl,0);
+  return `<div class="card" style="margin-bottom:14px;">
+    <div class="card-hdr">
+      <span class="card-title" style="color:${isBull?'var(--p01)':'var(--neg)'}">${isBull?'▲':'▼'} ${und} ${isBull?'Bull':'Bear'} Positions</span>
+      <span class="card-sub">${grp.length} pos · ${fmtPnl(total)} · ${isBull?'FUT Long · CE Long · PE Short':'FUT Short · CE Short · PE Long'}</span>
+    </div>
+    <div class="card-body" style="padding:0">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Instrument</th><th>Exp</th><th>Type</th><th>Side</th><th>Qty</th><th>Avg</th><th>LTP</th><th>P&amp;L</th></tr></thead>
+          <tbody>${grp.map(p=>`<tr>
+            <td>${p.full}</td>
+            <td><span class="exp-badge ${p.exp.toLowerCase()}">${p.exp}</span></td>
+            <td><span class="inst-badge ${p.type.toLowerCase()}">${p.type}</span></td>
+            <td><span class="side-badge ${p.side.toLowerCase()}">${p.side}</span></td>
+            <td class="val">${fmt(p.qty)}</td>
+            <td class="val">${p.type==='FUT'?'₹'+fmt(p.avg):p.avg.toFixed(2)}</td>
+            <td class="val">${p.type==='FUT'?'₹'+fmt(p.ltp):p.ltp.toFixed(2)}</td>
+            <td class="${pnlClass(p.pnl)}">${fmtPnl(p.pnl)}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+      <div class="tbl-footer">
+        <span class="lbl">${isBull?'Bull':'Bear'} Total:</span>
+        <span class="val ${pnlClass(total)}">${fmtPnl(total)}</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderRRHistory() {
+  const history = loadHistory();
+  if (!history.length) return `<div class="info-note" style="margin-top:18px;">Daily history will appear here after you open the page on a second day. Data is saved automatically in browser localStorage.</div>`;
+  const rows = [...history].reverse().map((h,i) => {
+    const isToday = h.date === marketData.NIFTY.date;
+    const nBull = computeScen(scenarioLevels.NIFTY.bull.sl,     scenarioLevels.NIFTY.bull.target,     h.nifty,     portDelta.NIFTY).pct;
+    const nBear = computeScen(scenarioLevels.NIFTY.bear.sl,     scenarioLevels.NIFTY.bear.target,     h.nifty,     portDelta.NIFTY).pct;
+    const bBull = computeScen(scenarioLevels.BANKNIFTY.bull.sl, scenarioLevels.BANKNIFTY.bull.target, h.banknifty, portDelta.BANKNIFTY).pct;
+    const bBear = computeScen(scenarioLevels.BANKNIFTY.bear.sl, scenarioLevels.BANKNIFTY.bear.target, h.banknifty, portDelta.BANKNIFTY).pct;
+    // Direction vs previous row (i=0 is today, i+1 is yesterday)
+    const prev  = history[history.length - 1 - (i+1)];
+    const arrow = (cur, prevVal) => !prev ? '—' : cur > prevVal ? '<span style="color:var(--pos)">↑</span>' : cur < prevVal ? '<span style="color:var(--p03)">↓</span>' : '=';
+    const prevNBull = prev ? computeScen(scenarioLevels.NIFTY.bull.sl,     scenarioLevels.NIFTY.bull.target,     prev.nifty,     portDelta.NIFTY).pct     : null;
+    const prevNBear = prev ? computeScen(scenarioLevels.NIFTY.bear.sl,     scenarioLevels.NIFTY.bear.target,     prev.nifty,     portDelta.NIFTY).pct     : null;
+    const prevBBull = prev ? computeScen(scenarioLevels.BANKNIFTY.bull.sl, scenarioLevels.BANKNIFTY.bull.target, prev.banknifty, portDelta.BANKNIFTY).pct : null;
+    const prevBBear = prev ? computeScen(scenarioLevels.BANKNIFTY.bear.sl, scenarioLevels.BANKNIFTY.bear.target, prev.banknifty, portDelta.BANKNIFTY).pct : null;
+    // P&L columns — may be absent in older localStorage entries
+    const hasPnl   = h.niftyPnl !== undefined;
+    const totalPnl = hasPnl ? h.niftyPnl + h.bnknPnl : null;
+    const pnlCell  = (v) => v === null ? `<td class="val" style="color:var(--t3)">—</td>`
+      : `<td class="${v >= 0 ? 'pos' : 'neg'}">${fmtPnl(v)}</td>`;
+    const arrowPnl = (cur, p) => !p || p.niftyPnl === undefined ? '' :
+      cur > (p.niftyPnl + p.bnknPnl) ? '<span style="color:var(--pos)">↑</span>' :
+      cur < (p.niftyPnl + p.bnknPnl) ? '<span style="color:var(--p03)">↓</span>' : '=';
+    const s = isToday ? 'font-weight:600;background:var(--surface2)' : '';
+    return `<tr style="${s}">
+      <td class="val">${h.date}${isToday?' ◀':''}</td>
+      <td class="val">${h.nifty.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+      <td class="val">${h.banknifty.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+      ${pnlCell(hasPnl ? h.niftyPnl : null)}
+      ${pnlCell(hasPnl ? h.bnknPnl : null)}
+      ${hasPnl ? `<td class="${totalPnl >= 0 ? 'pos' : 'neg'}" style="font-weight:600">${arrowPnl(totalPnl, prev)} ${fmtPnl(totalPnl)}</td>` : `<td class="val" style="color:var(--t3)">—</td>`}
+      <td class="val">${arrow(nBull,prevNBull)} ${nBull.toFixed(1)}%</td>
+      <td class="val">${arrow(nBear,prevNBear)} ${nBear.toFixed(1)}%</td>
+      <td class="val">${arrow(bBull,prevBBull)} ${bBull.toFixed(1)}%</td>
+      <td class="val">${arrow(bBear,prevBBear)} ${bBear.toFixed(1)}%</td>
+    </tr>`;
+  }).join('');
+  return `<div class="card" style="margin-top:18px;">
+    <div class="card-hdr">
+      <span class="card-title">Daily Progress History</span>
+      <span class="card-sub">Progress % = distance from SL → Target · ↑ green = improving · ↓ orange = retreating · P&amp;L = unrealized portfolio</span>
+    </div>
+    <div class="card-body" style="padding:0">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>NIFTY</th><th>BANKNIFTY</th><th>N P&amp;L</th><th>BN P&amp;L</th><th>Total P&amp;L</th><th>N-Bull%</th><th>N-Bear%</th><th>BN-Bull%</th><th>BN-Bear%</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderScenarios() {
+  document.getElementById('nifty-scen-section').style.display     = currentUnd==='BANKNIFTY' ? 'none' : '';
+  document.getElementById('banknifty-scen-section').style.display = currentUnd==='NIFTY'     ? 'none' : '';
+
+  if (currentUnd !== 'BANKNIFTY') {
+    document.getElementById('nifty-rr-kpis').innerHTML  = renderBullBearKpis('NIFTY');
+    document.getElementById('nifty-rr-views').innerHTML = renderView('NIFTY','bull') + renderView('NIFTY','bear');
+  }
+  if (currentUnd !== 'NIFTY') {
+    document.getElementById('banknifty-rr-kpis').innerHTML  = renderBullBearKpis('BANKNIFTY');
+    document.getElementById('banknifty-rr-views').innerHTML = renderView('BANKNIFTY','bull') + renderView('BANKNIFTY','bear');
+  }
+
+  // Summary table
+  const summaryDefs = ['NIFTY','BANKNIFTY'].flatMap(und => ['bull','bear'].map(mode => ({
+    und, mode: mode.charAt(0).toUpperCase()+mode.slice(1),
+    sl:     scenarioLevels[und][mode].sl,
+    target: scenarioLevels[und][mode].target,
+    cur:    marketData[und].close,
+    delta:  portDelta[und]
+  }))).filter(r => currentUnd==='ALL' || r.und===currentUnd);
+
+  const summaryRows = summaryDefs.map(r => {
+    const sc      = computeScen(r.sl, r.target, r.cur, r.delta);
+    const dir     = getProgressDir(r.und, r.mode.toLowerCase());
+    const isBull  = r.mode==='Bull';
+    const dirIcon = dir==='toward'?'<span style="color:var(--pos)">↑</span>':dir==='away'?'<span style="color:var(--p03)">↓</span>':'—';
+    const groupPnl = positions.filter(p=>p.und===r.und&&getBullBear(p)===r.mode.toLowerCase()).reduce((s,p)=>s+p.pnl,0);
+    const undBg = r.und==='NIFTY'?'var(--p02-bg)':'var(--p04-bg)';
+    const undClr= r.und==='NIFTY'?'var(--p02)':'var(--p04)';
+    return `<tr>
+      <td>
+        <span style="font-family:var(--fm);font-size:10px;font-weight:600;padding:2px 7px;border-radius:3px;background:${undBg};color:${undClr};">${r.und}</span>
+        <span style="font-family:var(--fm);font-size:10px;font-weight:600;padding:2px 7px;border-radius:3px;background:${isBull?'var(--p01-bg)':'var(--neg-bg)'};color:${isBull?'var(--p01)':'var(--neg)'};">${r.mode}</span>
+      </td>
+      <td class="val">${r.sl.toLocaleString('en-IN')}</td>
+      <td class="val" style="font-weight:600">${r.cur.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+      <td class="val">${r.target.toLocaleString('en-IN')}</td>
+      <td class="val">${dirIcon} ${sc.pct.toFixed(1)}%</td>
+      <td class="val" style="color:${sc.rr>=1?'var(--pos)':'var(--neg)'};font-weight:600">1 : ${sc.rr.toFixed(2)}</td>
+      <td class="${pnlClass(groupPnl)}">${fmtPnl(groupPnl)}</td>
+      <td class="${sc.pnlTgt>=0?'pos':'neg'}">${fmtPnl(sc.pnlTgt)}</td>
+      <td class="${sc.pnlSL>=0?'pos':'neg'}">${fmtPnl(sc.pnlSL)}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('scen-summary-card').innerHTML = `
+    <div class="card-hdr">
+      <span class="card-title">Risk-Reward Summary</span>
+      <span class="card-sub">Net Δ: NIFTY ${portDelta.NIFTY} · BANKNIFTY ${portDelta.BANKNIFTY} · ↑ = moving toward target</span>
+    </div>
+    <div class="card-body" style="padding:0">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>
+            <th>Scenario</th><th>Stop Loss</th><th>Current</th><th>Target</th>
+            <th>Progress</th><th>R:R</th><th>Current P&amp;L</th><th>At Target</th><th>At Stop</th>
+          </tr></thead>
+          <tbody>${summaryRows}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  document.getElementById('rr-history').innerHTML = renderRRHistory();
+}
+
+// ── Init ─────────────────────────────────────────────────
+initApp();
+
+// ── API status ────────────────────────────────────────────
+async function checkStatus() {
+  try {
+    const r = await fetch('/health');
+    const d = await r.json();
+    document.getElementById('sdot').className = d.status==='ok'?'status-dot ok':'status-dot';
+    document.getElementById('stxt').textContent = d.status==='ok'?'API online':'API error';
+  } catch {
+    document.getElementById('sdot').className = 'status-dot';
+    document.getElementById('stxt').textContent = 'API offline';
+  }
+}
+checkStatus();
+</script>
+</body>
+</html>

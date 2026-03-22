@@ -32,6 +32,7 @@ COLUMNS = [
     "backtest_mdd_pct",
     "backtest_return_pct",
     "backtest_cagr_pct",
+    "backtest_trade_count",
     "backtest_constraints_met",
     "notes",
 ]
@@ -92,6 +93,7 @@ class TrainingTracker:
             "backtest_mdd_pct": _f(backtest_metrics, "max_drawdown_pct"),
             "backtest_return_pct": _f(backtest_metrics, "portfolio_total_return_pct"),
             "backtest_cagr_pct": _f(backtest_metrics, "portfolio_cagr_pct"),
+            "backtest_trade_count": int(backtest_metrics.get("total_trades", 0)),
             "backtest_constraints_met": bool(backtest_metrics.get("constraints_met", False)),
             "notes": notes,
         }

@@ -22,6 +22,7 @@ dependencies = [
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.29.0",
     "shap>=0.44.0",
+    "sentence-transformers>=3.0.0",
 ]
 
 [project.optional-dependencies]

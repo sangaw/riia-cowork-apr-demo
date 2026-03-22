@@ -26,6 +26,7 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
         ema_50        — 50-day EMA
         ema_200       — 200-day EMA
         trend_score   — normalized slope of ema_50 (-1 to +1)
+        ema_ratio     — ema_26 / ema_50, clipped to [0.5, 1.5] (Feature 9 — regime signal)
         daily_return  — daily close-to-close return
     """
     out = df.copy()
@@ -77,10 +78,60 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
     # Clip to [-0.01, +0.01] then scale to [-1, +1]
     out["trend_score"] = out["trend_score"].clip(-0.01, 0.01) / 0.01
 
+    # EMA ratio — medium-term regime context (Feature 9)
+    # EMA-26 already computed above; ratio > 1 = uptrend, < 1 = downtrend
+    # Normalized: clip((ratio - 1.0) * 20, -3, 3)
+    out["ema_ratio"] = (out["ema_26"] / out["ema_50"]).clip(0.5, 1.5)
+
     # Daily return
     out["daily_return"] = out["Close"].pct_change()
 
     return out
+
+
+def detect_regime(df: pd.DataFrame, consecutive_days: int = 3) -> dict:
+    """
+    Detect the current market regime using the EMA-26/EMA-50 ratio.
+
+    Rule:
+        ema_26 / ema_50 < 0.99 for `consecutive_days` or more  → BEAR
+        otherwise                                                → BULL
+
+    Args:
+        df: DataFrame already processed by calculate_indicators()
+        consecutive_days: number of days below 0.99 required to call BEAR (default 3)
+
+    Returns:
+        {
+            "regime":               "BULL" | "BEAR",
+            "model":                "bull" | "bear",
+            "ema_ratio":            float,          # latest EMA-26/EMA-50
+            "consecutive_bear_days": int,           # days below 0.99 at tail
+        }
+    """
+    clean = df.dropna(subset=["ema_26", "ema_50"])
+    if clean.empty:
+        return {"regime": "BULL", "model": "bull", "ema_ratio": 1.0, "consecutive_bear_days": 0}
+
+    ratio_series = clean["ema_26"] / clean["ema_50"]
+    latest_ratio = float(ratio_series.iloc[-1])
+
+    # Count consecutive bear days at the tail
+    bear_mask = ratio_series < 0.99
+    count = 0
+    for val in reversed(bear_mask.values):
+        if val:
+            count += 1
+        else:
+            break
+
+    regime = "BEAR" if count >= consecutive_days else "BULL"
+    return {
+        "regime": regime,
+        "model": "bear" if regime == "BEAR" else "bull",
+        "ema_ratio": round(latest_ratio, 5),
+        "consecutive_bear_days": count,
+    }
 
 
 def get_market_summary(df: pd.DataFrame) -> dict:

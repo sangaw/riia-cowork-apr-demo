@@ -1,0 +1,1224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RIIA — Operations Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@300;400;500&family=Epilogue:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+:root{
+  --bg:#F5F3EE;--surface:#FFFFFF;--surface2:#F9F8F5;--border:#E4E0D8;--border2:#D0CBBC;
+  --text:#1A1814;--t2:#4A4640;--t3:#8C877A;--t4:#B8B2A6;
+
+  /* Ops primary — teal */
+  --ops:#0E7490;--ops-bg:#ECFEFF;--ops-bd:#67E8F9;
+
+  /* Section accent colours (SOAR palette) */
+  --sense:#0056B8;--sense-bg:#EDF4FF;--sense-bd:#AECBF5;
+  --optimize:#1A6B3C;--optimize-bg:#EDF7F2;--optimize-bd:#B6DEC9;
+  --accelerate:#6B2FA0;--accelerate-bg:#F5EFFE;--accelerate-bd:#CFADF0;
+  --reinforce:#0E7490;--reinforce-bg:#ECFEFF;--reinforce-bd:#67E8F9;
+  --data:#4338CA;--data-bg:#EEF2FF;--data-bd:#C7D2FE;
+  --chat:#BE185D;--chat-bg:#FFF0F5;--chat-bd:#FBCFE8;
+
+  /* Semantic */
+  --ok:#1A6B3C;--ok-bg:#EDF7F2;--ok-bd:#B6DEC9;
+  --warn:#92480A;--warn-bg:#FEF4EB;--warn-bd:#F5C99A;
+  --danger:#9B1C1C;--danger-bg:#FEF2F2;--danger-bd:#FCA5A5;
+  --info:#0056B8;--info-bg:#EDF4FF;--info-bd:#AECBF5;
+
+  --fd:'Epilogue',sans-serif;--fm:'IBM Plex Mono',monospace;--fs:'Instrument Serif',serif;
+  --r:6px;
+  --sh:0 1px 3px rgba(0,0,0,.07),0 1px 2px rgba(0,0,0,.04);
+  --shm:0 4px 12px rgba(0,0,0,.08),0 2px 4px rgba(0,0,0,.05);
+}
+
+body{background:var(--bg);color:var(--text);font-family:var(--fd);font-size:13px;line-height:1.5;min-height:100vh;}
+.shell{display:grid;grid-template-columns:220px 1fr;grid-template-rows:52px 1fr;min-height:100vh;}
+
+/* ── Topbar ── */
+.topbar{grid-column:1/-1;background:var(--surface);border-bottom:1.5px solid var(--border);display:flex;align-items:center;padding:0 20px;position:sticky;top:0;z-index:200;box-shadow:var(--sh);}
+.logo{display:flex;align-items:center;gap:9px;text-decoration:none;color:inherit;}
+.logo-icon{width:26px;height:26px;background:var(--text);border-radius:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.logo-icon svg{fill:var(--surface);}
+.logo-name{font-family:var(--fs);font-size:16px;letter-spacing:-.01em;}
+.logo-sub{color:var(--t3);font-size:10px;font-family:var(--fm);}
+.t-sep{width:1px;height:24px;background:var(--border);margin:0 14px;}
+.t-crumb{font-family:var(--fm);font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;}
+.t-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.status-pill{display:flex;align-items:center;gap:5px;font-family:var(--fm);font-size:10px;color:var(--t2);background:var(--surface2);border:1px solid var(--border);border-radius:100px;padding:3px 10px;}
+.status-dot{width:7px;height:7px;border-radius:50%;background:#aaa;}
+.status-dot.ok{background:var(--ok);}
+.status-dot.warn{background:var(--warn);}
+.status-dot.danger{background:var(--danger);}
+
+/* ── Sidebar ── */
+.sidebar{background:var(--surface);border-right:1.5px solid var(--border);padding:16px 0;display:flex;flex-direction:column;position:sticky;top:52px;height:calc(100vh - 52px);overflow-y:auto;}
+.sidebar::-webkit-scrollbar{width:3px;}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border);}
+.ns-lbl{font-family:var(--fm);font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:.14em;padding:14px 18px 5px;}
+.ni{display:flex;align-items:center;gap:9px;padding:8px 18px;cursor:pointer;font-size:12.5px;font-weight:500;color:var(--t3);border-left:2.5px solid transparent;transition:all .12s;user-select:none;}
+.ni:hover{color:var(--t2);background:var(--bg);}
+.ni.on{color:var(--text);background:var(--bg);}
+.ni.on.n-overview{border-left-color:var(--ops);color:var(--ops);}
+.ni.on.n-monitoring{border-left-color:var(--sense);color:var(--sense);}
+.ni.on.n-cicd{border-left-color:var(--accelerate);color:var(--accelerate);}
+.ni.on.n-deploy{border-left-color:var(--optimize);color:var(--optimize);}
+.ni.on.n-obs{border-left-color:var(--data);color:var(--data);}
+.ni.on.n-chat{border-left-color:var(--chat);color:var(--chat);}
+.ni-ic{width:15px;height:15px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+.ng-hdr{display:flex;align-items:center;gap:7px;padding:10px 18px 4px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--t3);}
+.ng-dot{width:7px;height:7px;border-radius:1.5px;flex-shrink:0;}
+
+/* Sidebar footer card */
+.s-foot{margin-top:auto;padding:12px;}
+.mc{background:var(--bg);border:1.5px solid var(--border);border-radius:8px;padding:11px 13px;}
+.mc-ey{font-family:var(--fm);font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px;}
+.mc-nm{font-weight:700;font-size:12px;margin-bottom:8px;}
+.mc-r{display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-bottom:3px;}
+.mc-v{font-family:var(--fm);font-size:11px;}
+.mc-v.ok{color:var(--ok);}
+.mc-v.warn{color:var(--warn);}
+.mc-v.info{color:var(--sense);}
+.mc-bar{width:100%;height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:8px;}
+.mc-bar-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--ops),var(--sense));}
+
+/* ── Main content ── */
+.main{padding:26px 28px;overflow-y:auto;background:var(--bg);}
+
+/* ── Sections ── */
+.sec{display:none;animation:fi .22s ease;}
+.sec.on{display:block;}
+@keyframes fi{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Page header ── */
+.ph{display:flex;align-items:flex-start;gap:13px;padding-bottom:17px;border-bottom:1.5px solid var(--border);margin-bottom:20px;}
+.ph-badge{font-family:var(--fm);font-size:9px;text-transform:uppercase;letter-spacing:.14em;padding:4px 9px;border-radius:3px;font-weight:500;white-space:nowrap;margin-top:4px;}
+.ph-badge.ops{background:var(--ops-bg);color:var(--ops);border:1px solid var(--ops-bd);}
+.ph-badge.sense{background:var(--sense-bg);color:var(--sense);border:1px solid var(--sense-bd);}
+.ph-badge.accelerate{background:var(--accelerate-bg);color:var(--accelerate);border:1px solid var(--accelerate-bd);}
+.ph-badge.optimize{background:var(--optimize-bg);color:var(--optimize);border:1px solid var(--optimize-bd);}
+.ph-badge.data{background:var(--data-bg);color:var(--data);border:1px solid var(--data-bd);}
+.ph-t{font-weight:800;font-size:20px;line-height:1.2;margin-bottom:3px;}
+.ph-g{font-size:12px;color:var(--t3);font-style:italic;}
+
+/* ── Grids ── */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-bottom:13px;}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:13px;margin-bottom:13px;}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:13px;}
+.s2{grid-column:span 2;}
+.s3{grid-column:span 3;}
+
+/* ── Cards ── */
+.card{background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:16px 17px;box-shadow:var(--sh);}
+.card:hover{border-color:var(--border2);}
+.c-ey{font-family:var(--fm);font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:var(--t4);margin-bottom:8px;display:flex;align-items:center;gap:5px;}
+.ey-d{width:5px;height:5px;border-radius:50%;}
+.c-t{font-weight:700;font-size:13px;margin-bottom:10px;}
+.bv{font-family:var(--fd);font-weight:800;font-size:28px;line-height:1;margin-bottom:3px;}
+.sv{font-size:11px;color:var(--t3);}
+.sec-title{font-weight:700;font-size:13px;color:var(--text);margin-bottom:10px;}
+.sec-sub{font-size:11px;color:var(--t3);margin-bottom:12px;margin-top:-6px;}
+
+/* ── KPI strip ── */
+.kpi-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--border);border:1.5px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:20px;}
+.kpi{background:var(--surface);padding:14px 15px;}
+.kpi-ey{font-family:var(--fm);font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:var(--t4);margin-bottom:5px;}
+.kpi-val{font-weight:800;font-size:22px;line-height:1;margin-bottom:2px;}
+.kpi-sub{font-size:10px;color:var(--t3);}
+.kpi-val.ok{color:var(--ok);}
+.kpi-val.warn{color:var(--warn);}
+.kpi-val.danger{color:var(--danger);}
+.kpi-val.ops{color:var(--ops);}
+
+/* ── Alert rows ── */
+.al{display:flex;align-items:flex-start;gap:8px;padding:9px 11px;border-radius:5px;font-size:11.5px;margin-bottom:8px;}
+.al.ok{background:var(--ok-bg);border:1px solid var(--ok-bd);color:var(--ok);}
+.al.w{background:var(--warn-bg);border:1px solid var(--warn-bd);color:var(--warn);}
+.al.d{background:var(--danger-bg);border:1px solid var(--danger-bd);color:var(--danger);}
+.al.i{background:var(--info-bg);border:1px solid var(--info-bd);color:var(--info);}
+.al-ic{flex-shrink:0;margin-top:1px;}
+
+/* ── Activity feed ── */
+.activity{display:flex;flex-direction:column;gap:0;}
+.act-row{display:flex;align-items:flex-start;gap:11px;padding:9px 0;border-bottom:1px solid var(--border);}
+.act-row:last-child{border-bottom:none;}
+.act-dot-wrap{display:flex;flex-direction:column;align-items:center;padding-top:4px;}
+.act-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.act-line{width:1px;flex:1;background:var(--border);margin-top:4px;}
+.act-body{flex:1;}
+.act-title{font-size:12px;font-weight:600;color:var(--text);margin-bottom:1px;}
+.act-desc{font-size:11px;color:var(--t3);}
+.act-time{font-family:var(--fm);font-size:10px;color:var(--t4);white-space:nowrap;padding-top:2px;}
+
+/* ── Badges ── */
+.badge{display:inline-flex;align-items:center;gap:4px;font-family:var(--fm);font-size:9px;text-transform:uppercase;letter-spacing:.1em;padding:2px 7px;border-radius:3px;font-weight:500;}
+.badge.ok{background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok-bd);}
+.badge.warn{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn-bd);}
+.badge.danger{background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger-bd);}
+.badge.info{background:var(--info-bg);color:var(--info);border:1px solid var(--info-bd);}
+.badge.neutral{background:var(--surface2);color:var(--t3);border:1px solid var(--border);}
+
+/* ── Stat blocks ── */
+.sb-row{display:flex;gap:8px;margin-top:8px;}
+.sb{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:10px 12px;}
+.sb-l{font-family:var(--fm);font-size:9px;color:var(--t4);text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px;}
+.sb-v{font-weight:800;font-size:18px;}
+
+/* ── Table ── */
+.tbl-wrap{overflow-x:auto;overflow-y:auto;max-height:260px;border:1.5px solid var(--border);border-radius:6px;}
+.tbl-wrap table{width:100%;border-collapse:collapse;}
+.tbl-wrap thead{position:sticky;top:0;background:var(--surface2);z-index:1;}
+.tbl-wrap th{font-family:var(--fm);font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--t4);padding:8px 11px;text-align:left;border-bottom:1.5px solid var(--border);}
+.tbl-wrap td{font-size:11.5px;padding:7px 11px;border-bottom:1px solid var(--border);color:var(--t2);}
+.tbl-wrap tr:last-child td{border-bottom:none;}
+.tbl-wrap tr:hover td{background:var(--surface2);}
+
+/* ── Bar progress ── */
+.bar-wrap{display:flex;flex-direction:column;gap:8px;margin-top:6px;}
+.bar-r{display:flex;align-items:center;gap:9px;}
+.bar-lbl{font-family:var(--fm);font-size:10px;color:var(--t3);min-width:90px;}
+.bar-track{flex:1;height:6px;background:var(--surface2);border:1px solid var(--border);border-radius:3px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:3px;transition:width .9s cubic-bezier(.4,0,.2,1);}
+.bar-pct{font-family:var(--fm);font-size:10px;color:var(--t3);min-width:34px;text-align:right;}
+
+/* ── Feature list ── */
+.feat-list{list-style:none;margin-top:6px;}
+.feat-list li{font-family:var(--fm);font-size:11px;color:var(--t2);padding:3px 0;display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--border);}
+.feat-list li:last-child{border-bottom:none;}
+.feat-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;}
+
+/* ── CI step ── */
+.ci-step{display:flex;align-items:center;gap:10px;padding:9px 11px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;margin-bottom:6px;}
+.ci-num{font-family:var(--fm);font-size:10px;color:var(--t4);min-width:20px;}
+.ci-name{font-size:12px;color:var(--t2);flex:1;}
+.ci-cmd{font-family:var(--fm);font-size:10px;color:var(--t3);}
+
+/* ── Service card ── */
+.svc-card{background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:14px 16px;box-shadow:var(--sh);}
+.svc-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.svc-name{font-weight:700;font-size:13px;}
+.svc-row{display:flex;justify-content:space-between;font-size:11.5px;color:var(--t3);padding:4px 0;border-bottom:1px solid var(--border);}
+.svc-row:last-child{border-bottom:none;}
+.svc-val{font-family:var(--fm);font-size:11px;color:var(--text);}
+
+/* ── Drift check row ── */
+.drift-r{display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;margin-bottom:6px;}
+.drift-name{font-size:12px;color:var(--t2);flex:1;}
+.drift-val{font-family:var(--fm);font-size:11px;color:var(--text);min-width:80px;text-align:right;}
+
+/* ── Loading/empty ── */
+.loading{color:var(--t4);font-family:var(--fm);font-size:10px;padding:20px;text-align:center;text-transform:uppercase;letter-spacing:.1em;}
+.empty{color:var(--t4);font-family:var(--fm);font-size:10px;padding:30px;text-align:center;border:1.5px dashed var(--border);border-radius:6px;text-transform:uppercase;letter-spacing:.1em;}
+
+/* ── Activity scroll ── */
+.activity-scroll{max-height:210px;overflow-y:auto;padding-right:4px;}
+.activity-scroll::-webkit-scrollbar{width:3px;}
+.activity-scroll::-webkit-scrollbar-thumb{background:var(--border);}
+
+/* ── Drift 5-column grid ── */
+.drift-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:4px;}
+.drift-cell{border:1.5px solid var(--border);border-radius:6px;padding:10px 12px;}
+.drift-cell.ok{border-color:var(--ok-bd);background:var(--ok-bg);}
+.drift-cell.warn{border-color:var(--warn-bd);background:var(--warn-bg);}
+.drift-cell.danger{border-color:var(--danger-bd);background:var(--danger-bg);}
+.drift-cell.unknown{background:var(--surface2);}
+.drift-cell-name{font-size:9px;font-family:var(--fm);text-transform:uppercase;letter-spacing:.08em;color:var(--t4);margin-bottom:5px;}
+.drift-cell-status{font-weight:700;font-size:13px;margin-bottom:5px;}
+.drift-cell-status.ok{color:var(--ok);}
+.drift-cell-status.warn{color:var(--warn);}
+.drift-cell-status.danger{color:var(--danger);}
+.drift-cell-status.unknown{color:var(--t3);}
+.drift-cell-msg{font-size:10px;color:var(--t3);line-height:1.4;}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- ── Topbar ── -->
+<header class="topbar">
+  <a class="logo" href="/dashboard/">
+    <div class="logo-icon">
+      <svg width="15" height="15" viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 1.8L13.5 6 8 9.2 2.5 6 8 2.8zM2 7.1l5.5 3.2v3.9L2 11V7.1zm7.5 7.1v-3.9L15 7.1V11l-5.5 3.2z"/></svg>
+    </div>
+    <span class="logo-name">RIIA</span>
+    <span class="logo-sub">v1.0.0</span>
+  </a>
+  <div class="t-sep"></div>
+  <span class="t-crumb">Operations Portal</span>
+  <div class="t-right">
+    <div class="status-pill">
+      <span class="status-dot" id="api-dot"></span>
+      <span id="api-text">Checking…</span>
+    </div>
+  </div>
+</header>
+
+<!-- ── Sidebar ── -->
+<nav class="sidebar">
+  <div class="ns-lbl">Platform</div>
+  <div class="ni n-overview on" onclick="nav(this,'overview')">
+    <div class="ni-ic">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <rect x="1" y="1" width="5" height="5" rx="1" fill="currentColor" opacity=".9"/>
+        <rect x="8" y="1" width="5" height="5" rx="1" fill="currentColor" opacity=".4"/>
+        <rect x="1" y="8" width="5" height="5" rx="1" fill="currentColor" opacity=".4"/>
+        <rect x="8" y="8" width="5" height="5" rx="1" fill="currentColor" opacity=".15"/>
+      </svg>
+    </div>
+    Overview
+  </div>
+
+  <div class="ng-hdr" style="margin-top:4px">
+    <div class="ng-dot" style="background:var(--sense)"></div>Monitoring
+  </div>
+
+  <div class="ni n-monitoring" onclick="nav(this,'monitoring')">
+    <div class="ni-ic">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <polyline points="1,11 4,7 6,9 9,4 13,2" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    API &amp; Metrics
+  </div>
+
+  <div class="ng-hdr" style="margin-top:4px">
+    <div class="ng-dot" style="background:var(--accelerate)"></div>Build
+  </div>
+
+  <div class="ni n-cicd" onclick="nav(this,'cicd')">
+    <div class="ni-ic">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <polygon points="2,2 12,7 2,12" fill="currentColor" opacity=".8"/>
+      </svg>
+    </div>
+    CI / CD Pipeline
+  </div>
+
+  <div class="ng-hdr" style="margin-top:4px">
+    <div class="ng-dot" style="background:var(--optimize)"></div>Deploy
+  </div>
+
+  <div class="ni n-deploy" onclick="nav(this,'deploy')">
+    <div class="ni-ic">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <path d="M7 1.5c-3 0-5.5 2-5.5 5s2.5 5 5.5 5 5.5-2 5.5-5-2.5-5-5.5-5z" stroke="currentColor" stroke-width="1.3" fill="none"/>
+        <path d="M4.5 7l2 2 3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+    </div>
+    Deployments
+  </div>
+
+  <div class="ng-hdr" style="margin-top:4px">
+    <div class="ng-dot" style="background:var(--data)"></div>Observe
+  </div>
+
+  <div class="ni n-obs" onclick="nav(this,'observability')">
+    <div class="ni-ic">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <circle cx="7" cy="7" r="2" fill="currentColor" opacity=".7"/>
+        <path d="M7 1.5C4 1.5 1.5 4 1.5 7S4 12.5 7 12.5 12.5 10 12.5 7 10 1.5 7 1.5z" stroke="currentColor" stroke-width="1.3" fill="none"/>
+        <path d="M1.5 7h2M10.5 7h2M7 1.5v2M7 10.5v2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+      </svg>
+    </div>
+    Observability
+  </div>
+
+  <div class="ni n-chat" onclick="nav(this,'chat')">
+    <div class="ni-ic">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <path d="M12 2H2v8h4l1 2 1-2h4V2z" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    Chat Analytics
+  </div>
+
+  <div class="s-foot">
+    <div class="mc">
+      <div class="mc-ey">Pipeline Status</div>
+      <div class="mc-nm" id="mc-status-text">Loading…</div>
+      <div class="mc-r"><span>Steps done</span><span class="mc-v info" id="mc-steps">—</span></div>
+      <div class="mc-r"><span>Model</span><span class="mc-v" id="mc-model">—</span></div>
+      <div class="mc-r"><span>Last run</span><span class="mc-v info" id="mc-lastrun">—</span></div>
+      <div class="mc-bar"><div class="mc-bar-fill" id="mc-bar" style="width:0%"></div></div>
+    </div>
+  </div>
+</nav>
+
+<!-- ── Main ── -->
+<main class="main">
+
+  <!-- ══ OVERVIEW ══ -->
+  <section class="sec on" id="sec-overview">
+    <div class="ph">
+      <div class="ph-badge ops">Operations</div>
+      <div>
+        <div class="ph-t">Platform Overview</div>
+        <div class="ph-g">Live health, model summary, and dataset status for the RIIA system</div>
+      </div>
+    </div>
+
+    <!-- KPI strip -->
+    <div class="kpi-strip" id="kpi-strip">
+      <div class="kpi">
+        <div class="kpi-ey">API Status</div>
+        <div class="kpi-val" id="kpi-status">—</div>
+        <div class="kpi-sub" id="kpi-status-sub">—</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-ey">Total Requests</div>
+        <div class="kpi-val ops" id="kpi-requests">—</div>
+        <div class="kpi-sub" id="kpi-requests-sub">all time</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-ey">Error Rate</div>
+        <div class="kpi-val" id="kpi-errors">—</div>
+        <div class="kpi-sub">4xx / 5xx</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-ey">MCP Calls</div>
+        <div class="kpi-val ops" id="kpi-mcp">—</div>
+        <div class="kpi-sub">logged</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-ey">Pipeline Steps</div>
+        <div class="kpi-val ops" id="kpi-pipeline">—</div>
+        <div class="kpi-sub" id="kpi-pipeline-sub">of 8 complete</div>
+      </div>
+    </div>
+
+    <!-- Model + Dataset cards -->
+    <div class="g2">
+
+      <!-- Model card -->
+      <div class="card">
+        <div class="c-ey"><div class="ey-d" style="background:var(--ops)"></div>Active Model</div>
+        <div class="c-t">RITA DDQN v1.4</div>
+        <div class="sb-row">
+          <div class="sb"><div class="sb-l">Sharpe</div><div class="sb-v" id="mdl-sharpe">—</div></div>
+          <div class="sb"><div class="sb-l">Max DD</div><div class="sb-v" id="mdl-mdd">—</div></div>
+          <div class="sb"><div class="sb-l">CAGR</div><div class="sb-v" id="mdl-cagr">—</div></div>
+        </div>
+        <div class="bar-wrap" style="margin-top:14px;">
+          <div class="bar-r">
+            <span class="bar-lbl">Sharpe target</span>
+            <div class="bar-track"><div class="bar-fill" id="bar-sharpe" style="width:0%;background:var(--ops)"></div></div>
+            <span class="bar-pct" id="bar-sharpe-pct">—</span>
+          </div>
+          <div class="bar-r">
+            <span class="bar-lbl">MDD within limit</span>
+            <div class="bar-track"><div class="bar-fill" id="bar-mdd" style="width:0%;background:var(--ok)"></div></div>
+            <span class="bar-pct" id="bar-mdd-pct">—</span>
+          </div>
+        </div>
+        <div style="margin-top:14px;">
+          <div style="font-size:10px;color:var(--t4);font-family:var(--fm);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;">Specs</div>
+          <ul class="feat-list">
+            <li><div class="feat-dot" style="background:var(--ops)"></div>Algorithm: Double DQN (stable-baselines3)</li>
+            <li><div class="feat-dot" style="background:var(--ops)"></div>State: 8 features — RSI, MACD, BB%B, ATR, Trend, …</li>
+            <li><div class="feat-dot" style="background:var(--ops)"></div>Actions: Discrete(3) — 0% / 50% / 100% Nifty</li>
+            <li><div class="feat-dot" style="background:var(--ops)"></div>Timesteps: 500k · τ=0.005 · 5-seed best</li>
+            <li><div class="feat-dot" style="background:var(--ops)"></div>Train: 2010–2022 · Val: 2023–2024 · Backtest: 2025+</li>
+            <li><div class="feat-dot" style="background:var(--ops)"></div><span>Model age: <span id="mdl-age">—</span></span></li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Dataset card -->
+      <div class="card">
+        <div class="c-ey"><div class="ey-d" style="background:var(--data)"></div>Active Dataset</div>
+        <div class="c-t">Nifty 50 OHLCV (Merged)</div>
+        <div class="sb-row">
+          <div class="sb"><div class="sb-l">Rows</div><div class="sb-v" id="ds-rows">—</div></div>
+          <div class="sb"><div class="sb-l">Features</div><div class="sb-v">8</div></div>
+          <div class="sb"><div class="sb-l">Freshness</div><div class="sb-v" id="ds-fresh">—</div></div>
+        </div>
+        <div style="margin-top:14px;">
+          <div style="font-size:10px;color:var(--t4);font-family:var(--fm);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;">Date Range</div>
+          <div class="al i" id="ds-range-al" style="margin-top:0;margin-bottom:8px;">
+            <svg class="al-ic" width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 4v3M6.5 9h.01" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            <span id="ds-range-text">Loading…</span>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--t4);font-family:var(--fm);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;">Split Allocation</div>
+          <div class="bar-wrap">
+            <div class="bar-r">
+              <span class="bar-lbl">Train (2010–22)</span>
+              <div class="bar-track"><div class="bar-fill" style="width:77%;background:var(--optimize)"></div></div>
+              <span class="bar-pct">~77%</span>
+            </div>
+            <div class="bar-r">
+              <span class="bar-lbl">Val (2023–24)</span>
+              <div class="bar-track"><div class="bar-fill" style="width:15%;background:var(--sense)"></div></div>
+              <span class="bar-pct">~15%</span>
+            </div>
+            <div class="bar-r">
+              <span class="bar-lbl">Backtest (2025+)</span>
+              <div class="bar-track"><div class="bar-fill" style="width:8%;background:var(--data)"></div></div>
+              <span class="bar-pct">~8%</span>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:10px" id="ds-extended-al"></div>
+      </div>
+    </div>
+
+    <!-- Recent activity -->
+    <div class="card">
+      <div class="c-ey"><div class="ey-d" style="background:var(--t3)"></div>Recent Pipeline Activity</div>
+      <div class="activity-scroll"><div class="activity" id="overview-activity"><div class="loading">Loading…</div></div></div>
+    </div>
+  </section>
+
+  <!-- ══ MONITORING ══ -->
+  <section class="sec" id="sec-monitoring">
+    <div class="ph">
+      <div class="ph-badge sense">Monitoring</div>
+      <div>
+        <div class="ph-t">API &amp; Metrics</div>
+        <div class="ph-g">Request statistics, error rates, and pipeline step timing</div>
+      </div>
+    </div>
+
+    <div class="g3" id="mon-stats">
+      <div class="card">
+        <div class="c-ey"><div class="ey-d" style="background:var(--sense)"></div>API Requests</div>
+        <div class="bv" id="mon-total">—</div>
+        <div class="sv">total requests logged</div>
+        <div class="sb-row" style="margin-top:10px">
+          <div class="sb"><div class="sb-l">Errors</div><div class="sb-v" id="mon-errors">—</div></div>
+          <div class="sb"><div class="sb-l">Avg Latency</div><div class="sb-v" id="mon-ips">—</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="c-ey"><div class="ey-d" style="background:var(--sense)"></div>Top Endpoint</div>
+        <div class="bv" style="font-size:16px;line-height:1.3;word-break:break-all" id="mon-top-ep">—</div>
+        <div class="sv" id="mon-top-cnt">— requests</div>
+      </div>
+      <div class="card">
+        <div class="c-ey"><div class="ey-d" style="background:var(--sense)"></div>Pipeline Runs</div>
+        <div class="bv" id="mon-completed">—</div>
+        <div class="sv">completed steps</div>
+        <div class="sb-row" style="margin-top:10px">
+          <div class="sb"><div class="sb-l">Failed</div><div class="sb-v" id="mon-failed">—</div></div>
+          <div class="sb"><div class="sb-l">Training rounds</div><div class="sb-v" id="mon-rounds">—</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="g2">
+      <div class="card">
+        <div class="c-ey"><div class="ey-d" style="background:var(--sense)"></div>Step Timing Averages</div>
+        <div class="bar-wrap" id="mon-timing">
+          <div class="loading">Loading…</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="c-ey"><div class="ey-d" style="background:var(--sense)"></div>Alerts</div>
+        <div id="mon-alerts"><div class="loading">Loading…</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="c-ey"><div class="ey-d" style="background:var(--sense)"></div>Recent Step Log</div>
+      <div class="tbl-wrap" id="mon-steplog">
+        <div class="loading">Loading…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ CI/CD ══ -->
+  <section class="sec" id="sec-cicd">
+    <div class="ph">
+      <div class="ph-badge accelerate">CI / CD</div>
+      <div>
+        <div class="ph-t">Build Pipeline</div>
+        <div class="ph-g">GitHub Actions — lint gate + test matrix + Python 3.11 / 3.12</div>
+      </div>
+    </div>
+
+    <div class="g3">
+      <div class="card">
+        <div class="c-ey"><div class="ey-d" style="background:var(--accelerate)"></div>Lint Gate — Job 1</div>
+        <div class="c-t">Code Quality</div>
+        <div class="al ok" style="margin-top:0;margin-bottom:10px;">
+          <svg class="al-ic" width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2.5 7l3 3 5-5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Blocks test job — no bad code on master
+        </div>
+        <div class="ci-step"><span class="ci-num">1</span><span class="ci-name">Checkout</span><span class="badge neutral">v4</span></div>
+        <div class="ci-step"><span class="ci-num">2</span><span class="ci-name">Setup Python 3.12</span><span class="badge neutral">v5</span></div>
+        <div class="ci-step"><span class="ci-num">3</span><span class="ci-name">Install tools</span><span class="ci-cmd">ruff black</span></div>
+        <div class="ci-step"><span class="ci-num">4</span><span class="ci-name">ruff check</span><span class="ci-cmd">src/ tests/</span></div>
+        <div class="ci-step"><span class="ci-num">5</span><span class="ci-name">black --check</span><span class="ci-cmd">src/ tests/</span></div>
+      </div>
+
+      <div class="card">
+        <div class="c-ey"><div class="ey-d" style="background:var(--accelerate)"></div>Test Matrix — Job 2</div>
+        <div class="c-t">Unit Test Suite</div>
+        <div class="al ok" style="margin-top:0;margin-bottom:10px;">
+          <svg class="al-ic" width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2.5 7l3 3 5-5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Runs after lint — Python 3.11 &amp; 3.12
+        </div>
+        <div class="ci-step"><span class="ci-num">1</span><span class="ci-name">Checkout + Setup</span><span class="badge neutral">[3.11, 3.12]</span></div>
+        <div class="ci-step"><span class="ci-num">2</span><span class="ci-name">Install project</span><span class="ci-cmd">pip install -e ".[dev]"</span></div>
+        <div class="ci-step"><span class="ci-num">3</span><span class="ci-name">Run tests</span><span class="ci-cmd">pytest -k "not APIEndpoints"</span></div>
+        <div class="al i" style="margin-top:8px;">
+          <svg class="al-ic" width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 4v3M6.5 9h.01" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          10 API tests run locally only
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="c-ey"><div class="ey-d" style="background:var(--accelerate)"></div>Test Coverage</div>
+        <div class="c-t">29 Unit Tests</div>
+        <div class="bar-wrap" style="margin-top:10px">
+          <div class="bar-r"><span class="bar-lbl">DataLoader</span><div class="bar-track"><div class="bar-fill" style="width:100%;background:var(--accelerate)"></div></div><span class="bar-pct">5</span></div>
+          <div class="bar-r"><span class="bar-lbl">TechAnalyzer</span><div class="bar-track"><div class="bar-fill" style="width:69%;background:var(--accelerate)"></div></div><span class="bar-pct">4</span></div>
+          <div class="bar-r"><span class="bar-lbl">RLAgent</span><div class="bar-track"><div class="bar-fill" style="width:86%;background:var(--accelerate)"></div></div><span class="bar-pct">5</span></div>
+          <div class="bar-r"><span class="bar-lbl">Performance</span><div class="bar-track"><div class="bar-fill" style="width:52%;background:var(--accelerate)"></div></div><span class="bar-pct">3</span></div>
+          <div class="bar-r"><span class="bar-lbl">GoalEngine</span><div class="bar-track"><div class="bar-fill" style="width:69%;background:var(--accelerate)"></div></div><span class="bar-pct">4</span></div>
+          <div class="bar-r"><span class="bar-lbl">StrategyEngine</span><div class="bar-track"><div class="bar-fill" style="width:52%;background:var(--accelerate)"></div></div><span class="bar-pct">3</span></div>
+          <div class="bar-r"><span class="bar-lbl">Session/Workflow</span><div class="bar-track"><div class="bar-fill" style="width:86%;background:var(--accelerate)"></div></div><span class="bar-pct">5</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:13px">
+      <div class="c-ey"><div class="ey-d" style="background:var(--accelerate)"></div>Recent Pipeline Step Log</div>
+      <div class="tbl-wrap" id="cicd-steplog">
+        <div class="loading">Loading…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ DEPLOYMENTS ══ -->
+  <section class="sec" id="sec-deploy">
+    <div class="ph">
+      <div class="ph-badge optimize">Deployments</div>
+      <div>
+        <div class="ph-t">Service Status</div>
+        <div class="ph-g">Running services, model deployment, and environment configuration</div>
+      </div>
+    </div>
+
+    <div class="g2" id="deploy-services">
+      <div class="svc-card">
+        <div class="svc-hdr">
+          <span class="svc-name">FastAPI — RIIA Backend</span>
+          <span class="badge" id="svc-api-badge">checking…</span>
+        </div>
+        <div class="svc-row"><span>Port</span><span class="svc-val">8000</span></div>
+        <div class="svc-row"><span>Endpoint</span><span class="svc-val">localhost:8000</span></div>
+        <div class="svc-row"><span>Docs</span><span class="svc-val">/docs &nbsp;·&nbsp; /redoc</span></div>
+        <div class="svc-row"><span>Routes</span><span class="svc-val">22 endpoints</span></div>
+        <div class="svc-row"><span>Static</span><span class="svc-val">/dashboard/ → dashboard/</span></div>
+        <div class="svc-row"><span>Model loaded</span><span class="svc-val" id="svc-model-loaded">—</span></div>
+        <div class="svc-row"><span>Model age</span><span class="svc-val" id="svc-model-age">—</span></div>
+        <div class="svc-row"><span>Last pipeline run</span><span class="svc-val" id="svc-last-run">—</span></div>
+      </div>
+
+      <div class="svc-card">
+        <div class="svc-hdr">
+          <span class="svc-name">Streamlit — Data Scientist App</span>
+          <span class="badge neutral">separate process</span>
+        </div>
+        <div class="svc-row"><span>Port</span><span class="svc-val">8501</span></div>
+        <div class="svc-row"><span>Endpoint</span><span class="svc-val">localhost:8501</span></div>
+        <div class="svc-row"><span>Launch command</span><span class="svc-val">python run_ui.py</span></div>
+        <div class="svc-row"><span>Audience</span><span class="svc-val">Data scientists / model devs</span></div>
+        <div class="svc-row"><span>Tabs</span><span class="svc-val">11 (Dashboard → MCP Calls)</span></div>
+        <div class="svc-row"><span>Data Prep</span><span class="svc-val">Drag-and-drop NSE CSV</span></div>
+        <div class="svc-row"><span>Charts</span><span class="svc-val">50+ Plotly interactive</span></div>
+        <div class="svc-row"><span>Explainability</span><span class="svc-val">SHAP values + feature importance</span></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:0">
+      <div class="c-ey"><div class="ey-d" style="background:var(--optimize)"></div>Environment</div>
+      <div class="g2" style="margin-top:8px;margin-bottom:0">
+        <div>
+          <div class="svc-row"><span>Python env</span><span class="svc-val">C:\Users\Sandeep\pyenv-envs\poc</span></div>
+          <div class="svc-row"><span>Package</span><span class="svc-val">rita (editable install)</span></div>
+          <div class="svc-row"><span>NIFTY_CSV_PATH</span><span class="svc-val" id="env-csv">—</span></div>
+          <div class="svc-row"><span>OUTPUT_DIR</span><span class="svc-val" id="env-output">—</span></div>
+        </div>
+        <div>
+          <div class="svc-row"><span>Launch API</span><span class="svc-val">python run_api.py</span></div>
+          <div class="svc-row"><span>Launch UI</span><span class="svc-val">python run_ui.py</span></div>
+          <div class="svc-row"><span>Run tests</span><span class="svc-val">pytest tests/test_core.py -v</span></div>
+          <div class="svc-row"><span>Git remote</span><span class="svc-val">github.com/sangaw/riia-cowork-apr-demo</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:13px">
+      <div class="c-ey"><div class="ey-d" style="background:var(--optimize)"></div>Training History</div>
+      <div class="tbl-wrap" id="deploy-training">
+        <div class="loading">Loading…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ CHAT ANALYTICS ══ -->
+  <section class="sec" id="sec-chat">
+    <div class="ph">
+      <div class="ph-badge" style="background:var(--chat-bg);color:var(--chat);border:1px solid var(--chat-bd)">Chat</div>
+      <div>
+        <div class="ph-t">Chat Analytics</div>
+        <div class="ph-g">Intent classifier monitoring — query volume, confidence scores, recent queries, and function dispatch transparency</div>
+      </div>
+    </div>
+
+    <!-- KPI strip -->
+    <div class="kpi-strip" id="chat-kpis" style="margin-bottom:13px">
+      <div class="loading">Loading…</div>
+    </div>
+
+    <!-- Recent queries (scrollable after 6 rows) -->
+    <div class="card" style="margin-bottom:13px">
+      <div class="c-ey"><div class="ey-d" style="background:var(--chat)"></div>Recent Queries</div>
+      <div id="chat-recent"><div class="loading">Loading…</div></div>
+    </div>
+
+    <!-- Intent distribution -->
+    <div class="card">
+      <div class="c-ey"><div class="ey-d" style="background:var(--chat)"></div>Intent Distribution — Python Function Mapping</div>
+      <div class="tbl-wrap" id="chat-intents"><div class="loading">Loading…</div></div>
+    </div>
+  </section>
+
+  <!-- ══ OBSERVABILITY ══ -->
+  <section class="sec" id="sec-observability">
+    <div class="ph">
+      <div class="ph-badge data">Observability</div>
+      <div>
+        <div class="ph-t">Drift &amp; Audit</div>
+        <div class="ph-g">Model drift detection, data freshness, and MCP call audit log</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:13px">
+      <div class="c-ey"><div class="ey-d" style="background:var(--data)"></div>Drift Detection Report</div>
+      <div id="drift-alerts" style="margin-bottom:10px"></div>
+      <div class="drift-grid" id="drift-checks"><div class="loading" style="grid-column:span 5">Loading…</div></div>
+    </div>
+
+    <div class="g2">
+      <div class="card">
+        <div class="c-ey"><div class="ey-d" style="background:var(--data)"></div>Data Freshness</div>
+        <div id="freshness-content"><div class="loading">Loading…</div></div>
+      </div>
+      <div class="card">
+        <div class="c-ey"><div class="ey-d" style="background:var(--data)"></div>Sharpe Trend (last 5 runs)</div>
+        <div id="sharpe-trend"><div class="loading">Loading…</div></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:0">
+      <div class="c-ey"><div class="ey-d" style="background:var(--data)"></div>MCP Call Audit Log</div>
+      <div class="tbl-wrap" id="obs-mcp">
+        <div class="loading">Loading…</div>
+      </div>
+    </div>
+  </section>
+
+</main>
+</div>
+
+<script>
+// ── Navigation ──────────────────────────────────────────────────────────────
+const SECTIONS = ['overview','monitoring','cicd','deploy','observability','chat'];
+
+function nav(el, id) {
+  document.querySelectorAll('.ni').forEach(n => n.classList.remove('on'));
+  el.classList.add('on');
+  SECTIONS.forEach(s => {
+    const sec = document.getElementById('sec-' + s);
+    if (sec) sec.classList.toggle('on', s === id);
+  });
+  if (!loadedSections.has(id)) {
+    loadedSections.add(id);
+    loadSection(id);
+  }
+}
+
+const loadedSections = new Set(['overview']);
+
+function loadSection(id) {
+  if (id === 'monitoring') loadMonitoring();
+  else if (id === 'cicd') loadCICD();
+  else if (id === 'deploy') loadDeploy();
+  else if (id === 'observability') loadObservability();
+  else if (id === 'chat') loadChat();
+}
+
+// ── Utilities ───────────────────────────────────────────────────────────────
+async function apiFetch(url) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
+function fmt(v, decimals=2) {
+  if (v == null || v === '' || isNaN(Number(v))) return '—';
+  return Number(v).toFixed(decimals);
+}
+
+function badge(text, cls) {
+  return `<span class="badge ${cls}">${text}</span>`;
+}
+
+function stepName(num) {
+  const names = {1:'Set Goal',2:'Market Analysis',3:'Strategy',4:'Train Model',
+                 5:'Set Period',6:'Backtest',7:'Results',8:'Update Goal'};
+  return names[num] || ('Step ' + num);
+}
+
+// ── Overview ─────────────────────────────────────────────────────────────────
+async function loadOverview() {
+  const [health, metrics, progress, dataStatus] = await Promise.all([
+    apiFetch('/health'),
+    apiFetch('/metrics'),
+    apiFetch('/progress'),
+    apiFetch('/api/v1/data-prep/status'),
+  ]);
+
+  // API status pill
+  const dot = document.getElementById('api-dot');
+  const txt = document.getElementById('api-text');
+  if (health && health.status === 'ok') {
+    dot.className = 'status-dot ok';
+    txt.textContent = health.model_exists ? 'Model loaded' : 'API online';
+  } else {
+    dot.className = 'status-dot danger';
+    txt.textContent = 'API offline';
+  }
+
+  // KPI strip
+  const apiOk = health && health.status === 'ok';
+  document.getElementById('kpi-status').textContent = apiOk ? 'Online' : 'Offline';
+  document.getElementById('kpi-status').className = 'kpi-val ' + (apiOk ? 'ok' : 'danger');
+  document.getElementById('kpi-status-sub').textContent = apiOk ? 'All systems nominal' : 'API unreachable';
+
+  if (metrics) {
+    const req = metrics.api_requests || {};
+    document.getElementById('kpi-requests').textContent = req.total_requests ?? '—';
+    const errRate = req.error_rate_pct != null ? req.error_rate_pct.toFixed(1) + '%'
+      : (req.total_requests > 0 ? ((req.error_count / req.total_requests) * 100).toFixed(1) + '%' : '0.0%');
+    document.getElementById('kpi-errors').textContent = errRate;
+    document.getElementById('kpi-errors').className = 'kpi-val ' + (parseFloat(errRate) > 5 ? 'warn' : 'ok');
+
+    document.getElementById('kpi-pipeline').textContent = metrics.pipeline.completed_steps ?? '—';
+  }
+
+  const mcp = await apiFetch('/api/v1/mcp-calls');
+  document.getElementById('kpi-mcp').textContent = mcp ? mcp.length : '—';
+
+  if (progress) {
+    document.getElementById('kpi-pipeline').textContent = progress.steps_completed;
+    document.getElementById('kpi-pipeline-sub').textContent = `of 8 complete (${progress.pct_complete}%)`;
+
+    // Sidebar footer
+    const allDone = progress.steps_completed >= 8;
+    document.getElementById('mc-status-text').textContent = allDone ? 'Pipeline Complete' : `${progress.steps_completed}/8 Steps Done`;
+    document.getElementById('mc-steps').textContent = progress.steps_completed + ' / 8';
+    document.getElementById('mc-bar').style.width = progress.pct_complete + '%';
+  }
+
+  if (health) {
+    document.getElementById('mc-model').textContent = health.model_exists
+      ? (health.model_age_days != null ? `${health.model_age_days}d old` : 'exists')
+      : 'not trained';
+    document.getElementById('mc-model').className = 'mc-v ' + (health.model_exists ? 'ok' : 'warn');
+    document.getElementById('mc-lastrun').textContent = health.last_pipeline_run
+      ? health.last_pipeline_run.slice(0, 16) : 'never';
+  }
+
+  // Model card
+  if (metrics && metrics.training && Object.keys(metrics.training).length) {
+    const t = metrics.training;
+    document.getElementById('mdl-sharpe').textContent = fmt(t.latest_backtest_sharpe);
+    document.getElementById('mdl-mdd').textContent = fmt(t.latest_backtest_mdd_pct) + '%';
+    document.getElementById('mdl-cagr').textContent = fmt(t.latest_backtest_cagr_pct) + '%';
+
+    const sharpePct = Math.min(100, (t.latest_backtest_sharpe / 1.5) * 100);
+    document.getElementById('bar-sharpe').style.width = sharpePct + '%';
+    document.getElementById('bar-sharpe-pct').textContent = fmt(t.latest_backtest_sharpe, 3);
+
+    const mddPct = Math.max(0, 100 - (Math.abs(t.latest_backtest_mdd_pct) / 10) * 100);
+    document.getElementById('bar-mdd').style.width = mddPct + '%';
+    document.getElementById('bar-mdd-pct').textContent = fmt(t.latest_backtest_mdd_pct) + '%';
+  }
+  if (health) {
+    document.getElementById('mdl-age').textContent = health.model_age_days != null
+      ? `${health.model_age_days} days ago` : (health.model_exists ? 'exists' : 'not trained');
+  }
+
+  // Dataset card — API returns {active_csv:{path,source,total_rows,date_from,date_to}, prepared_csv_exists, input_files}
+  if (dataStatus) {
+    const csv = dataStatus.active_csv || {};
+    const isExtended = dataStatus.prepared_csv_exists;
+    const totalRows = csv.total_rows;
+    const dateFrom = csv.date_from ?? '—';
+    const dateTo = csv.date_to ?? '—';
+
+    // Freshness: compute from date_to
+    let daysOld = null;
+    if (csv.date_to) {
+      daysOld = Math.floor((Date.now() - new Date(csv.date_to).getTime()) / 86400000);
+    }
+
+    document.getElementById('ds-rows').textContent = totalRows ?? '—';
+    document.getElementById('ds-fresh').textContent = daysOld != null ? daysOld + 'd' : '—';
+    document.getElementById('ds-fresh').style.color = daysOld != null && daysOld > 7 ? 'var(--warn)' : 'var(--ok)';
+    document.getElementById('ds-range-text').textContent = `${dateFrom} → ${dateTo}`;
+
+
+    const extAl = document.getElementById('ds-extended-al');
+    if (isExtended) {
+      extAl.innerHTML = `<div class="al ok" style="margin-top:0"><svg class="al-ic" width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2.5 7l3 3 5-5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Extended CSV active — using rita_output/nifty_merged.csv</div>`;
+    } else {
+      extAl.innerHTML = `<div class="al i" style="margin-top:0"><svg class="al-ic" width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 4v3M6.5 9h.01" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>Using base CSV — drop NSE CSVs in rita_input/ and run Prepare Data to extend</div>`;
+    }
+  }
+
+  // Recent activity from step log
+  const stepLog = await apiFetch('/api/v1/step-log');
+  const actEl = document.getElementById('overview-activity');
+  if (stepLog && stepLog.length) {
+    const recent = stepLog.slice(-4).reverse();
+    actEl.innerHTML = recent.map((row, i) => {
+      const isLast = i === recent.length - 1;
+      const isOk = row.status === 'completed';
+      const dotColor = isOk ? 'var(--ok)' : 'var(--danger)';
+      return `<div class="act-row">
+        <div class="act-dot-wrap">
+          <div class="act-dot" style="background:${dotColor}"></div>
+          ${!isLast ? '<div class="act-line"></div>' : ''}
+        </div>
+        <div class="act-body">
+          <div class="act-title">Step ${row.step_num ?? '?'}: ${stepName(row.step_num)} ${badge(row.status, isOk ? 'ok' : 'danger')}</div>
+          <div class="act-desc">${row.step_name ?? ''} — ${fmt(row.duration_secs, 1)}s</div>
+        </div>
+        <div class="act-time">${(row.ended_at || row.started_at || '').slice(0, 16)}</div>
+      </div>`;
+    }).join('');
+  } else {
+    actEl.innerHTML = '<div class="empty">No pipeline steps logged yet</div>';
+  }
+}
+
+// ── Monitoring ───────────────────────────────────────────────────────────────
+async function loadMonitoring() {
+  const [metrics, stepLog] = await Promise.all([
+    apiFetch('/metrics'),
+    apiFetch('/api/v1/step-log'),
+  ]);
+
+  if (metrics) {
+    const req = metrics.api_requests || {};
+    document.getElementById('mon-total').textContent = req.total_requests ?? '—';
+    document.getElementById('mon-errors').textContent = req.error_count ?? '—';
+    document.getElementById('mon-ips').textContent = req.avg_latency_ms != null ? req.avg_latency_ms.toFixed(0) + ' ms avg' : '—';
+
+    // Top endpoint
+    const topEps = req.endpoints || {};
+    const topKeys = Object.keys(topEps).sort((a,b) => (topEps[b].count||0) - (topEps[a].count||0));
+    if (topKeys.length) {
+      const topK = topKeys[0];
+      document.getElementById('mon-top-ep').textContent = topK;
+      document.getElementById('mon-top-cnt').textContent = (topEps[topK].count || '—') + ' requests';
+    }
+
+    const pipe = metrics.pipeline || {};
+    document.getElementById('mon-completed').textContent = pipe.completed_steps ?? '—';
+    document.getElementById('mon-failed').textContent = pipe.failed_steps ?? '—';
+    document.getElementById('mon-rounds').textContent = (metrics.training || {}).rounds ?? '—';
+
+    // Step timing bars
+    const timingEl = document.getElementById('mon-timing');
+    const timing = pipe.step_timing || {};
+    if (Object.keys(timing).length) {
+      const maxAvg = Math.max(...Object.values(timing).map(v => v.mean || 0)) || 1;
+      timingEl.innerHTML = Object.entries(timing).map(([step, v]) => {
+        const pct = ((v.mean || 0) / maxAvg * 100).toFixed(1);
+        return `<div class="bar-r">
+          <span class="bar-lbl">${stepName(step)}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:var(--sense)"></div></div>
+          <span class="bar-pct">${fmt(v.mean, 1)}s</span>
+        </div>`;
+      }).join('');
+    } else {
+      timingEl.innerHTML = '<div class="empty">No timing data yet</div>';
+    }
+
+    // Alerts
+    const alertEl = document.getElementById('mon-alerts');
+    let alerts = [];
+    if (req.error_rate_pct > 5) {
+      alerts.push({cls:'w', msg: `Error rate is ${req.error_rate_pct.toFixed(1)}% — above 5% threshold`});
+    }
+    if (pipe.failed_steps > 0) {
+      alerts.push({cls:'w', msg: `${pipe.failed_steps} pipeline step(s) have failed — check step log`});
+    }
+    if (alerts.length === 0) {
+      alerts.push({cls:'ok', msg: 'All metrics within normal ranges'});
+    }
+    alertEl.innerHTML = alerts.map(a => `<div class="al ${a.cls}">
+      <svg class="al-ic" width="13" height="13" viewBox="0 0 13 13" fill="none">
+        ${a.cls === 'ok'
+          ? '<path d="M2.5 7l3 3 5-5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'
+          : '<path d="M6.5 4v4M6.5 9.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'}
+      </svg>${a.msg}</div>`).join('');
+  }
+
+  // Step log table
+  const logEl = document.getElementById('mon-steplog');
+  if (stepLog && stepLog.length) {
+    logEl.innerHTML = `<table>
+      <thead><tr><th>Step</th><th>Name</th><th>Status</th><th>Duration</th><th>Started</th></tr></thead>
+      <tbody>${stepLog.slice(-20).reverse().map(r => `<tr>
+        <td>${r.step_num ?? '—'}</td>
+        <td>${r.step_name ?? stepName(r.step_num)}</td>
+        <td>${badge(r.status, r.status === 'completed' ? 'ok' : 'danger')}</td>
+        <td style="font-family:var(--fm)">${fmt(r.duration_secs, 1)}s</td>
+        <td style="font-family:var(--fm);color:var(--t3)">${(r.started_at||'').slice(0,16)}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  } else {
+    logEl.innerHTML = '<div class="empty">No step log entries yet</div>';
+  }
+}
+
+// ── CI/CD ────────────────────────────────────────────────────────────────────
+async function loadCICD() {
+  const stepLog = await apiFetch('/api/v1/step-log');
+  const logEl = document.getElementById('cicd-steplog');
+  if (stepLog && stepLog.length) {
+    logEl.innerHTML = `<table>
+      <thead><tr><th>Step</th><th>Name</th><th>Status</th><th>Duration</th><th>Ended</th></tr></thead>
+      <tbody>${stepLog.slice().reverse().map(r => `<tr>
+        <td>${r.step_num ?? '—'}</td>
+        <td>${r.step_name ?? stepName(r.step_num)}</td>
+        <td>${badge(r.status, r.status === 'completed' ? 'ok' : 'danger')}</td>
+        <td style="font-family:var(--fm)">${fmt(r.duration_secs, 1)}s</td>
+        <td style="font-family:var(--fm);color:var(--t3)">${(r.ended_at||'').slice(0,16)}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  } else {
+    logEl.innerHTML = '<div class="empty">No pipeline runs logged yet</div>';
+  }
+}
+
+// ── Deployments ──────────────────────────────────────────────────────────────
+async function loadDeploy() {
+  const [health, training] = await Promise.all([
+    apiFetch('/health'),
+    apiFetch('/api/v1/training-history'),
+  ]);
+
+  if (health) {
+    document.getElementById('svc-api-badge').textContent = health.status === 'ok' ? 'online' : 'error';
+    document.getElementById('svc-api-badge').className = 'badge ' + (health.status === 'ok' ? 'ok' : 'danger');
+    document.getElementById('svc-model-loaded').textContent = health.model_exists ? 'Yes' : 'No';
+    document.getElementById('svc-model-age').textContent = health.model_age_days != null ? health.model_age_days + ' days' : '—';
+    document.getElementById('svc-last-run').textContent = health.last_pipeline_run
+      ? health.last_pipeline_run.slice(0, 16) : 'Never';
+    document.getElementById('env-csv').textContent = health.output_dir ? health.output_dir + '/…' : '—';
+    document.getElementById('env-output').textContent = health.output_dir ?? '—';
+  }
+
+  const trainEl = document.getElementById('deploy-training');
+  if (training && training.length) {
+    trainEl.innerHTML = `<table>
+      <thead><tr><th>Round</th><th>Sharpe</th><th>MDD %</th><th>CAGR %</th><th>Constraints</th><th>Date</th></tr></thead>
+      <tbody>${training.slice().reverse().slice(0,6).map(r => `<tr>
+        <td style="font-family:var(--fm)">${r.round ?? '—'}</td>
+        <td style="font-family:var(--fm)">${fmt(r.backtest_sharpe, 3)}</td>
+        <td style="font-family:var(--fm)">${fmt(r.backtest_mdd_pct, 2)}</td>
+        <td style="font-family:var(--fm)">${fmt(r.backtest_cagr_pct, 2)}</td>
+        <td>${badge(r.backtest_constraints_met ? 'met' : 'failed', r.backtest_constraints_met ? 'ok' : 'warn')}</td>
+        <td style="font-family:var(--fm);color:var(--t3)">${(r.trained_at || '').slice(0, 10)}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  } else {
+    trainEl.innerHTML = '<div class="empty">No training history yet — run a pipeline first</div>';
+  }
+}
+
+// ── Observability ────────────────────────────────────────────────────────────
+async function loadObservability() {
+  const [drift, mcp, health] = await Promise.all([
+    apiFetch('/api/v1/drift'),
+    apiFetch('/api/v1/mcp-calls'),
+    apiFetch('/health'),
+  ]);
+
+  // Drift alerts + checks
+  const alertEl = document.getElementById('drift-alerts');
+  const checksEl = document.getElementById('drift-checks');
+
+  if (drift) {
+    // Overall summary — API returns {health: {overall, checks}, report: {...}}
+    const overall = drift.health?.overall ?? 'unknown';
+    const alertCls = overall === 'ok' ? 'ok' : overall === 'warn' ? 'w' : overall === 'alert' ? 'd' : 'i';
+    alertEl.innerHTML = `<div class="al ${alertCls}">
+      <svg class="al-ic" width="13" height="13" viewBox="0 0 13 13" fill="none">
+        ${alertCls === 'ok'
+          ? '<path d="M2.5 7l3 3 5-5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>'
+          : '<path d="M6.5 3v4M6.5 9.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'}
+      </svg>
+      Overall system health: <strong>${overall.toUpperCase()}</strong>
+    </div>`;
+
+    // Individual checks — 5-column grid, one cell per check
+    const report = drift.report || {};
+    const checkOrder = ['sharpe_drift','return_degradation','data_freshness','pipeline_health','constraint_breach'];
+    const checkLabels = {sharpe_drift:'Sharpe Drift',return_degradation:'Return Degradation',
+      data_freshness:'Data Freshness',pipeline_health:'Pipeline Health',constraint_breach:'Constraint Breach'};
+    const cells = checkOrder.map(key => {
+      const val = report[key] || {};
+      const st = val.status ?? 'unknown';
+      const cls = st === 'ok' ? 'ok' : st === 'warn' ? 'warn' : st === 'alert' ? 'danger' : 'unknown';
+      const msg = val.message ?? '';
+      return `<div class="drift-cell ${cls}">
+        <div class="drift-cell-name">${checkLabels[key]}</div>
+        <div class="drift-cell-status ${cls}">${st.toUpperCase()}</div>
+        <div class="drift-cell-msg">${msg}</div>
+      </div>`;
+    });
+    checksEl.innerHTML = cells.length ? cells.join('') : `<div class="empty" style="grid-column:span 5">No drift checks available</div>`;
+
+    // Data freshness — in drift.report.data_freshness
+    const freshEl = document.getElementById('freshness-content');
+    const fresh = report.data_freshness || {};
+    freshEl.innerHTML = `
+      <div class="svc-row"><span>Days since last data</span><span class="svc-val">${fresh.days_old ?? '—'} days</span></div>
+      <div class="svc-row"><span>Latest date in CSV</span><span class="svc-val" style="font-family:var(--fm)">${fresh.latest_date ?? '—'}</span></div>
+      <div class="svc-row"><span>Status</span><span class="svc-val">${badge(fresh.status ?? '—', fresh.status === 'ok' ? 'ok' : fresh.status === 'warn' ? 'warn' : 'danger')}</span></div>
+      ${fresh.message ? `<div class="al ${fresh.status === 'ok' ? 'ok' : 'w'}" style="margin-top:10px;margin-bottom:0">
+        <svg class="al-ic" width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 4v3M6.5 9h.01" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        ${fresh.message}
+      </div>` : ''}
+    `;
+
+    // Sharpe trend
+    const trendEl = document.getElementById('sharpe-trend');
+    const trend = health && health.sharpe_trend_last5 || [];
+    if (trend.length) {
+      const max = Math.max(...trend) || 1;
+      trendEl.innerHTML = trend.map((v, i) => `
+        <div class="bar-r">
+          <span class="bar-lbl">Run ${trend.length - trend.length + i + 1}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${(v/max*100).toFixed(1)}%;background:${v >= 1 ? 'var(--ok)' : 'var(--warn)'}"></div></div>
+          <span class="bar-pct">${fmt(v, 3)}</span>
+        </div>`).join('');
+    } else {
+      trendEl.innerHTML = '<div class="empty">No training history yet</div>';
+    }
+  } else {
+    alertEl.innerHTML = '<div class="al w"><svg class="al-ic" width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 3v4M6.5 9.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Drift data unavailable — run a pipeline first</div>';
+    checksEl.innerHTML = '';
+    document.getElementById('freshness-content').innerHTML = '<div class="empty">No data</div>';
+    document.getElementById('sharpe-trend').innerHTML = '<div class="empty">No data</div>';
+  }
+
+  // MCP audit table
+  const mcpEl = document.getElementById('obs-mcp');
+  if (mcp && mcp.length) {
+    mcpEl.innerHTML = `<table>
+      <thead><tr><th>Tool</th><th>Duration (ms)</th><th>Status</th><th>Called At</th></tr></thead>
+      <tbody>${mcp.slice().reverse().slice(0, 50).map(r => `<tr>
+        <td style="font-family:var(--fm)">${r.tool_name ?? '—'}</td>
+        <td style="font-family:var(--fm)">${r.duration_ms != null ? Number(r.duration_ms).toFixed(0) : '—'}</td>
+        <td>${badge(r.status ?? 'ok', r.status === 'ok' ? 'ok' : 'danger')}</td>
+        <td style="font-family:var(--fm);color:var(--t3)">${(r.called_at || '').slice(0, 16)}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  } else {
+    mcpEl.innerHTML = '<div class="empty">No MCP calls logged yet</div>';
+  }
+}
+
+// ── Chat Analytics ───────────────────────────────────────────────────────────
+
+// Maps handler name → Python function signature for transparency display
+const HANDLER_FN = {
+  'market_sentiment':        'get_market_sentiment(df)',
+  'strategy_recommendation': 'get_strategy_recommendation(df)',
+  'return_estimates':        'get_period_return_estimates(df, period)',
+  'stress_scenarios':        'simulate_stress_scenarios(df, portfolio_inr)',
+  'performance_feedback':    'get_performance_feedback(perf_summary)',
+  'portfolio_comparison':    'build_portfolio_comparison(backtest_daily)',
+};
+
+async function loadChat() {
+  const data = await apiFetch('/api/v1/chat/monitor');
+  if (!data) {
+    ['chat-kpis','chat-intents','chat-recent'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = '<div class="empty">No chat data yet — use the RITA Agent chat first</div>';
+    });
+    return;
+  }
+
+  const s = data.summary || {};
+
+  // KPI strip
+  const confColour = (s.avg_confidence || 0) >= 0.6 ? 'ok' : (s.avg_confidence || 0) >= 0.42 ? 'ops' : 'warn';
+  document.getElementById('chat-kpis').innerHTML = `
+    <div class="kpi"><div class="kpi-ey">Total Queries</div><div class="kpi-val ops">${s.total_queries ?? 0}</div><div class="kpi-sub">all time</div></div>
+    <div class="kpi"><div class="kpi-ey">Avg Confidence</div><div class="kpi-val ${confColour}">${s.avg_confidence != null ? (s.avg_confidence*100).toFixed(0)+'%' : '—'}</div><div class="kpi-sub">cosine similarity</div></div>
+    <div class="kpi"><div class="kpi-ey">Avg Latency</div><div class="kpi-val ops">${s.avg_latency_ms != null ? s.avg_latency_ms.toFixed(0)+'ms' : '—'}</div><div class="kpi-sub">classify + dispatch</div></div>
+    <div class="kpi"><div class="kpi-ey">Unique Intents</div><div class="kpi-val ops">${(data.intents||[]).length}</div><div class="kpi-sub">used this session</div></div>
+    <div class="kpi"><div class="kpi-ey">Queries Today</div><div class="kpi-val ops">${s.queries_today ?? 0}</div><div class="kpi-sub">UTC day</div></div>
+  `;
+
+  // Recent queries — scrollable after 6 rows, uses standard tbl-wrap styling
+  const recent = data.recent || [];
+  document.getElementById('chat-recent').innerHTML = recent.length
+    ? `<div class="tbl-wrap" style="max-height:222px">
+        <table>
+          <thead><tr><th>Query</th><th>Intent</th><th>Handler</th><th>Confidence</th><th>Latency</th><th>Time</th></tr></thead>
+          <tbody>${recent.map(r => `<tr>
+            <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.query_text ?? ''}">${r.query_text ?? '—'}</td>
+            <td style="font-family:var(--fm);white-space:nowrap">${(r.intent_name ?? '—').replace(/_/g,' ')}</td>
+            <td style="font-family:var(--fm);color:var(--t3);white-space:nowrap">${r.handler ?? '—'}</td>
+            <td style="font-family:var(--fm);color:${(r.confidence||0)>=0.6?'var(--ok)':(r.confidence||0)>=0.42?'var(--info)':'var(--warn)'}">${r.confidence != null ? (r.confidence*100).toFixed(0)+'%' : '—'}</td>
+            <td style="font-family:var(--fm)">${r.latency_ms != null ? r.latency_ms.toFixed(0)+'ms' : '—'}</td>
+            <td style="font-family:var(--fm);color:var(--t3);white-space:nowrap">${(r.timestamp||'').slice(0,16)}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>`
+    : '<div class="empty">No queries logged yet</div>';
+
+  // Intent distribution with Python function column
+  const intents = data.intents || [];
+  document.getElementById('chat-intents').innerHTML = intents.length
+    ? `<table>
+        <thead><tr><th>Intent</th><th>Count</th><th>Avg Confidence</th><th>Python Function Called</th></tr></thead>
+        <tbody>${intents.map(r => {
+          const fn = HANDLER_FN[r.handler] || (r.handler ? r.handler + '(...)' : '—');
+          return `<tr>
+            <td style="font-family:var(--fm)">${(r.intent_name ?? '—').replace(/_/g,' ')}</td>
+            <td>${r.count ?? 0}</td>
+            <td style="color:${(r.avg_confidence||0)>=0.6?'var(--ok)':(r.avg_confidence||0)>=0.42?'var(--info)':'var(--warn)'};font-family:var(--fm)">${r.avg_confidence != null ? (r.avg_confidence*100).toFixed(0)+'%' : '—'}</td>
+            <td style="font-family:var(--fm);color:var(--t3);font-size:11px">${fn}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`
+    : '<div class="empty">No intents logged yet</div>';
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+loadOverview();
+</script>
+</body>
+</html>

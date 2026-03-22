@@ -1,90 +1,78 @@
-# RITA Setup Guide for Windows
+# RITA Setup Guide
 
 ## Prerequisites
 
-1. **Python 3.10+** - Download from [python.org](https://www.python.org/downloads/)
-   - ✅ Check "Add Python to PATH" during installation
-   - Verify installation:
-     ```powershell
-     python --version
-     ```
+- **Python env:** `C:\Users\Sandeep\pyenv-envs\poc` (shared POC env — rita package already installed here)
+- **Claude Desktop:** For MCP integration
+- **Nifty 50 CSV:** OHLCV data file; path set via `NIFTY_CSV_PATH` env var
 
-2. **uv Package Manager** (recommended) - Faster than pip
-   ```powershell
-   pip install uv
-   ```
-   Or download from [astral.sh/uv](https://astral.sh/uv)
-
-3. **Claude Desktop** - Download from [claude.ai](https://claude.ai)
-
-## Installation Steps
-
-### Step 1: Navigate to Project Directory
+## 1. Activate Environment
 
 ```powershell
 cd C:\Users\Sandeep\Documents\Work\code\poc\rita-cowork-demo
+. .\activate-env.ps1
 ```
 
-### Step 2: Install Dependencies
+The `activate-env.ps1` script sets `NIFTY_CSV_PATH`, `OUTPUT_DIR`, and `PYTHONPATH`.
+Copy `activate-env.ps1.example` to `activate-env.ps1` and fill in your local paths if missing.
 
-Using `uv` (recommended):
-```powershell
-uv pip install -e .
-```
-
-Or using `pip`:
-```powershell
-pip install -e .
-```
-
-This installs the RITA MCP server and all dependencies in development mode.
-
-### Step 3: Verify Installation
+## 2. Verify Installation
 
 ```powershell
-# Check that the rita command is available
-rita --help
+# Quick check — steps 1-3, no training (~10s)
+python verify.py
 ```
 
-If this works, you're ready to configure Claude Desktop.
+Expected: all 3 steps print OK, no errors.
 
-## Configuration for Claude Desktop
+## 3. Run the APIs
 
-### Step 1: Find Claude Config File
+```powershell
+# FastAPI + HTML dashboard (port 8000)
+python run_api.py
 
-The config file location is:
-```
-%APPDATA%\Claude\claude_desktop_config.json
-```
-
-Or manually navigate to:
-- Press `Win + R`
-- Type: `%APPDATA%\Claude\`
-- Open `claude_desktop_config.json` with a text editor
-
-### Step 2: Update Config File
-
-The project's config file is already set up at:
-```
-config\claude_desktop_config.json
+# Streamlit data-science UI (port 8501)
+python run_ui.py
 ```
 
-**Option A: Copy the entire config**
+| URL | What you see |
+|-----|-------------|
+| http://localhost:8000/dashboard/ | Landing page (4 cards) |
+| http://localhost:8000/dashboard/rita.html | Main RITA app |
+| http://localhost:8000/dashboard/fno.html | FnO Portfolio Manager |
+| http://localhost:8000/dashboard/ops.html | Operations Portal |
+| http://localhost:8000/docs | FastAPI Swagger UI |
+| http://localhost:8501 | Streamlit data-science UI |
+
+## 4. Run the Full Pipeline (optional)
+
+```powershell
+python run_pipeline.py     # reuses saved model — fast (~30s)
+```
+
+Or use the Streamlit UI — click **▶ Re-use Model Pipeline**.
+
+## 5. Run Tests
+
+```powershell
+pytest tests/                          # all 39 tests (requires NIFTY_CSV_PATH)
+pytest tests/ -k "not APIEndpoints"   # 29 unit tests only (no CSV needed, ~5s)
+```
+
+## 6. Claude Desktop MCP Setup
+
+Edit `%APPDATA%\Claude\claude_desktop_config.json`:
+
 ```json
 {
   "mcpServers": {
-    "rita": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "C:\\Users\\Sandeep\\Documents\\Work\\code\\poc\\rita-cowork-demo",
-        "run",
-        "rita"
-      ],
+    "rita-cowork": {
+      "command": "C:\\Users\\Sandeep\\pyenv-envs\\poc\\Scripts\\python.exe",
+      "args": ["-m", "rita.interfaces.mcp_server"],
       "env": {
-        "MARKET_DATA_API_KEY": "demo_mode",
-        "DATABASE_PATH": "C:\\Users\\Sandeep\\.rita\\trades.db",
-        "NEWS_API_KEY": "optional_newsapi_key",
+        "NIFTY_CSV_PATH": "C:\\Users\\Sandeep\\Documents\\Work\\code\\poc\\rita-cowork-demo\\rita_output\\nifty_merged.csv",
+        "OUTPUT_DIR": "C:\\Users\\Sandeep\\Documents\\Work\\code\\poc\\rita-cowork-demo\\rita_output",
+        "PYTHONPATH": "C:\\Users\\Sandeep\\Documents\\Work\\code\\poc\\rita-cowork-demo\\src",
         "PYTHON_ENV": "development"
       }
     }
@@ -92,107 +80,41 @@ config\claude_desktop_config.json
 }
 ```
 
-**Option B: Update path in your existing config**
-If you already have other MCP servers configured, just add the `rita` entry under `mcpServers`.
+A template is at `config/claude_desktop_config.json.example`. Restart Claude Desktop after editing.
 
-### Step 3: Restart Claude Desktop
+## Environment Variables
 
-1. Close Claude Desktop completely
-2. Reopen Claude Desktop
-3. You should see RITA tools available in Cowork
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `NIFTY_CSV_PATH` | Base OHLCV CSV | `C:\...\rita_output\nifty_merged.csv` |
+| `OUTPUT_DIR` | Model + output directory | `C:\...\rita_output` |
+| `PYTHONPATH` | src directory for rita package | `C:\...\rita-cowork-demo\src` |
+| `RITA_INPUT_DIR` | (optional) Input CSV directory | `C:\...\rita_input` |
 
-## Using RITA in Claude Desktop
+## Data
 
-Once configured, you can use RITA in Claude Desktop's Cowork feature:
-
-### Example 1: Daily Market Analysis
-```
-RITA: What's the current market sentiment and trend for NIFTY50?
-```
-
-### Example 2: Portfolio Analysis
-```
-RITA: I have ₹10 lakhs to invest with moderate risk tolerance. What strategy do you recommend?
-```
-
-### Example 3: Risk Assessment
-```
-RITA: Run scenario analysis on my portfolio across market crash and bull run scenarios.
-```
-
-Claude will automatically call RITA's analysis tools and synthesize the results into actionable insights.
-
-## Demo Mode vs Real Data
-
-### Current Setup (Demo Mode)
-- **MARKET_DATA_API_KEY**: `demo_mode`
-- Returns realistic, randomized mock data
-- Perfect for demo and testing
-- No external API calls
-
-### To Enable Real Data (Future)
-1. Get API keys from:
-   - [Alpha Vantage](https://www.alphavantage.co/) - Stock market data
-   - [NewsAPI](https://newsapi.org/) - News sentiment
-   - Your broker's API (Zerodha, ICICI Direct, etc.)
-
-2. Update `.env` file:
-   ```
-   MARKET_DATA_API_KEY=your_alpha_vantage_key
-   NEWS_API_KEY=your_newsapi_key
-   ```
-
-3. Restart Claude Desktop
+- Drop NSE-format OHLCV CSVs into `rita_input/`
+- Use **Data Prep** page in the HTML dashboard or Streamlit to merge them
+- **Warning:** Do not run Data Prep while `banknifty_manual.csv` is in `rita_input/` — it will be mixed into the NIFTY series
+- NSE export numbers must be clean decimals (no Indian comma formatting like `23,114.50`)
 
 ## Troubleshooting
 
-### "rita command not found"
-- Run: `uv pip install -e .` again
-- Make sure you're in the project directory
-
-### "Claude Desktop doesn't see RITA"
-1. Check the path in `claude_desktop_config.json` - use absolute paths
-2. Restart Claude Desktop fully (close and reopen)
-3. Check Claude Desktop logs for errors
-
-### Port/Connection Issues
-- Make sure no other MCP servers are using the same stdio connection
-- Try restarting Claude Desktop
-
-### Mock Data Not Generating
-- All handlers are designed to work in demo mode
-- Check console output for any error messages
-- Verify `MARKET_DATA_API_KEY=demo_mode` in your config
-
-## Project Structure
-
-```
-rita-cowork-demo/
-├── config/
-│   └── claude_desktop_config.json    # MCP server config for Claude
-├── src/
-│   └── rita/
-│       ├── __init__.py              # Package initialization
-│       └── server.py                # Main MCP server with all tools
-├── pyproject.toml                    # Python project configuration
-├── README.md                         # Project overview
-├── RITA_Example_Workflows.md         # Use case examples
-├── .env.example                      # Environment variables template
-└── SETUP.md                          # This file
-
+**`rita` package not found:**
+```powershell
+pip install -e .    # run from project root with poc env active
 ```
 
-## Next Steps
+**Claude Desktop doesn't see RITA tools:**
+1. Check absolute paths in `claude_desktop_config.json`
+2. Verify the Python binary path exists: `C:\Users\Sandeep\pyenv-envs\poc\Scripts\python.exe`
+3. Restart Claude Desktop fully (close and reopen)
 
-1. ✅ Start Claude Desktop
-2. ✅ Try example prompts from RITA_Example_Workflows.md
-3. ✅ Test different trading scenarios
-4. ⏭️ Integrate real market data APIs when ready
+**API returns 500 errors on performance/risk pages:**
+- Run the pipeline first (Re-use Model Pipeline) to generate output CSVs
+- These pages require `backtest_daily.csv`, `performance_summary.csv`, etc. in `rita_output/`
 
-## Need Help?
-
-- Check `RITA_Example_Workflows.md` for detailed use case examples
-- Review `RITA_Cowork_Architecture.md` for system design
-- Check the handlers in `src/rita/server.py` for implementation details
-
-Happy trading analysis! 📈
+**Model retraining:**
+- The trained model (`rita_ddqn_model.zip`) is not in git
+- It is regenerated automatically if missing (~6 min for 500k timesteps)
+- Copy from a previous run into `rita_output/` to skip retraining

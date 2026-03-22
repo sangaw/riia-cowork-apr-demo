@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../.."))
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -37,6 +37,11 @@ except ImportError:
     pass
 
 # ─── Configuration ────────────────────────────────────────────────────────────
+
+# Optional API key guard for the portfolio endpoint.
+# Set PORTFOLIO_API_KEY env var to require X-API-Key header on /api/v1/portfolio/summary.
+# Leave unset (default) for open local-dev access.
+PORTFOLIO_API_KEY = os.getenv("PORTFOLIO_API_KEY", "")
 
 CSV_PATH = os.getenv(
     "NIFTY_CSV_PATH",
@@ -54,6 +59,16 @@ def _get_active_csv() -> str:
     """Return the extended CSV if prepare_data() has been run, else the base CSV."""
     return _PREPARED_CSV if os.path.exists(_PREPARED_CSV) else CSV_PATH
 
+# ─── Portfolio auth guard ─────────────────────────────────────────────────────
+
+def _require_portfolio_key(x_api_key: str = Header(default="")) -> None:
+    """Dependency: reject requests that don't carry the configured API key.
+    No-op when PORTFOLIO_API_KEY env var is not set (local dev).
+    """
+    if PORTFOLIO_API_KEY and x_api_key != PORTFOLIO_API_KEY:
+        raise HTTPException(status_code=401, detail="Missing or invalid X-API-Key header")
+
+
 # ─── Market signals cache ─────────────────────────────────────────────────────
 # Recompute only when the CSV file changes (mtime-based invalidation).
 # Avoids re-running load_nifty_csv + calculate_indicators (~2 s) on every request.
@@ -61,20 +76,45 @@ _market_signals_cache: dict = {"df": None, "csv_mtime": -1.0}
 
 # ─── Request Logging Middleware ───────────────────────────────────────────────
 
+_LOG_MAX_ROWS  = 10_000   # rows kept after trimming
+_LOG_TRIM_AT   = 15_000   # trim triggered when file exceeds this many rows
+
+
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """
     Logs every HTTP request to api_request_log.csv.
     Columns: timestamp, method, path, status_code, duration_ms
+
+    Rotation: when the file exceeds _LOG_TRIM_AT rows the oldest rows are
+    dropped, keeping the most recent _LOG_MAX_ROWS rows.  Checked every
+    500 requests so the overhead is negligible.
     """
+
+    _HEADER = ["timestamp", "method", "path", "status_code", "duration_ms"]
 
     def __init__(self, app, log_path: str = API_LOG_PATH):
         super().__init__(app)
         self.log_path = log_path
+        self._req_count = 0
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
         if not os.path.exists(log_path):
             with open(log_path, "w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow(["timestamp", "method", "path", "status_code", "duration_ms"])
+                csv.writer(f).writerow(self._HEADER)
+
+    def _rotate_if_needed(self) -> None:
+        """Trim the log file to _LOG_MAX_ROWS when it grows too large."""
+        try:
+            with open(self.log_path, "r", newline="", encoding="utf-8") as f:
+                lines = f.readlines()
+            if len(lines) <= _LOG_TRIM_AT + 1:   # +1 for header
+                return
+            kept = [lines[0]] + lines[-_LOG_MAX_ROWS:]
+            tmp = self.log_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.writelines(kept)
+            os.replace(tmp, self.log_path)
+        except Exception:
+            pass
 
     async def dispatch(self, request: Request, call_next):
         start = time.time()
@@ -89,6 +129,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                     response.status_code,
                     duration_ms,
                 ])
+            self._req_count += 1
+            if self._req_count % 500 == 0:
+                self._rotate_if_needed()
         except Exception:
             pass
         return response
@@ -148,6 +191,7 @@ class GoalRequest(BaseModel):
 class TrainRequest(BaseModel):
     timesteps: int = Field(200_000, description="Training timesteps", ge=10_000)
     force_retrain: bool = Field(False, description="Force retrain even if model exists")
+    model_type: str = Field("bull", description="Model type: bull | bear | both")
 
 
 class PeriodRequest(BaseModel):
@@ -419,7 +463,7 @@ def train_model(body: TrainRequest):
     """
     try:
         result = get_orchestrator().step4_train_model(
-            timesteps=body.timesteps, force_retrain=body.force_retrain
+            timesteps=body.timesteps, force_retrain=body.force_retrain, model_type=body.model_type
         )
         return _wrap(result)
     except Exception as e:
@@ -757,6 +801,106 @@ def get_market_signals(timeframe: str = "daily", periods: int = 300):
         return _df_to_json(df[keep])
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Portfolio Manager ────────────────────────────────────────────────────────
+
+@app.get("/api/v1/portfolio/summary", tags=["Portfolio"],
+         dependencies=[Depends(_require_portfolio_key)])
+def get_portfolio_summary():
+    """
+    Combined portfolio summary for the FnO Portfolio Manager dashboard.
+
+    Returns positions, greeks, margin, stress scenarios, payoff curve,
+    market data and scenario levels — all computed from CSV files in rita_input/.
+
+    **Auth:** set the `PORTFOLIO_API_KEY` env var to require an `X-API-Key`
+    header on every request.  If the env var is not set the endpoint is open
+    (suitable for local-only use).
+    """
+    try:
+        from rita.core.portfolio_manager import get_portfolio_summary as _build
+        return _build(INPUT_DIR)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Chat ─────────────────────────────────────────────────────────────────────
+
+class ChatRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=500, description="User's natural-language investment question")
+    portfolio_inr: float = Field(default=1_000_000, ge=1, description="Portfolio size in INR for stress/comparison scenarios")
+
+
+@app.post("/api/v1/chat", tags=["Chat"])
+def chat(req: ChatRequest):
+    """
+    Classify a free-text investment query and return a deterministic OHLCV-driven response.
+
+    No Claude API call at runtime.  Uses all-MiniLM-L6-v2 cosine similarity to
+    route to one of 20 fixed investment scenarios, then runs the matching core handler.
+
+    Returns intent name, confidence score, and the filled template response.
+    """
+    import time as _time
+    from rita.core.data_loader import load_nifty_csv
+    from rita.core.technical_analyzer import calculate_indicators
+    from rita.core.classifier import classify, dispatch
+    from rita.core.chat_monitor import log_query as _log_chat
+
+    t0 = _time.perf_counter()
+
+    # Reuse the market-signals df cache (loaded + indicators applied once per CSV change)
+    try:
+        active_csv = _get_active_csv()
+        csv_mtime = os.path.getmtime(active_csv) if os.path.exists(active_csv) else -1.0
+        if _market_signals_cache["df"] is None or _market_signals_cache["csv_mtime"] != csv_mtime:
+            raw = load_nifty_csv(active_csv)
+            _market_signals_cache["df"] = calculate_indicators(raw)
+            _market_signals_cache["csv_mtime"] = csv_mtime
+        df = _market_signals_cache["df"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load market data: {e}")
+
+    try:
+        result = classify(req.query)
+        response_text = dispatch(result, df, portfolio_inr=req.portfolio_inr, output_dir=OUTPUT_DIR)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Classification error: {e}")
+
+    latency_ms = (_time.perf_counter() - t0) * 1000
+    status = "low_confidence" if result.low_confidence else "success"
+
+    _log_chat(
+        query_text=req.query,
+        intent_name=result.intent.name,
+        handler=result.intent.handler,
+        confidence=result.confidence,
+        low_confidence=result.low_confidence,
+        latency_ms=latency_ms,
+        response_preview=response_text[:200],
+        status=status,
+    )
+
+    return {
+        "intent":          result.intent.name,
+        "handler":         result.intent.handler,
+        "confidence":      round(result.confidence, 4),
+        "low_confidence":  result.low_confidence,
+        "response":        response_text,
+        "latency_ms":      round(latency_ms, 1),
+    }
+
+
+@app.get("/api/v1/chat/monitor", tags=["Chat"])
+def chat_monitor_summary():
+    """KPIs and recent queries from the chat monitor CSV."""
+    from rita.core.chat_monitor import get_summary, get_recent_queries, get_intent_distribution
+    return {
+        "summary": get_summary(),
+        "recent":  get_recent_queries(20),
+        "intents": get_intent_distribution(),
+    }
 
 
 # ─── Static dashboard files ────────────────────────────────────────────────────

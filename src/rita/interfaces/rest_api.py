@@ -29,26 +29,15 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from rita.orchestration.workflow import WorkflowOrchestrator
 from rita.core.data_loader import BACKTEST_START
 from rita.core.drift_detector import DriftDetector
-
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
+from rita.config import (
+    NIFTY_CSV_PATH as CSV_PATH,
+    OUTPUT_DIR,
+    INPUT_DIR,
+    PORTFOLIO_API_KEY,
+)
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
-# Optional API key guard for the portfolio endpoint.
-# Set PORTFOLIO_API_KEY env var to require X-API-Key header on /api/v1/portfolio/summary.
-# Leave unset (default) for open local-dev access.
-PORTFOLIO_API_KEY = os.getenv("PORTFOLIO_API_KEY", "")
-
-CSV_PATH = os.getenv(
-    "NIFTY_CSV_PATH",
-    "",
-)
-OUTPUT_DIR = os.getenv("OUTPUT_DIR", "./rita_output")
-INPUT_DIR  = os.getenv("RITA_INPUT_DIR", "./rita_input")
 API_LOG_PATH = os.path.join(OUTPUT_DIR, "api_request_log.csv")
 
 # Path where prepare_data() writes the extended merged CSV

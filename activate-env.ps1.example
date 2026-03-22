@@ -1,2 +1,18 @@
-# Copy this to activate-env.ps1 and update the path to your Python environment
+# Copy this file to activate-env.ps1, fill in your local paths, then run:
+#   . .\activate-env.ps1
+
+# Activate your Python environment
 . "C:\path\to\your\pyenv-envs\<env-name>\Scripts\Activate.ps1"
+
+# ── Required ──────────────────────────────────────────────────────────────────
+$env:NIFTY_CSV_PATH = "C:\path\to\rita-cowork-demo\rita_output\nifty_merged.csv"
+$env:OUTPUT_DIR     = "C:\path\to\rita-cowork-demo\rita_output"
+$env:PYTHONPATH     = "C:\path\to\rita-cowork-demo\src"
+
+# ── Optional (all have sensible defaults) ─────────────────────────────────────
+# $env:RITA_INPUT_DIR    = "C:\path\to\rita-cowork-demo\rita_input"  # default: ./rita_input
+# $env:RITA_API_PORT     = "8000"                                     # default: 8000
+# $env:RITA_UI_PORT      = "8501"                                     # default: 8501
+# $env:RITA_API_URL      = "http://localhost:8000"                    # default: http://localhost:{RITA_API_PORT}
+# $env:PORTFOLIO_API_KEY = ""                                         # default: empty (open access)
+# $env:PYTHON_ENV        = "development"

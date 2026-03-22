@@ -12,6 +12,8 @@ import csv
 import os
 from datetime import datetime, timezone
 
+from rita.config import OUTPUT_DIR as _DEFAULT_OUTPUT_DIR
+
 COLUMNS = [
     "id", "timestamp", "query_text", "intent_name", "handler",
     "confidence", "low_confidence", "latency_ms", "response_preview", "status",
@@ -19,7 +21,7 @@ COLUMNS = [
 
 
 def _csv_path() -> str:
-    return os.path.join(os.getenv("OUTPUT_DIR", "./rita_output"), "chat_monitor.csv")
+    return os.path.join(os.getenv("OUTPUT_DIR", _DEFAULT_OUTPUT_DIR), "chat_monitor.csv")
 
 
 def _read_rows() -> list[dict]:

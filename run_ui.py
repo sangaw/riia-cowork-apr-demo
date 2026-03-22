@@ -10,21 +10,24 @@ import subprocess
 import sys
 import os
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+from rita.config import UI_PORT
+
 def is_port_free(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(("localhost", port)) != 0
 
-def find_free_port(start: int = 8501) -> int:
+def find_free_port(start: int = UI_PORT) -> int:
     for port in range(start, start + 10):
         if is_port_free(port):
             return port
     return start  # fallback — streamlit will report the error
 
 parser = argparse.ArgumentParser(description="Launch RITA Streamlit UI")
-parser.add_argument("--port", type=int, default=None, help="Port to run on (default: auto-select from 8501)")
+parser.add_argument("--port", type=int, default=None, help=f"Port to run on (default: auto-select from {UI_PORT})")
 args = parser.parse_args()
 
-port = args.port if args.port else find_free_port(8501)
+port = args.port if args.port else find_free_port(UI_PORT)
 app_path = os.path.join("src", "rita", "interfaces", "streamlit_app.py")
 
 print(f"Starting RITA UI at http://localhost:{port}")

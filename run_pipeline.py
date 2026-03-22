@@ -2,13 +2,11 @@
 import sys
 sys.path.insert(0, "src")
 
-import os
-CSV = os.environ.get("NIFTY_CSV_PATH", "")
-
+from rita.config import NIFTY_CSV_PATH as CSV, OUTPUT_DIR
 from rita.interfaces.python_client import RITAClient
 import json
 
-client = RITAClient(CSV, output_dir="./rita_output")
+client = RITAClient(CSV, output_dir=OUTPUT_DIR)
 
 def show(step, result):
     print(f"\n{'='*60}")
@@ -32,7 +30,7 @@ show(7, client.get_results())
 show(8, client.update_goal())
 
 print("\n" + "="*60)
-print("Pipeline complete. Output saved to ./rita_output/")
-print("Plots saved to ./rita_output/plots/")
+print(f"Pipeline complete. Output saved to {OUTPUT_DIR}/")
+print(f"Plots saved to {OUTPUT_DIR}/plots/")
 progress = client.get_progress()
 print(f"Steps completed: {progress['steps_completed']}/8 ({progress['pct_complete']}%)")

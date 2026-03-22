@@ -15,8 +15,10 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
+from rita.config import API_PORT
+
 parser = argparse.ArgumentParser(description="Launch RITA REST API")
-parser.add_argument("--port", type=int, default=8000)
+parser.add_argument("--port", type=int, default=API_PORT)
 parser.add_argument("--host", default="0.0.0.0")
 parser.add_argument("--reload", action="store_true", help="Enable auto-reload (dev mode)")
 args = parser.parse_args()

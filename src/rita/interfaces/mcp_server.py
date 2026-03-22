@@ -24,24 +24,10 @@ from rita.core.data_loader import (
 from rita.core.technical_analyzer import calculate_indicators, get_market_summary, get_sentiment_score
 from rita.core.strategy_engine import get_allocation_recommendation
 from rita.core.performance import build_portfolio_comparison, simulate_stress_scenarios, build_performance_feedback
+from rita.config import NIFTY_CSV_PATH, OUTPUT_DIR
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
-def _load_env():
-    """Load .env file if present."""
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-    except ImportError:
-        pass
-
-_load_env()
-
-NIFTY_CSV_PATH = os.getenv(
-    "NIFTY_CSV_PATH",
-    "",
-)
-OUTPUT_DIR = os.getenv("OUTPUT_DIR", "./rita_output")
 MCP_LOG_PATH = os.path.join(OUTPUT_DIR, "mcp_call_log.csv")
 
 app = Server("rita")

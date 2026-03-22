@@ -26,21 +26,10 @@ from rita.core.risk_engine import RiskEngine
 from rita.core.training_tracker import TrainingTracker
 from rita.core.shap_explainer import SHAPExplainer, FEATURE_NAMES, ACTION_NAMES
 from rita.core.drift_detector import DriftDetector
+from rita.config import NIFTY_CSV_PATH as CSV_PATH, OUTPUT_DIR, INPUT_DIR, API_BASE_URL
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
-
-CSV_PATH = os.getenv(
-    "NIFTY_CSV_PATH",
-    "",
-)
-OUTPUT_DIR = os.getenv("OUTPUT_DIR", "./rita_output")
-INPUT_DIR  = os.getenv("RITA_INPUT_DIR", "./rita_input")
 _PREPARED_CSV = os.path.join(OUTPUT_DIR, "nifty_merged.csv")
 
 
@@ -2379,7 +2368,7 @@ def render_devops_tab(output_dir: str):
     api_col1, api_col2 = st.columns([1, 2])
 
     with api_col1:
-        api_url = st.text_input("API Base URL", value="http://localhost:8000", key="devops_api_url")
+        api_url = st.text_input("API Base URL", value=API_BASE_URL, key="devops_api_url")
         ping_clicked = st.button("🔄 Ping API", width="stretch")
 
     with api_col2:

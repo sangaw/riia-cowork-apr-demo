@@ -15,15 +15,11 @@ from rita.core.data_loader import (
     get_training_data,
     get_validation_data,
     get_backtest_data,
-    get_bear_episodes,
     get_historical_stats,
     BACKTEST_START,
 )
-from rita.core.technical_analyzer import calculate_indicators, get_market_summary, detect_regime
-from rita.core.rl_agent import (
-    train_agent, train_best_of_n, train_bear_model, load_agent,
-    run_episode, run_regime_episode, validate_agent,
-)
+from rita.core.technical_analyzer import calculate_indicators, get_market_summary
+from rita.core.rl_agent import train_agent, train_best_of_n, load_agent, run_episode, validate_agent
 from rita.core.performance import generate_full_report
 from rita.core.goal_engine import set_goal, update_goal_from_results
 from rita.core.strategy_engine import design_strategy, validate_strategy_constraints
@@ -32,7 +28,7 @@ from rita.core.training_tracker import TrainingTracker
 from rita.core.shap_explainer import SHAPExplainer
 from rita.orchestration.session import SessionManager
 from rita.orchestration.monitor import PhaseMonitor
-from rita.config import TRAIN_TIMESTEPS, BEAR_TRAIN_TIMESTEPS
+from rita.config import TRAIN_TIMESTEPS
 
 
 # ─── Episode cache helpers ────────────────────────────────────────────────────
@@ -190,161 +186,74 @@ class WorkflowOrchestrator:
         timesteps: int = TRAIN_TIMESTEPS,
         force_retrain: bool = False,
         n_seeds: int = 1,
-        model_type: str = "bull",
     ) -> dict:
         """
-        Step 4: Train DDQN on 2010-2022, validate on 2023-2024.
+        Step 4: Train DDQN on training data, validate on validation data.
 
-        model_type:
-            "bull"  — train/load bull model (9-feature, default). Uses full 2010-2022 training set.
-            "bear"  — train bear specialist model. Extracts correction episodes from 2010-2022,
-                      uses 300k timesteps and bear reward function. Saved as rita_ddqn_bear_model.zip.
-            "both"  — train bull model then bear model sequentially.
-
-        force_retrain=False: reuse existing model file if present.
-        n_seeds>1: best-of-N seed selection.
+        If a trained model already exists and force_retrain=False, loads the existing model.
+        n_seeds>1: best-of-N seed selection (picks highest validation Sharpe).
         """
         self.monitor.start_step(4)
         try:
-            self._ensure_data()
+            model_zip = os.path.join(self.output_dir, "rita_ddqn_model.zip")
 
-            if model_type == "bear":
-                return self._step4_train_bear(force_retrain=force_retrain, n_seeds=n_seeds)
-            elif model_type == "both":
-                bull_result = self._step4_train_bull(
-                    timesteps=timesteps, force_retrain=force_retrain, n_seeds=n_seeds
-                )
-                bear_result = self._step4_train_bear(force_retrain=force_retrain, n_seeds=n_seeds)
-                combined = {
-                    "step": 4, "name": "Train DDQN Models (Bull + Bear)",
-                    "result": {"bull": bull_result["result"], "bear": bear_result["result"]},
+            # Reuse existing model if available and not forced to retrain
+            if not force_retrain and os.path.exists(model_zip):
+                model = load_agent(model_zip)
+                self._ensure_data()
+                val_df = calculate_indicators(get_validation_data(self._raw_df))
+                val_metrics = validate_agent(model, val_df)
+
+                self.session.set("model_path", model_zip)
+                self.session.set("validation_metrics", val_metrics)
+                self.session.set("model_source", "loaded_existing")
+                self.session.save()
+
+                self._cache_episodes_for_risk_view(model)
+
+                result = {
+                    "model_path": model_zip,
+                    "source": "loaded_existing",
+                    "validation": val_metrics,
                 }
-                self.monitor.end_step(4, {"model_type": "both"})
-                return combined
-            else:
-                return self._step4_train_bull(
-                    timesteps=timesteps, force_retrain=force_retrain, n_seeds=n_seeds
-                )
-        except Exception as e:
-            self.monitor.fail_step(4, str(e))
-            raise
+                self.monitor.end_step(4, {
+                    "source": "loaded_existing",
+                    "sharpe_validation": val_metrics["sharpe_ratio"],
+                    "mdd_validation": val_metrics["max_drawdown_pct"],
+                })
+                return {"step": 4, "name": "Train DDQN Model", "result": result}
 
-    def _step4_train_bull(self, timesteps: int = TRAIN_TIMESTEPS, force_retrain: bool = False, n_seeds: int = 1) -> dict:
-        """Train or load the bull model (rita_ddqn_model.zip)."""
-        model_zip = os.path.join(self.output_dir, "rita_ddqn_model.zip")
-
-        # Reuse existing model if available and not forced to retrain
-        if not force_retrain and os.path.exists(model_zip):
-            model = load_agent(model_zip)
+            # Train from scratch
+            self._ensure_data()
+            train_df = calculate_indicators(get_training_data(self._raw_df))
             val_df = calculate_indicators(get_validation_data(self._raw_df))
+
+            if n_seeds > 1:
+                model, training_metrics = train_best_of_n(
+                    train_df, val_df, self.output_dir, timesteps=timesteps, n_seeds=n_seeds
+                )
+            else:
+                model, training_metrics = train_agent(train_df, self.output_dir, timesteps=timesteps)
             val_metrics = validate_agent(model, val_df)
 
-            self.session.set("model_path", model_zip)
+            self.session.set("model_path", training_metrics["model_path"])
+            self.session.set("training_metrics", training_metrics)
             self.session.set("validation_metrics", val_metrics)
-            self.session.set("model_source", "loaded_existing")
+            self.session.set("model_source", "trained")
             self.session.save()
 
             self._cache_episodes_for_risk_view(model)
 
-            result = {"model_path": model_zip, "source": "loaded_existing", "validation": val_metrics}
+            result = {**training_metrics, "source": "trained", "validation": val_metrics}
             self.monitor.end_step(4, {
-                "source": "loaded_existing",
+                "source": "trained",
                 "sharpe_validation": val_metrics["sharpe_ratio"],
                 "mdd_validation": val_metrics["max_drawdown_pct"],
             })
             return {"step": 4, "name": "Train DDQN Model", "result": result}
-
-        # Train from scratch
-        train_df = calculate_indicators(get_training_data(self._raw_df))
-        val_df = calculate_indicators(get_validation_data(self._raw_df))
-
-        if n_seeds > 1:
-            model, training_metrics = train_best_of_n(
-                train_df, val_df, self.output_dir, timesteps=timesteps, n_seeds=n_seeds
-            )
-        else:
-            model, training_metrics = train_agent(train_df, self.output_dir, timesteps=timesteps)
-        val_metrics = validate_agent(model, val_df)
-
-        self.session.set("model_path", training_metrics["model_path"])
-        self.session.set("training_metrics", training_metrics)
-        self.session.set("validation_metrics", val_metrics)
-        self.session.set("model_source", "trained")
-        self.session.save()
-
-        self._cache_episodes_for_risk_view(model)
-
-        result = {**training_metrics, "source": "trained", "validation": val_metrics}
-        self.monitor.end_step(4, {
-            "source": "trained",
-            "sharpe_validation": val_metrics["sharpe_ratio"],
-            "mdd_validation": val_metrics["max_drawdown_pct"],
-        })
-        return {"step": 4, "name": "Train DDQN Model", "result": result}
-
-    def _step4_train_bear(self, force_retrain: bool = False, n_seeds: int = 5) -> dict:
-        """Train or load the bear specialist model (rita_ddqn_bear_model.zip).
-
-        Also ensures model_path (bull model) is set in the session so that
-        step5 and step6 can run after a bear-only training.
-        """
-        bear_zip = os.path.join(self.output_dir, "rita_ddqn_bear_model.zip")
-        bull_zip = os.path.join(self.output_dir, "rita_ddqn_model.zip")
-
-        # Ensure bull model is registered in session — step6 needs it for regime backtest
-        if not self.session.get("model_path"):
-            if os.path.exists(bull_zip):
-                val_df = calculate_indicators(get_validation_data(self._raw_df))
-                bull_val = validate_agent(load_agent(bull_zip), val_df)
-                self.session.set("model_path", bull_zip)
-                self.session.set("validation_metrics", bull_val)
-                self.session.set("model_source", "loaded_existing")
-            else:
-                raise RuntimeError(
-                    "No bull model found at rita_ddqn_model.zip. "
-                    "Train the bull model first (model_type='bull') before training the bear model."
-                )
-
-        if not force_retrain and os.path.exists(bear_zip):
-            model = load_agent(bear_zip)
-            val_df = calculate_indicators(get_validation_data(self._raw_df))
-            val_metrics = validate_agent(model, val_df)
-            self.session.set("bear_model_path", bear_zip)
-            self.session.set("bear_validation_metrics", val_metrics)
-            self.session.save()
-            result = {"model_path": bear_zip, "source": "loaded_existing", "validation": val_metrics}
-            self.monitor.end_step(4, {
-                "source": "loaded_existing_bear",
-                "sharpe_validation": val_metrics["sharpe_ratio"],
-            })
-            return {"step": 4, "name": "Train Bear Model", "result": result}
-
-        # Extract bear episodes from training data and train
-        full_train_df = calculate_indicators(get_training_data(self._raw_df))
-        bear_df = get_bear_episodes(full_train_df)
-        val_df = calculate_indicators(get_validation_data(self._raw_df))
-
-        # Bear model: simpler policy (mostly cash) → fewer seeds + fewer timesteps
-        # Cap at 3 seeds regardless of UI setting — bear data is small (~600 rows)
-        bear_seeds = min(n_seeds, 3)
-        print(f"[RITA] Bear episodes: {len(bear_df)} rows from {len(full_train_df)} training rows (seeds={bear_seeds})")
-        model, training_metrics = train_bear_model(
-            bear_df, val_df, self.output_dir, timesteps=BEAR_TRAIN_TIMESTEPS, n_seeds=bear_seeds
-        )
-        val_metrics = validate_agent(model, val_df)
-
-        self.session.set("bear_model_path", training_metrics["model_path"])
-        self.session.set("bear_training_metrics", training_metrics)
-        self.session.set("bear_validation_metrics", val_metrics)
-        self.session.save()
-
-        result = {**training_metrics, "source": "trained", "validation": val_metrics}
-        self.monitor.end_step(4, {
-            "source": "trained_bear",
-            "bear_episodes_rows": len(bear_df),
-            "sharpe_validation": val_metrics["sharpe_ratio"],
-        })
-        return {"step": 4, "name": "Train Bear Model", "result": result}
+        except Exception as e:
+            self.monitor.fail_step(4, str(e))
+            raise
 
     # ─── STEP 5 ──────────────────────────────────────────────────────────────
 
@@ -378,15 +287,8 @@ class WorkflowOrchestrator:
 
     # ─── STEP 6 ──────────────────────────────────────────────────────────────
 
-    def step6_run_backtest(self, backtest_mode: str = "auto") -> dict:
-        """
-        Step 6: Run trained DDQN model on the simulation period.
-
-        backtest_mode:
-            "auto"   — regime-aware if bear model file exists, otherwise bull only
-            "bull"   — always use bull model only (ignore bear model)
-            "regime" — force regime switching (raises if no bear model)
-        """
+    def step6_run_backtest(self) -> dict:
+        """Step 6: Run trained DDQN model on the simulation period."""
         self.monitor.start_step(6)
         try:
             model_path = self.session.get("model_path")
@@ -411,33 +313,8 @@ class WorkflowOrchestrator:
             # Trim back to the requested period after indicators are computed
             backtest_df = full_indicators[full_indicators.index >= start_ts]
 
-            bull_model = load_agent(model_path)
-
-            # Resolve bear model based on backtest_mode
-            bear_model = None
-            if backtest_mode != "bull":
-                bear_zip = os.path.join(self.output_dir, "rita_ddqn_bear_model.zip")
-                bear_model_path = self.session.get("bear_model_path") or (bear_zip if os.path.exists(bear_zip) else None)
-                if bear_model_path and os.path.exists(bear_model_path):
-                    bear_model = load_agent(bear_model_path)
-                elif backtest_mode == "regime":
-                    raise RuntimeError(
-                        "backtest_mode='regime' requires a trained bear model. "
-                        "Train it first with model_type='bear'."
-                    )
-
-            use_regime = bear_model is not None
-            if use_regime:
-                print(f"[RITA] Regime-aware backtest (mode={backtest_mode})")
-                backtest_results = run_regime_episode(bull_model, backtest_df, bear_model=bear_model)
-                regime_info = detect_regime(backtest_df)
-                backtest_results["regime_info"] = regime_info
-                n_bear = sum(1 for r in backtest_results.get("regime_series", []) if r == "BEAR")
-                print(f"[RITA] Regime split: {n_bear} BEAR days / {len(backtest_results['allocations']) - n_bear} BULL days")
-            else:
-                print(f"[RITA] Bull-only backtest (mode={backtest_mode})")
-                backtest_results = run_episode(bull_model, backtest_df)
-                backtest_results["regime_series"] = ["BULL"] * len(backtest_results["allocations"])
+            model = load_agent(model_path)
+            backtest_results = run_episode(model, backtest_df)
 
             self.session.set("backtest_results", backtest_results)
             self.session.save()
@@ -447,8 +324,6 @@ class WorkflowOrchestrator:
                 "sharpe": perf["sharpe_ratio"],
                 "mdd": perf["max_drawdown_pct"],
                 "return": perf["portfolio_total_return_pct"],
-                "backtest_mode": backtest_mode,
-                "regime_aware": use_regime,
             })
             return {
                 "step": 6,
@@ -456,8 +331,6 @@ class WorkflowOrchestrator:
                 "result": {
                     "performance": perf,
                     "days_simulated": perf["total_days"],
-                    "backtest_mode": backtest_mode,
-                    "regime_aware": use_regime,
                 }
             }
         except Exception as e:

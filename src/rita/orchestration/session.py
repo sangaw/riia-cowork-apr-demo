@@ -74,14 +74,23 @@ class SessionManager:
         os.makedirs(self.output_dir, exist_ok=True)
         ts = datetime.now().isoformat()
 
-        # session_state.csv — flat key/value snapshot
-        state_rows = [
-            [k, json.dumps(v, default=str), ts]
-            for k, v in self._state.items()
-            if k not in ("backtest_results",)   # large dicts handled separately
-        ]
+        # session_state.csv — merge with existing file so keys from prior steps
+        # (e.g. goal, research) are not wiped when only later steps are re-run.
+        state_path = os.path.join(self.output_dir, "session_state.csv")
+        merged: dict[str, str] = {}
+        if os.path.exists(state_path):
+            with open(state_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row.get("key"):
+                        merged[row["key"]] = row["value"]
+        # Current in-memory state overwrites persisted values for the same key
+        for k, v in self._state.items():
+            if k not in ("backtest_results",):
+                merged[k] = json.dumps(v, default=str)
+        state_rows = [[k, v, ts] for k, v in merged.items()]
         _atomic_csv(
-            os.path.join(self.output_dir, "session_state.csv"),
+            state_path,
             ["key", "value", "saved_at"],
             state_rows,
         )
@@ -151,14 +160,17 @@ class SessionManager:
 
     def get_progress_summary(self) -> dict:
         """Return which steps have been completed."""
+        # backtest_results is not persisted to disk (too large); use backtest_daily.csv as proxy
+        backtest_daily = os.path.join(self.output_dir, "backtest_daily.csv")
+        backtest_done = self.has("backtest_results") or os.path.exists(backtest_daily)
         steps = {
             "step1_goal_set": self.has("goal"),
             "step2_market_analyzed": self.has("research"),
             "step3_strategy_designed": self.has("strategy"),
             "step4_model_trained": self.has("model_path"),
             "step5_period_set": self.has("simulation_period"),
-            "step6_backtest_run": self.has("backtest_results"),
-            "step7_results_ready": self.has("backtest_results"),
+            "step6_backtest_run": backtest_done,
+            "step7_results_ready": backtest_done,
             "step8_goal_updated": self.has("updated_goal"),
         }
         completed = sum(steps.values())

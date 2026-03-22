@@ -106,22 +106,6 @@ def render_sidebar() -> dict:
         value=3,
         help="Train N models with different random seeds, keep the best validation Sharpe. Higher = more reliable but slower.",
     )
-    model_type = st.sidebar.radio(
-        "Model type",
-        options=["bull", "bear", "both"],
-        index=0,
-        horizontal=True,
-        help="bull = standard 9-feature model (full training set). bear = specialist model trained on correction episodes. both = train bull then bear.",
-    )
-
-    backtest_mode = st.sidebar.radio(
-        "Backtest mode",
-        options=["auto", "bull", "regime"],
-        index=0,
-        horizontal=True,
-        help="auto = bull only (no bear model) or regime-aware (bear model present). bull = always bull only. regime = force regime switching (requires bear model).",
-    )
-
     st.sidebar.divider()
 
     # Simulation period
@@ -150,8 +134,6 @@ def render_sidebar() -> dict:
         "force_retrain": force_retrain,
         "timesteps": timesteps,
         "n_seeds": n_seeds,
-        "model_type": model_type,
-        "backtest_mode": backtest_mode,
         "sim_start": sim_start,
         "sim_end": sim_end or None,
         "record_run": record_run,
@@ -3283,19 +3265,12 @@ def run_pipeline(orch: WorkflowOrchestrator, config: dict, progress_slot):
     with st.status(step4_label, expanded=force or not os.path.exists(model_zip)) as s:
         if force or not os.path.exists(model_zip):
             st.write("Training in progress. Please wait...")
-        r = orch.step4_train_model(timesteps=config["timesteps"], force_retrain=force, n_seeds=config.get("n_seeds", 1), model_type=config.get("model_type", "bull"))
+        r = orch.step4_train_model(timesteps=config["timesteps"], force_retrain=force, n_seeds=config.get("n_seeds", 1))
         results["step4"] = r
-        # Result structure differs by model_type: bull/bear → r["result"]["validation"]; both → r["result"]["bull"]["validation"]
         res = r["result"]
-        if "bull" in res and "validation" not in res:
-            # model_type="both"
-            val = res["bull"]["validation"]
-            bear_val = res["bear"]["validation"]
-            label = f"Step 4 ✓ — Bull Sharpe: {val['sharpe_ratio']:.3f} · Bear Sharpe: {bear_val['sharpe_ratio']:.3f}"
-        else:
-            val = res["validation"]
-            source = res.get("source", "trained")
-            label = f"Step 4 ✓ — {'Loaded' if source == 'loaded_existing' else 'Trained'} · Sharpe: {val['sharpe_ratio']:.3f} · MDD: {val['max_drawdown_pct']:.1f}%"
+        val = res["validation"]
+        source = res.get("source", "trained")
+        label = f"Step 4 ✓ — {'Loaded' if source == 'loaded_existing' else 'Trained'} · Sharpe: {val['sharpe_ratio']:.3f} · MDD: {val['max_drawdown_pct']:.1f}%"
         tick(4)
         s.update(label=label)
 
@@ -3306,7 +3281,7 @@ def run_pipeline(orch: WorkflowOrchestrator, config: dict, progress_slot):
         s.update(label=f"Step 5 ✓ — {r['result']['start']} → {r['result']['end']}")
 
     with st.status("Step 6 — Running backtest...", expanded=False) as s:
-        r = orch.step6_run_backtest(backtest_mode=config.get("backtest_mode", "auto"))
+        r = orch.step6_run_backtest()
         results["step6"] = r
         perf = r["result"]["performance"]
         regime_tag = " · Regime-aware" if r["result"].get("regime_aware") else ""

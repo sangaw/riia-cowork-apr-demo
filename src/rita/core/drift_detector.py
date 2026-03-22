@@ -110,16 +110,18 @@ class DriftDetector:
         window = sharpe_series[-ROLLING_WINDOW - 1 : -1]  # exclude latest
         rolling_mean = float(np.mean(window)) if window else latest
 
-        drift_pct = abs(latest - rolling_mean) / max(abs(rolling_mean), 1e-6)
         direction = "↓" if latest < rolling_mean else "↑"
+        raw_drift_pct = abs(latest - rolling_mean) / max(abs(rolling_mean), 1e-6)
+        # Only penalise downward drift (model degrading). Upward drift = improvement = ok.
+        drift_pct = raw_drift_pct if latest < rolling_mean else 0.0
 
         if drift_pct >= DRIFT_ALERT_THRESHOLD:
             status  = "alert"
-            message = (f"Sharpe drifted {direction} {drift_pct*100:.1f}% from rolling mean "
+            message = (f"Sharpe drifted {direction} {raw_drift_pct*100:.1f}% from rolling mean "
                        f"({rolling_mean:.3f} → {latest:.3f})")
         elif drift_pct >= DRIFT_WARN_THRESHOLD:
             status  = "warn"
-            message = (f"Sharpe shifted {direction} {drift_pct*100:.1f}% from rolling mean "
+            message = (f"Sharpe shifted {direction} {raw_drift_pct*100:.1f}% from rolling mean "
                        f"({rolling_mean:.3f} → {latest:.3f})")
         else:
             status  = "ok"
@@ -130,7 +132,7 @@ class DriftDetector:
             "message": message,
             "latest_sharpe": latest,
             "rolling_mean_sharpe": round(rolling_mean, 4),
-            "drift_pct": round(drift_pct * 100, 2),
+            "drift_pct": round(raw_drift_pct * 100, 2),
             "direction": direction,
             "trend": sharpe_series,
         }

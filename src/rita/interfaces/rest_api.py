@@ -181,7 +181,6 @@ class GoalRequest(BaseModel):
 class TrainRequest(BaseModel):
     timesteps: int = Field(TRAIN_TIMESTEPS, description="Training timesteps", ge=10_000)
     force_retrain: bool = Field(False, description="Force retrain even if model exists")
-    model_type: str = Field("bull", description="Model type: bull | bear | both")
 
 
 class PeriodRequest(BaseModel):
@@ -263,7 +262,7 @@ def health():
             pass
 
     # Data freshness
-    detector = DriftDetector(OUTPUT_DIR, CSV_PATH)
+    detector = DriftDetector(OUTPUT_DIR, _get_active_csv())
     freshness = detector.check_data_freshness()
 
     return {
@@ -355,7 +354,7 @@ def metrics():
             result["training"]["error"] = str(exc)
 
     # API request stats
-    detector = DriftDetector(OUTPUT_DIR, CSV_PATH)
+    detector = DriftDetector(OUTPUT_DIR, _get_active_csv())
     result["api_requests"] = detector.api_request_stats()
 
     return _sanitize(result)
@@ -378,7 +377,7 @@ def check_drift():
     Returns a full report + overall health badge (ok / warn / alert).
     """
     try:
-        detector = DriftDetector(OUTPUT_DIR, CSV_PATH)
+        detector = DriftDetector(OUTPUT_DIR, _get_active_csv())
         report   = detector.full_report()
         summary  = detector.health_summary(report)
         return _sanitize({"health": summary, "report": report})
@@ -452,7 +451,7 @@ def train_model(body: TrainRequest):
     """
     try:
         result = get_orchestrator().step4_train_model(
-            timesteps=body.timesteps, force_retrain=body.force_retrain, model_type=body.model_type
+            timesteps=body.timesteps, force_retrain=body.force_retrain
         )
         return _wrap(result)
     except Exception as e:
@@ -709,6 +708,9 @@ def get_step_log():
         return []
     df = pd.read_csv(path)
     df.columns = [c.strip() for c in df.columns]
+    # Keep only the last row per step_num (start_step writes in_progress, end_step writes completed/failed)
+    if "step_num" in df.columns:
+        df = df.drop_duplicates(subset=["step_num"], keep="last")
     return _df_to_json(df)
 
 

@@ -251,6 +251,10 @@ td.neg{color:var(--neg);font-family:var(--fm);font-weight:500;}
 .und-pill.active.all{background:var(--text);color:var(--surface);border-color:var(--text);}
 .und-pill.active.nifty{background:var(--p02-bg);color:var(--p02);border-color:var(--p02-bd);font-weight:600;}
 .und-pill.active.banknifty{background:var(--p04-bg);color:var(--p04);border-color:var(--p04-bd);font-weight:600;}
+.exp-pills{display:flex;gap:4px;align-items:center;}
+.exp-pill{font-family:var(--fm);font-size:11px;font-weight:500;padding:4px 10px;border-radius:100px;border:1px solid var(--border);background:var(--surface);color:var(--t2);cursor:pointer;transition:background .1s,color .1s,border-color .1s;white-space:nowrap;}
+.exp-pill:hover:not(.active){background:var(--surface2);}
+.exp-pill.active{background:var(--p03-bg);color:var(--p03);border-color:var(--p03-bd);font-weight:600;}
 .topbar-divider{width:1px;height:20px;background:var(--border);margin:0 4px;}
 </style>
 </head>
@@ -274,6 +278,10 @@ td.neg{color:var(--neg);font-family:var(--fm);font-weight:500;}
       <button class="und-pill active all" onclick="setUnderlying('ALL',this)">All</button>
       <button class="und-pill nifty" onclick="setUnderlying('NIFTY',this)">NIFTY</button>
       <button class="und-pill banknifty" onclick="setUnderlying('BANKNIFTY',this)">BANKNIFTY</button>
+    </div>
+    <div class="topbar-divider"></div>
+    <div class="exp-pills" id="exp-pills-container">
+      <button class="exp-pill active" onclick="setExpiry('ALL',this)">All</button>
     </div>
     <div class="topbar-divider"></div>
     <a href="/dashboard/" class="back-link">
@@ -390,8 +398,6 @@ td.neg{color:var(--neg);font-family:var(--fm);font-weight:500;}
 
     <div class="filter-row" id="pos-filter-row">
       <button class="filter-btn active" onclick="filterPos('ALL',this)">All</button>
-      <button class="filter-btn" onclick="filterPos('APR',this)">APR</button>
-      <button class="filter-btn" onclick="filterPos('MAY',this)">MAY</button>
       <button class="filter-btn" onclick="filterPos('FUT',this)">Futures</button>
       <button class="filter-btn" onclick="filterPos('CE',this)">Call (CE)</button>
       <button class="filter-btn" onclick="filterPos('PE',this)">Put (PE)</button>
@@ -528,24 +534,15 @@ td.neg{color:var(--neg);font-family:var(--fm);font-weight:500;}
       <span class="phase-tag p04">Risk</span>
     </div>
 
-    <div class="info-note" id="risk-info-note">Greeks are approximate Black-Scholes estimates at current spot. Actual values from broker API recommended for live trading decisions.</div>
-
-    <!-- NIFTY Greeks -->
-    <div id="nifty-risk-section">
-      <div class="und-section-hdr">
-        <span class="und-section-tag nifty">NIFTY</span>
-        <div class="line"></div>
+    <!-- Combined Greeks card -->
+    <div class="card" style="margin-bottom:18px;">
+      <div class="card-hdr">
+        <span class="card-title">Net Greeks</span>
+        <span class="card-sub">Black-Scholes estimates at current spot · actual broker values recommended for live decisions</span>
       </div>
-      <div class="greeks-grid" id="nifty-greeks-grid"></div>
-    </div>
-
-    <!-- BANKNIFTY Greeks -->
-    <div id="banknifty-risk-section">
-      <div class="und-section-hdr">
-        <span class="und-section-tag banknifty">BANKNIFTY</span>
-        <div class="line"></div>
+      <div class="card-body">
+        <div id="greeks-all-grid" style="display:grid;grid-template-columns:repeat(8,1fr);gap:14px;"></div>
       </div>
-      <div class="greeks-grid" id="bnkn-greeks-grid"></div>
     </div>
 
     <div class="card">
@@ -650,7 +647,15 @@ let payoffData     = {};
 
 // ── Global state ──────────────────────────────────────────
 let currentUnd = 'ALL';
+let currentExpiry = 'ALL';
 let currentPosFilter = 'ALL';
+
+function activePositions() {
+  return positions.filter(p =>
+    (currentUnd === 'ALL' || p.und === currentUnd) &&
+    (currentExpiry === 'ALL' || p.exp === currentExpiry)
+  );
+}
 
 // ── API loader ────────────────────────────────────────────
 async function initApp() {
@@ -662,6 +667,7 @@ async function initApp() {
 
     marketData      = d.market || {};
     positions       = d.positions || [];
+    buildExpiryPills();
     greeksData      = d.greeks || [];
     closedPositions = d.closed_positions || [];
     realizedPnl     = d.realized_pnl || 0;
@@ -682,11 +688,6 @@ async function initApp() {
     if (bClose) document.getElementById('spot-banknifty').textContent =
       `BNKN  ${bClose.toLocaleString('en-IN',{minimumFractionDigits:2})}`;
 
-    // Update info note with actual spot
-    const nSpot = nClose ? nClose.toLocaleString('en-IN',{minimumFractionDigits:0}) : '—';
-    const bSpot = bClose ? bClose.toLocaleString('en-IN',{minimumFractionDigits:0}) : '—';
-    document.getElementById('risk-info-note').textContent =
-      `Greeks are approximate Black-Scholes estimates at current spot (NIFTY ~${nSpot} · BANKNIFTY ~${bSpot}). Actual values from broker API recommended for live trading decisions.`;
 
   } catch (e) {
     console.error('Portfolio API error:', e);
@@ -733,6 +734,36 @@ function setUnderlying(und, btn) {
   currentUnd = und;
   document.querySelectorAll('.und-pill').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
+  buildExpiryPills();
+  renderDashboard();
+  renderPositionsKpis();
+  renderPositionsTable();
+  renderClosedPositions();
+  renderMarginKpis();
+  updateMarginSections();
+  renderMarginTables();
+  updateRiskSections();
+  renderGreeksCards();
+  renderGreeksTable();
+  renderStressScenarios();
+  renderPayoffChart();
+  renderScenarios();
+}
+
+function buildExpiryPills() {
+  const expiries = [...new Set(positions.map(p => p.exp))].sort();
+  const container = document.getElementById('exp-pills-container');
+  container.innerHTML =
+    `<button class="exp-pill${currentExpiry==='ALL'?' active':''}" onclick="setExpiry('ALL',this)">All</button>` +
+    expiries.map(e =>
+      `<button class="exp-pill${currentExpiry===e?' active':''}" onclick="setExpiry('${e}',this)">${e}</button>`
+    ).join('');
+}
+
+function setExpiry(exp, btn) {
+  currentExpiry = exp;
+  document.querySelectorAll('.exp-pill').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
   renderDashboard();
   renderPositionsKpis();
   renderPositionsTable();
@@ -758,15 +789,15 @@ function renderDashboard() {
 }
 
 function renderDashKpis() {
-  const filtered   = currentUnd==='ALL' ? positions : positions.filter(p=>p.und===currentUnd);
+  const filtered   = activePositions();
   const unreal     = filtered.reduce((s,p)=>s+p.pnl, 0);
   const realized   = currentUnd==='BANKNIFTY' ? 0 : realizedPnl;
   const net        = unreal + realized;
   const netDelta   = currentUnd==='ALL'
     ? Object.values(portDelta).reduce((s,v)=>s+v,0)
     : (portDelta[currentUnd] || 0);
-  const nCnt  = positions.filter(p=>p.und==='NIFTY').length;
-  const bCnt  = positions.filter(p=>p.und==='BANKNIFTY').length;
+  const nCnt  = positions.filter(p=>p.und==='NIFTY'&&(currentExpiry==='ALL'||p.exp===currentExpiry)).length;
+  const bCnt  = positions.filter(p=>p.und==='BANKNIFTY'&&(currentExpiry==='ALL'||p.exp===currentExpiry)).length;
   const subLine = currentUnd==='ALL' ? `${nCnt} NIFTY · ${bCnt} BANKNIFTY`
                 : `${filtered.length} ${currentUnd} positions`;
   const closedCnt = closedPositions.filter(p=>currentUnd==='ALL'||p.underlying===currentUnd).length;
@@ -828,20 +859,24 @@ function renderMarketSnapshot() {
 }
 
 function renderSegmentChart() {
-  const sumPnl = (und, exp) => positions
-    .filter(p=>(und==='ALL'||p.und===und)&&(exp==='ALL'||p.exp===exp))
+  const expiries = currentExpiry !== 'ALL' ? [currentExpiry]
+    : [...new Set(positions.map(p => p.exp))].sort();
+  const sumPnl = (und, exp) => activePositions()
+    .filter(p=>(und==='ALL'||p.und===und)&&p.exp===exp)
     .reduce((s,p)=>s+p.pnl, 0);
 
-  let labels, data;
+  let labels = [], data = [];
   if (currentUnd === 'NIFTY') {
-    labels = ['NIFTY APR','Realized','NIFTY MAY'];
-    data   = [sumPnl('NIFTY','APR'), realizedPnl, sumPnl('NIFTY','MAY')];
+    expiries.forEach(e => { labels.push(`NIFTY ${e}`); data.push(sumPnl('NIFTY', e)); });
+    if (currentExpiry === 'ALL') { labels.push('Realized'); data.push(realizedPnl); }
   } else if (currentUnd === 'BANKNIFTY') {
-    labels = ['BANKNIFTY APR','BANKNIFTY MAY'];
-    data   = [sumPnl('BANKNIFTY','APR'), sumPnl('BANKNIFTY','MAY')];
+    expiries.forEach(e => { labels.push(`BNKN ${e}`); data.push(sumPnl('BANKNIFTY', e)); });
   } else {
-    labels = ['NIFTY APR','Realized','BNKN APR','NIFTY MAY','BNKN MAY'];
-    data   = [sumPnl('NIFTY','APR'), realizedPnl, sumPnl('BANKNIFTY','APR'), sumPnl('NIFTY','MAY'), sumPnl('BANKNIFTY','MAY')];
+    expiries.forEach(e => {
+      labels.push(`NIFTY ${e}`); data.push(sumPnl('NIFTY', e));
+      labels.push(`BNKN ${e}`);  data.push(sumPnl('BANKNIFTY', e));
+    });
+    if (currentExpiry === 'ALL') { labels.push('Realized'); data.push(realizedPnl); }
   }
 
   const colors = data.map(v => v>=0 ? 'rgba(26,107,60,0.75)' : 'rgba(155,28,28,0.75)');
@@ -863,19 +898,17 @@ function renderSegmentChart() {
 }
 
 function renderUnderlyingChart() {
-  const sumPnl = (und, exp) => positions
+  const expiries = currentExpiry !== 'ALL' ? [currentExpiry]
+    : [...new Set(positions.map(p => p.exp))].sort();
+  const sumPnl = (und, exp) => activePositions()
     .filter(p=>p.und===und&&p.exp===exp).reduce((s,p)=>s+p.pnl, 0);
-  let labels, data;
-  if (currentUnd === 'NIFTY') {
-    labels = ['NIFTY APR','NIFTY MAY'];
-    data   = [sumPnl('NIFTY','APR'), sumPnl('NIFTY','MAY')];
-  } else if (currentUnd === 'BANKNIFTY') {
-    labels = ['BANKNIFTY APR','BANKNIFTY MAY'];
-    data   = [sumPnl('BANKNIFTY','APR'), sumPnl('BANKNIFTY','MAY')];
-  } else {
-    labels = ['NIFTY APR','NIFTY MAY','BANKNIFTY APR','BANKNIFTY MAY'];
-    data   = [sumPnl('NIFTY','APR'), sumPnl('NIFTY','MAY'), sumPnl('BANKNIFTY','APR'), sumPnl('BANKNIFTY','MAY')];
-  }
+  let labels = [], data = [];
+  const unds = currentUnd === 'ALL' ? ['NIFTY','BANKNIFTY']
+    : currentUnd === 'NIFTY' ? ['NIFTY'] : ['BANKNIFTY'];
+  unds.forEach(u => expiries.forEach(e => {
+    labels.push(`${u==='BANKNIFTY'?'BNKN':u} ${e}`);
+    data.push(sumPnl(u, e));
+  }));
   const colors = data.map(v=>v>=0?'rgba(26,107,60,0.72)':'rgba(155,28,28,0.72)');
   const borders = data.map(v=>v>=0?'#1A6B3C':'#9B1C1C');
 
@@ -895,7 +928,7 @@ function renderUnderlyingChart() {
 }
 
 function renderMovers() {
-  const filtered = currentUnd==='ALL' ? positions : positions.filter(p=>p.und===currentUnd);
+  const filtered = activePositions();
   const sorted = [...filtered].sort((a,b)=>b.pnl-a.pnl);
   const top3 = sorted.slice(0,3);
   const bot3 = sorted.slice(-3).reverse();
@@ -909,8 +942,8 @@ function renderMovers() {
 
 // ── POSITIONS ─────────────────────────────────────────────
 function renderPositionsKpis() {
-  const byExp = (und, exp) => positions.filter(p=>(und==='ALL'||p.und===und)&&p.exp===exp).reduce((s,p)=>s+p.pnl,0);
-  const cntExp = (und, exp) => positions.filter(p=>(und==='ALL'||p.und===und)&&p.exp===exp).length;
+  const byExp = (und, exp) => positions.filter(p=>(und==='ALL'||p.und===und)&&p.exp===exp&&(currentExpiry==='ALL'||p.exp===currentExpiry)).reduce((s,p)=>s+p.pnl,0);
+  const cntExp = (und, exp) => positions.filter(p=>(und==='ALL'||p.und===und)&&p.exp===exp&&(currentExpiry==='ALL'||p.exp===currentExpiry)).length;
   if (currentUnd === 'ALL') {
     document.getElementById('pos-kpis').className = 'kpi-row c4';
     document.getElementById('pos-kpis').innerHTML = `
@@ -939,11 +972,10 @@ function renderPositionsKpis() {
 
 function renderPositionsTable() {
   const filtered = positions.filter(p => {
-    const undOk = currentUnd==='ALL' || p.und===currentUnd;
-    if (!undOk) return false;
-    if (currentPosFilter==='ALL') return true;
-    if (currentPosFilter==='APR'||currentPosFilter==='MAY') return p.exp===currentPosFilter;
-    return p.type===currentPosFilter;
+    if (currentUnd !== 'ALL' && p.und !== currentUnd) return false;
+    if (currentExpiry !== 'ALL' && p.exp !== currentExpiry) return false;
+    if (currentPosFilter === 'ALL') return true;
+    return p.type === currentPosFilter;
   });
   document.getElementById('pos-tbody').innerHTML = filtered.map(p => {
     const chgClass = p.chg>=0?'pos':'neg';
@@ -980,12 +1012,23 @@ function renderMarginKpis() {
   const ledger  = marginData.ledger || 3500000;
   const utilMap = marginData.utilization || {};
 
-  const key = currentUnd === 'ALL' ? 'ALL' : currentUnd;
-  const s   = summary[key] || {};
-  let span  = s.span     || 0;
-  let exp   = s.exposure || 0;
-  let total = s.total    || 0;
-  let util  = utilMap[key] || 0;
+  let span, exp, total, util;
+  if (currentExpiry === 'ALL') {
+    const key = currentUnd === 'ALL' ? 'ALL' : currentUnd;
+    const s   = summary[key] || {};
+    span  = s.span     || 0;
+    exp   = s.exposure || 0;
+    total = s.total    || 0;
+    util  = utilMap[key] || 0;
+  } else {
+    // Recompute from by_position when expiry is filtered
+    const byPos = (marginData.by_position || [])
+      .filter(p => (currentUnd==='ALL'||p.und===currentUnd) && p.exp===currentExpiry);
+    span  = byPos.reduce((s,p)=>s+(p.span||0), 0);
+    exp   = byPos.reduce((s,p)=>s+(p.exposure||0), 0);
+    total = byPos.reduce((s,p)=>s+(p.total||0), 0);
+    util  = ledger > 0 ? Math.round(total / ledger * 100) : 0;
+  }
   let available = Math.max(0, ledger - total);
   let utilClass = util < 60 ? 'low' : util < 80 ? 'med' : 'high';
 
@@ -1020,7 +1063,7 @@ function updateMarginSections() {
   document.getElementById('banknifty-margin-section').style.display = currentUnd==='NIFTY'     ? 'none' : '';
   // Rebuild margin chart from API data
   const byPos = (marginData.by_position || [])
-    .filter(p => currentUnd==='ALL' || p.und===currentUnd)
+    .filter(p => (currentUnd==='ALL'||p.und===currentUnd)&&(currentExpiry==='ALL'||p.exp===currentExpiry))
     .filter(p => p.span > 0 || p.type==='FUT');
   const cats  = byPos.map(p => p.full.length > 16 ? p.full.slice(0,15)+'…' : p.full);
   const spanD = byPos.map(p => p.span);
@@ -1046,9 +1089,10 @@ function updateMarginSections() {
 
 // ── Closed positions ──────────────────────────────────────
 function renderClosedPositions() {
-  const filtered = currentUnd==='ALL'
-    ? closedPositions
-    : closedPositions.filter(p=>p.underlying===currentUnd);
+  const filtered = closedPositions.filter(p =>
+    (currentUnd==='ALL' || p.underlying===currentUnd) &&
+    (currentExpiry==='ALL' || (p.expiry||'').toUpperCase().includes(currentExpiry))
+  );
   const total = filtered.reduce((s,p)=>s+p.pnl, 0);
 
   document.getElementById('closed-card-sub').textContent =
@@ -1075,7 +1119,7 @@ function renderMarginTables() {
   const byPos = marginData.by_position || [];
 
   function fillTable(und, tbodyId, footerId) {
-    const rows = byPos.filter(p => p.und === und && (p.span > 0 || p.type==='FUT'));
+    const rows = byPos.filter(p => p.und === und && (currentExpiry==='ALL'||p.exp===currentExpiry) && (p.span > 0 || p.type==='FUT'));
     document.getElementById(tbodyId).innerHTML = rows.map(p => `<tr>
       <td>${p.full}</td>
       <td><span class="exp-badge ${p.exp.toLowerCase()}">${p.exp}</span></td>
@@ -1099,37 +1143,37 @@ function renderMarginTables() {
 
 // ── Greeks summary cards ─────────────────────────────────
 function renderGreeksCards() {
-  function fillGrid(und, gridId) {
-    const g = (netGreeks[und]) || {};
-    const delta = g.delta || 0;
-    const gamma = g.gamma || 0;
-    const theta = g.theta || 0;
-    const vega  = g.vega  || 0;
+  const unds = [];
+  if (currentUnd !== 'BANKNIFTY') unds.push('NIFTY');
+  if (currentUnd !== 'NIFTY')     unds.push('BANKNIFTY');
+  const grid = document.getElementById('greeks-all-grid');
+  grid.style.gridTemplateColumns = `repeat(${unds.length * 4}, 1fr)`;
+  grid.innerHTML = unds.map(und => {
+    const filt  = greeksData.filter(g => g.und===und && (currentExpiry==='ALL'||g.exp===currentExpiry));
+    const delta = filt.reduce((s,g)=>s+(g.delta||0), 0);
+    const gamma = parseFloat(filt.reduce((s,g)=>s+(g.gamma||0), 0).toFixed(4));
+    const theta = Math.round(filt.reduce((s,g)=>s+(g.theta||0), 0));
+    const vega  = Math.round(filt.reduce((s,g)=>s+(g.vega||0),  0));
     const ptMove = Math.abs(delta) * 100;
-    document.getElementById(gridId).innerHTML = `
-      <div class="greek-card">
-        <div class="greek-symbol">Δ</div><div class="greek-name">Net Delta</div>
+    const lbl = `<div style="font-family:var(--fm);font-size:9px;font-weight:600;color:var(--t4);letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;">${und}</div>`;
+    return `
+      <div class="greek-card">${lbl}<div class="greek-symbol">Δ</div><div class="greek-name">Net Delta</div>
         <div class="greek-val ${delta<0?'neg':'pos'}">${delta>=0?'+':''}${delta}</div>
         <div class="greek-sub">Per 100pt move: ~${delta<0?'−':''}₹${Math.abs(ptMove).toLocaleString('en-IN')}</div>
       </div>
-      <div class="greek-card">
-        <div class="greek-symbol">Γ</div><div class="greek-name">Gamma</div>
+      <div class="greek-card">${lbl}<div class="greek-symbol">Γ</div><div class="greek-name">Gamma</div>
         <div class="greek-val ${gamma<0?'neg':'pos'}">${gamma>=0?'+':''}${gamma.toFixed(4)}</div>
-        <div class="greek-sub">${gamma<0?'Short options drive negative gamma':'Long options drive positive gamma'}</div>
+        <div class="greek-sub">${gamma<0?'Short options':'Long options'} drive ${gamma<0?'negative':'positive'} gamma</div>
       </div>
-      <div class="greek-card">
-        <div class="greek-symbol">Θ</div><div class="greek-name">Theta / day</div>
+      <div class="greek-card">${lbl}<div class="greek-symbol">Θ</div><div class="greek-name">Theta / day</div>
         <div class="greek-val ${theta>=0?'pos':'neg'}">${theta>=0?'+₹':'−₹'}${Math.abs(theta).toLocaleString('en-IN')}</div>
         <div class="greek-sub">Daily time decay ${theta>=0?'earned':'paid'}</div>
       </div>
-      <div class="greek-card">
-        <div class="greek-symbol">V</div><div class="greek-name">Vega</div>
+      <div class="greek-card">${lbl}<div class="greek-symbol">V</div><div class="greek-name">Vega</div>
         <div class="greek-val ${vega>=0?'pos':'neg'}">${vega>=0?'+₹':'−₹'}${Math.abs(vega).toLocaleString('en-IN')}</div>
-        <div class="greek-sub">Per 1% IV rise, ${und} book ${vega>=0?'gains':'loses'} ₹${Math.abs(vega).toLocaleString('en-IN')}</div>
+        <div class="greek-sub">Per 1% IV rise, ${und} ${vega>=0?'gains':'loses'} ₹${Math.abs(vega).toLocaleString('en-IN')}</div>
       </div>`;
-  }
-  fillGrid('NIFTY',     'nifty-greeks-grid');
-  fillGrid('BANKNIFTY', 'bnkn-greeks-grid');
+  }).join('');
 }
 
 // ── Stress scenarios ─────────────────────────────────────
@@ -1194,8 +1238,6 @@ function updateRiskSections() {
   const showBnkn    = currentUnd !== 'NIFTY';
   const sideBySide  = currentUnd === 'ALL';
 
-  document.getElementById('nifty-risk-section').style.display     = showNifty ? '' : 'none';
-  document.getElementById('banknifty-risk-section').style.display = showBnkn  ? '' : 'none';
 
   // Payoff charts layout
   document.getElementById('payoff-nifty-wrap').style.display = showNifty ? '' : 'none';
@@ -1213,7 +1255,7 @@ function updateRiskSections() {
 }
 
 function renderGreeksTable() {
-  const filtered = currentUnd==='ALL' ? greeksData : greeksData.filter(g=>g.und===currentUnd);
+  const filtered = greeksData.filter(g=>(currentUnd==='ALL'||g.und===currentUnd)&&(currentExpiry==='ALL'||g.exp===currentExpiry));
   document.getElementById('greeks-table-sub').textContent = currentUnd==='ALL'?'All positions':currentUnd+' positions';
   document.getElementById('greeks-tbody').innerHTML = filtered.map(g => {
     const dStr = g.delta>=0?`+${g.delta}`:String(g.delta);
@@ -1373,21 +1415,22 @@ function renderView(und, mode) {
 }
 
 function renderBullBearKpis(und) {
-  const bullPnl = positions.filter(p=>p.und===und&&getBullBear(p)==='bull').reduce((s,p)=>s+p.pnl,0);
-  const bearPnl = positions.filter(p=>p.und===und&&getBullBear(p)==='bear').reduce((s,p)=>s+p.pnl,0);
-  const bullCnt = positions.filter(p=>p.und===und&&getBullBear(p)==='bull').length;
-  const bearCnt = positions.filter(p=>p.und===und&&getBullBear(p)==='bear').length;
+  const exp = p => currentExpiry==='ALL' || p.exp===currentExpiry;
+  const bullPnl = positions.filter(p=>p.und===und&&exp(p)&&getBullBear(p)==='bull').reduce((s,p)=>s+p.pnl,0);
+  const bearPnl = positions.filter(p=>p.und===und&&exp(p)&&getBullBear(p)==='bear').reduce((s,p)=>s+p.pnl,0);
+  const bullCnt = positions.filter(p=>p.und===und&&exp(p)&&getBullBear(p)==='bull').length;
+  const bearCnt = positions.filter(p=>p.und===und&&exp(p)&&getBullBear(p)==='bear').length;
   const spot    = marketData[und].close;
   return `<div class="kpi-row c4" style="margin-bottom:16px;">
+    <div class="kpi"><div class="kpi-label">Current P&amp;L</div><div class="kpi-value ${pnlClass(bullPnl+bearPnl)}">${fmtPnl(bullPnl+bearPnl)}</div><div class="kpi-sub">Bull + Bear combined</div></div>
     <div class="kpi"><div class="kpi-label">Bull Bets P&amp;L</div><div class="kpi-value ${pnlClass(bullPnl)}">${fmtPnl(bullPnl)}</div><div class="kpi-sub">${bullCnt} pos · FUT Long · CE Long · PE Short</div></div>
     <div class="kpi"><div class="kpi-label">Bear Bets P&amp;L</div><div class="kpi-value ${pnlClass(bearPnl)}">${fmtPnl(bearPnl)}</div><div class="kpi-sub">${bearCnt} pos · FUT Short · CE Short · PE Long</div></div>
-    <div class="kpi"><div class="kpi-label">Net ${und==='BANKNIFTY'?'BANKNIFTY':'NIFTY'} P&amp;L</div><div class="kpi-value ${pnlClass(bullPnl+bearPnl)}">${fmtPnl(bullPnl+bearPnl)}</div><div class="kpi-sub">Bull + Bear combined</div></div>
     <div class="kpi"><div class="kpi-label">${und==='BANKNIFTY'?'BANKNIFTY':'NIFTY'} Spot</div><div class="kpi-value" style="font-family:var(--fm)">${spot.toLocaleString('en-IN',{minimumFractionDigits:2})}</div><div class="kpi-sub">${marketData[und].date}</div></div>
   </div>`;
 }
 
 function renderBullBearTable(und, mode) {
-  const grp    = positions.filter(p=>p.und===und&&getBullBear(p)===mode);
+  const grp    = positions.filter(p=>p.und===und&&(currentExpiry==='ALL'||p.exp===currentExpiry)&&getBullBear(p)===mode);
   const isBull = mode==='bull';
   const total  = grp.reduce((s,p)=>s+p.pnl,0);
   return `<div class="card" style="margin-bottom:14px;">

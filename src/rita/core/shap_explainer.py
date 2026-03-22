@@ -35,6 +35,8 @@ FEATURE_NAMES = [
     "Trend Score",
     "Allocation",
     "Days Remaining",
+    "ATR Ratio",
+    "EMA Ratio",
 ]
 ACTION_NAMES = ["Cash (0%)", "Half (50%)", "Full (100%)"]
 
@@ -121,11 +123,12 @@ class SHAPExplainer:
         """
         Mean absolute SHAP per feature per action.
 
-        Returns DataFrame shape (7, 4): features × [Cash, Half, Full, Overall]
+        Returns DataFrame shape (n_features, 4): features × [Cash, Half, Full, Overall]
         Sorted by Overall importance descending.
         """
-        importance = np.abs(shap_values).mean(axis=0)   # (7, 3)
-        df = pd.DataFrame(importance, index=FEATURE_NAMES, columns=ACTION_NAMES)
+        importance = np.abs(shap_values).mean(axis=0)   # (n_features, 3)
+        n = importance.shape[0]
+        df = pd.DataFrame(importance, index=FEATURE_NAMES[:n], columns=ACTION_NAMES)
         df["Overall"] = df.mean(axis=1)
         return df.sort_values("Overall", ascending=False)
 
@@ -159,8 +162,9 @@ class SHAPExplainer:
                           "shap_half": array(N,),
                           "shap_full": array(N,)}}
         """
+        n = shap_values.shape[1]
         result = {}
-        for fi, fname in enumerate(FEATURE_NAMES):
+        for fi, fname in enumerate(FEATURE_NAMES[:n]):
             result[fname] = {
                 "values":     obs[:, fi],
                 "shap_cash":  shap_values[:, fi, 0],
@@ -207,7 +211,8 @@ class SHAPExplainer:
                 "action": ACTION_NAMES[action_idx[i]],
                 "total_|shap|": round(float(magnitude[i]), 4),
             }
-            for fi, fname in enumerate(FEATURE_NAMES):
+            n_feat = shap_chosen.shape[1]
+            for fi, fname in enumerate(FEATURE_NAMES[:n_feat]):
                 row[fname] = round(float(shap_chosen[i, fi]), 4)
             rows.append(row)
 
@@ -235,7 +240,7 @@ class SHAPExplainer:
             shap_values=shap_values,
             observations=obs,
             phases=phases,
-            feature_names=np.array(FEATURE_NAMES),
+            feature_names=np.array(FEATURE_NAMES[:shap_values.shape[1]]),
             action_names=np.array(ACTION_NAMES),
         )
 

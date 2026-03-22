@@ -209,7 +209,7 @@ def train_agent(
     Key fixes vs original:
     - Monitor wrapper  → ep_rew_mean now logged correctly
     - Soft target updates (tau=0.005, interval=1) → prevents early Q-value collapse
-    - Extended exploration (fraction=0.5) → agent explores for half the budget
+    - exploration_fraction=0.5: diverse buffer throughout training, avoids premature Q-lock
     - seed param → reproducible runs; used by train_best_of_n for multi-seed selection
     - model_name → allows saving model to a custom filename
     """
@@ -219,6 +219,8 @@ def train_agent(
     model_path = os.path.join(output_dir, model_name)
 
     env = Monitor(NiftyTradingEnv(train_df))
+
+    exploration_fraction = 0.5   # 50% of timesteps exploring; works well for 50k–100k runs
 
     model = DQN(
         policy="MlpPolicy",
@@ -232,7 +234,7 @@ def train_agent(
         train_freq=4,
         gradient_steps=1,
         target_update_interval=1,        # apply soft update every step (tau controls the blend)
-        exploration_fraction=0.5,        # explore for 50% of budget → model won't exploit too early
+        exploration_fraction=exploration_fraction,
         exploration_final_eps=0.05,
         policy_kwargs={"net_arch": [256, 256]},
         seed=seed,

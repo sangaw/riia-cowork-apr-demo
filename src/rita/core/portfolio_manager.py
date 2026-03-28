@@ -25,7 +25,7 @@ from scipy.stats import norm
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
-LOT_SIZES = {"NIFTY": 75, "BANKNIFTY": 30}
+LOT_SIZES = {"NIFTY": 65, "BANKNIFTY": 30}
 
 # SPAN rates (fraction of notional) for margin estimation
 # Long options need no margin — only premium
@@ -635,6 +635,152 @@ def load_ledger_balance(input_dir: str) -> float:
     return 3_500_000.0
 
 
+# ─── Hedge Quality Scorer ─────────────────────────────────────────────────────
+
+def _hqs_score(pct_otm: float, dte: int, delta_abs: float) -> int:
+    """
+    Hedge Quality Score (0–100) for a single long option position.
+    Penalises: strike too far OTM, too few DTE, too low delta.
+    """
+    score = 100
+
+    # Strike distance from spot
+    if pct_otm > 15:
+        score -= 45
+    elif pct_otm > 10:
+        score -= 35
+    elif pct_otm > 7:
+        score -= 25
+    elif pct_otm > 5:
+        score -= 15
+    elif pct_otm > 3:
+        score -= 5
+
+    # Days to expiry — danger zone in last 2 weeks
+    if dte < 7:
+        score -= 35
+    elif dte < 14:
+        score -= 20
+    elif dte < 21:
+        score -= 10
+
+    # Delta — probability of reaching the strike
+    if delta_abs < 0.05:
+        score -= 20
+    elif delta_abs < 0.10:
+        score -= 12
+    elif delta_abs < 0.20:
+        score -= 5
+
+    return max(0, min(100, score))
+
+
+def compute_hedge_quality(
+    active_positions: list,
+    spot: dict,
+    as_of: Optional[date] = None,
+) -> dict:
+    """
+    Score all long option positions on hedge quality (HQS 0–100).
+
+    Tiers:
+      green  (≥65) — Good Hedge: reasonable strike, DTE, delta
+      yellow (40–64) — Watch: marginal on one or more dimensions
+      red    (<40)   — Lottery Ticket: high decay risk, far OTM or near expiry
+
+    Returns:
+        positions — scored list sorted worst-first
+        summary   — portfolio-level hedge health totals
+    """
+    today = as_of or date.today()
+    scored = []
+
+    for p in active_positions:
+        if p["type"] == "FUT" or p["side"] != "Long" or not p["strike_val"]:
+            continue
+
+        und = p["underlying"]
+        S = spot.get(und, {}).get("close", 0) if spot.get(und) else 0
+        if S <= 0:
+            continue
+
+        K = p["strike_val"]
+        try:
+            exp_d = date.fromisoformat(p["exp_date"])
+        except (ValueError, KeyError):
+            continue
+
+        dte = max(0, (exp_d - today).days)
+        T = max(dte / 365.0, 1 / 365)
+
+        # % distance from spot — CE: above; PE: below
+        pct_otm = (
+            max(0.0, (K - S) / S * 100) if p["type"] == "CE"
+            else max(0.0, (S - K) / S * 100)
+        )
+
+        # Delta via Black-Scholes
+        ltp = p["ltp"]
+        iv = _implied_vol(S, K, T, RISK_FREE_RATE, ltp, p["type"]) if ltp > 0.5 else 0.15
+        d1, _ = _bs_d1d2(S, K, T, RISK_FREE_RATE, iv)
+        if d1 is not None:
+            delta_abs = norm.cdf(d1) if p["type"] == "CE" else 1.0 - norm.cdf(d1)
+        else:
+            delta_abs = 0.01
+
+        score = _hqs_score(pct_otm, dte, delta_abs)
+        tier  = "green" if score >= 65 else "yellow" if score >= 40 else "red"
+        label = {"green": "Good Hedge", "yellow": "Watch", "red": "Lottery Ticket"}[tier]
+        premium_total = round(p["qty"] * p["avg"])
+
+        scored.append({
+            "instrument":    p["instrument"],
+            "full":          p["full"],
+            "und":           und,
+            "exp":           p["exp"],
+            "type":          p["type"],
+            "strike":        p["strike"],
+            "qty":           p["qty"],
+            "avg":           p["avg"],
+            "ltp":           p["ltp"],
+            "pnl":           p["pnl"],
+            "pct_otm":       round(pct_otm, 1),
+            "dte":           dte,
+            "delta_abs":     round(delta_abs, 3),
+            "premium_total": premium_total,
+            "hqs":           score,
+            "hqs_tier":      tier,
+            "hqs_label":     label,
+        })
+
+    # Worst first (red → yellow → green, within tier ascending score)
+    tier_order = {"red": 0, "yellow": 1, "green": 2}
+    scored.sort(key=lambda x: (tier_order[x["hqs_tier"]], x["hqs"]))
+
+    total_premium = sum(s["premium_total"] for s in scored)
+    red_premium   = sum(s["premium_total"] for s in scored if s["hqs_tier"] == "red")
+    total_qty     = sum(s["qty"] for s in scored)
+    avg_delta     = (
+        float(round(sum(s["delta_abs"] * s["qty"] for s in scored) / total_qty, 3))
+        if total_qty > 0 else 0.0
+    )
+    pnl_at_risk = sum(s["pnl"] for s in scored if s["hqs_tier"] == "red")
+
+    return {
+        "positions": scored,
+        "summary": {
+            "total_premium":   total_premium,
+            "red_premium":     red_premium,
+            "count_red":       sum(1 for s in scored if s["hqs_tier"] == "red"),
+            "count_yellow":    sum(1 for s in scored if s["hqs_tier"] == "yellow"),
+            "count_green":     sum(1 for s in scored if s["hqs_tier"] == "green"),
+            "total_long_opts": len(scored),
+            "avg_delta":       avg_delta,
+            "pnl_at_risk":     round(pnl_at_risk),
+        },
+    }
+
+
 # ─── Main summary builder ────────────────────────────────────────────────────
 
 def get_portfolio_summary(input_dir: str) -> dict:
@@ -655,6 +801,7 @@ def get_portfolio_summary(input_dir: str) -> dict:
     }
     scenario_levels = load_scenario_levels(input_dir)
     ledger   = load_ledger_balance(input_dir)
+    hedge_quality = compute_hedge_quality(active, market)
 
     # Realized P&L = sum of closed positions P&L
     realized_pnl = round(sum(p["pnl"] for p in closed), 2)
@@ -684,4 +831,5 @@ def get_portfolio_summary(input_dir: str) -> dict:
         "stress":          stress,
         "payoff":          payoff,
         "scenario_levels": scenario_levels,
+        "hedge_quality":   hedge_quality,
     }

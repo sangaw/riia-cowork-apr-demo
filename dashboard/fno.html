@@ -256,6 +256,47 @@ td.neg{color:var(--neg);font-family:var(--fm);font-weight:500;}
 .exp-pill:hover:not(.active){background:var(--surface2);}
 .exp-pill.active{background:var(--p03-bg);color:var(--p03);border-color:var(--p03-bd);font-weight:600;}
 .topbar-divider{width:1px;height:20px;background:var(--border);margin:0 4px;}
+
+/* ── Hedge Quality badges ─────────────────────────────── */
+.hqs-badge{display:inline-flex;align-items:center;gap:4px;font-family:var(--fm);font-size:10px;font-weight:500;padding:3px 8px;border-radius:4px;white-space:nowrap;}
+.hqs-badge.green{background:var(--p01-bg);color:var(--p01);border:1px solid var(--p01-bd);}
+.hqs-badge.yellow{background:var(--p03-bg);color:var(--p03);border:1px solid var(--p03-bd);}
+.hqs-badge.red{background:var(--neg-bg);color:var(--neg);border:1px solid var(--neg-bd);}
+.hqs-score{font-family:var(--fm);font-size:11px;font-weight:600;}
+.hqs-score.green{color:var(--p01);}
+.hqs-score.yellow{color:var(--p03);}
+.hqs-score.red{color:var(--neg);}
+.alert-bar{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:var(--r);margin-bottom:16px;font-family:var(--fm);font-size:12px;}
+.alert-bar.red{background:var(--neg-bg);border:1px solid var(--neg-bd);color:var(--neg);}
+.alert-bar.yellow{background:var(--p03-bg);border:1px solid var(--p03-bd);color:var(--p03);}
+.alert-bar.green{background:var(--p01-bg);border:1px solid var(--p01-bd);color:var(--p01);}
+.hqs-tier-bar{display:flex;gap:0;height:8px;border-radius:100px;overflow:hidden;margin-top:10px;}
+.hqs-tier-seg{height:100%;transition:width .4s ease;}
+.hqs-tier-seg.red{background:var(--neg);}
+.hqs-tier-seg.yellow{background:var(--p03);}
+.hqs-tier-seg.green{background:var(--p01);}
+
+/* ── Manoeuvre page ──────────────────────────────────── */
+.man-layout{display:grid;grid-template-columns:377px 1fr;gap:16px;align-items:start;}
+.man-left-panel{position:sticky;top:12px;}
+.man-pool-scroll{overflow-y:auto;max-height:calc(100vh - 220px);padding:8px;}
+.man-row{display:flex;align-items:center;gap:7px;padding:6px 10px;border-radius:var(--r);background:var(--surface2);border:1.5px solid var(--border);cursor:grab;user-select:none;margin-bottom:5px;transition:box-shadow .1s;}
+.man-row:hover{box-shadow:var(--shm);}
+.man-row.dragging{opacity:.35;}
+.man-group-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);box-shadow:var(--sh);margin-bottom:12px;transition:outline .1s;}
+.man-group-hdr{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:6px;}
+.man-empty-zone{padding:16px;text-align:center;font-family:var(--fm);font-size:11px;color:var(--t4);border:1.5px dashed var(--border);border-radius:var(--r);margin:8px;}
+.man-name-input{font-size:13px;font-weight:600;border:none;background:transparent;color:var(--text);font-family:var(--fd);width:120px;outline:none;cursor:text;border-bottom:1.5px dashed transparent;padding:0;}
+.man-name-input:hover,.man-name-input:focus{border-bottom-color:var(--border2);}
+.man-drag-handle{font-size:13px;color:var(--t4);cursor:grab;flex-shrink:0;}
+.man-view-btn{font-family:var(--fm);font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--surface);cursor:pointer;color:var(--t2);white-space:nowrap;}
+.man-view-btn:hover{background:var(--surface2);color:var(--text);}
+.man-right-panel{max-height:calc(100vh - 180px);overflow-y:auto;padding-right:3px;}
+.man-save-btn{font-family:var(--fm);font-size:10px;padding:3px 10px;border-radius:4px;border:1px solid var(--p01-bd);background:var(--p01-bg);cursor:pointer;color:var(--p01);white-space:nowrap;font-weight:600;}
+.man-save-btn:hover{filter:brightness(1.08);}
+.man-load-btn{font-family:var(--fm);font-size:10px;padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--surface2);cursor:pointer;color:var(--t2);white-space:nowrap;font-weight:600;}
+.man-load-btn:hover{background:var(--surface);color:var(--text);}
+@media(max-width:900px){.man-layout{grid-template-columns:1fr;}}
 </style>
 </head>
 <body>
@@ -313,6 +354,16 @@ td.neg{color:var(--neg);font-family:var(--fm);font-weight:500;}
     </div>
     <div class="nav-item p01" data-page="scenarios">
       <span class="nav-icon">↔</span> Risk-Reward
+    </div>
+    <div class="nav-item p03" data-page="hedge" id="nav-hedge">
+      <span class="nav-icon">⚠</span> Hedge Radar
+      <span id="nav-hedge-badge" style="display:none;margin-left:auto;background:var(--neg);color:#fff;font-family:var(--fm);font-size:9px;font-weight:600;padding:1px 6px;border-radius:100px;"></span>
+    </div>
+    <div class="nav-item p02" data-page="history">
+      <span class="nav-icon">⏱</span> Hedge History
+    </div>
+    <div class="nav-item p03" data-page="manoeuvre">
+      <span class="nav-icon">⟳</span> Manoeuvre
     </div>
   </div>
 
@@ -373,11 +424,11 @@ td.neg{color:var(--neg);font-family:var(--fm);font-weight:500;}
 
     <div class="card">
       <div class="card-hdr">
-        <span class="card-title" id="pnl-chart-title">P&amp;L by Underlying</span>
-        <span class="card-sub">NIFTY vs BANKNIFTY, APR vs MAY</span>
+        <span class="card-title">Market &amp; Daily P&amp;L</span>
+        <span class="card-sub">NIFTY &amp; BANKNIFTY % move vs net portfolio P&amp;L per day</span>
       </div>
       <div class="card-body">
-        <div class="chart-wrap"><canvas id="underlying-chart"></canvas></div>
+        <div class="chart-wrap tall" id="daily-progress-wrap"><canvas id="daily-progress-chart"></canvas></div>
       </div>
     </div>
   </div>
@@ -414,7 +465,7 @@ td.neg{color:var(--neg);font-family:var(--fm);font-weight:500;}
             <thead><tr>
               <th>Instrument</th><th>Exp</th><th>Type</th><th>Strike</th>
               <th>Side</th><th>Qty</th><th>Avg</th><th>LTP</th>
-              <th>Chg %</th><th>P&amp;L</th>
+              <th>Chg %</th><th>P&amp;L</th><th>HQS</th>
             </tr></thead>
             <tbody id="pos-tbody"></tbody>
           </table>
@@ -624,9 +675,189 @@ td.neg{color:var(--neg);font-family:var(--fm);font-weight:500;}
     <div id="rr-history"></div>
   </div>
 
+  <!-- ═══════════════════════════════════════════════
+       HEDGE HISTORY
+  ════════════════════════════════════════════════ -->
+  <div class="section" id="page-history">
+    <div class="page-hdr">
+      <div>
+        <div class="page-title">Hedge History</div>
+        <div class="page-sub">Multi-day premium trends · Reactive hedging patterns · Anchor positions · Budget utilisation</div>
+      </div>
+      <span class="phase-tag p02">Analysis</span>
+    </div>
+
+    <div id="hist-loading" style="display:flex;align-items:center;justify-content:center;height:200px;font-family:var(--fm);font-size:12px;color:var(--t3);">Loading hedge history...</div>
+    <div id="hist-content" style="display:none;">
+
+      <!-- KPIs -->
+      <div class="kpi-row c4" id="hist-kpis"></div>
+
+      <!-- Timeline chart -->
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-hdr">
+          <span class="card-title">Hedge Premium Timeline</span>
+          <span class="card-sub">Daily premium by OTM distance · ▼ = down day for NIFTY</span>
+        </div>
+        <div class="card-body">
+          <div class="chart-wrap tall"><canvas id="hedge-timeline-chart"></canvas></div>
+          <div style="display:flex;gap:20px;margin-top:10px;font-family:var(--fm);font-size:10px;flex-wrap:wrap;">
+            <span><span style="display:inline-block;width:10px;height:10px;background:rgba(26,107,60,0.7);border-radius:2px;margin-right:4px;"></span>Near-ATM (≤5% OTM)</span>
+            <span><span style="display:inline-block;width:10px;height:10px;background:rgba(146,72,10,0.7);border-radius:2px;margin-right:4px;"></span>Mid-OTM (5–10%)</span>
+            <span><span style="display:inline-block;width:10px;height:10px;background:rgba(155,28,28,0.75);border-radius:2px;margin-right:4px;"></span>Far-OTM (>10%)</span>
+            <span style="color:var(--p02);"><span style="display:inline-block;width:20px;height:2px;background:var(--p02);margin-right:4px;vertical-align:middle;"></span>NIFTY close →</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reactive + Budget side by side -->
+      <div class="two-col" style="margin-bottom:18px;">
+
+        <div class="card">
+          <div class="card-hdr">
+            <span class="card-title">Reactive Hedging Analysis</span>
+            <span class="card-sub">New hedges added on down days vs calm days</span>
+          </div>
+          <div class="card-body" style="padding:0">
+            <div id="reactive-summary" style="padding:14px 16px 8px;"></div>
+            <div class="tbl-wrap" style="max-height:220px;">
+              <table>
+                <thead><tr><th>Date</th><th>NIFTY Chg</th><th>New Opts</th><th>Reactive</th><th>Context</th></tr></thead>
+                <tbody id="reactive-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hdr">
+            <span class="card-title">Hedge Budget Utilisation</span>
+            <span class="card-sub">Total long option premium ÷ futures notional</span>
+          </div>
+          <div class="card-body" style="padding:12px 16px;">
+            <div id="budget-summary" style="margin-bottom:14px;"></div>
+            <div id="budget-bars"></div>
+            <div style="font-family:var(--fm);font-size:10px;color:var(--t3);margin-top:8px;">
+              Recommended max: 5% of futures notional &nbsp;·&nbsp; Rule of thumb: insurance should not cost more than your expected alpha
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Anchor positions -->
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-hdr">
+          <span class="card-title">Anchor Positions</span>
+          <span class="card-sub" id="anchor-sub">Long options held 4+ days with below-average hedge quality</span>
+        </div>
+        <div class="card-body" style="padding:0">
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr>
+                <th>Instrument</th><th>Days</th><th>% OTM at Entry</th>
+                <th>Entry Avg</th><th>Current LTP</th><th>% Decay</th>
+                <th>HQS Entry→Now</th><th>Current P&L</th><th>LTP Trail</th>
+              </tr></thead>
+              <tbody id="anchor-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- HQS evolution per day -->
+      <div class="card">
+        <div class="card-hdr">
+          <span class="card-title">Daily Hedge Quality Distribution</span>
+          <span class="card-sub">🟢 Good · 🟡 Watch · 🔴 Lottery Ticket — counts per day</span>
+        </div>
+        <div class="card-body" style="padding:0">
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Date</th><th>NIFTY</th><th>Chg</th><th>Total Premium</th><th>Near-ATM</th><th>Far-OTM</th><th>Budget %</th><th>🟢</th><th>🟡</th><th>🔴</th><th>New Added</th></tr></thead>
+              <tbody id="hist-day-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /hist-content -->
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       HEDGE RADAR
+  ════════════════════════════════════════════════ -->
+  <div class="section" id="page-hedge">
+    <div class="page-hdr">
+      <div>
+        <div class="page-title">Hedge Radar</div>
+        <div class="page-sub">Long option quality · Strike distance · Theta decay risk · DTE scoring</div>
+      </div>
+      <span class="phase-tag p03">Hedge Quality</span>
+    </div>
+
+    <!-- KPI summary row -->
+    <div class="kpi-row c4" id="hqs-kpis"></div>
+
+    <!-- Alert banner -->
+    <div id="hqs-alert-banner"></div>
+
+    <!-- Tier breakdown bar -->
+    <div class="card" style="margin-bottom:18px;" id="hqs-tier-card"></div>
+
+    <!-- Scored positions table -->
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title">Long Options — Hedge Quality Scores</span>
+        <span class="card-sub">Sorted by score ascending (worst first) · Only long options are scored</span>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div class="tbl-wrap" style="max-height:420px;">
+          <table>
+            <thead><tr>
+              <th>Instrument</th><th>Exp</th><th>Type</th><th>Strike</th>
+              <th>Qty</th><th>Avg</th><th>LTP</th><th>P&amp;L</th>
+              <th>% OTM</th><th>DTE</th><th>Delta</th><th>Premium</th>
+              <th>Score</th><th>Rating</th>
+            </tr></thead>
+            <tbody id="hqs-tbody"></tbody>
+          </table>
+        </div>
+        <div class="tbl-footer" id="hqs-footer"></div>
+      </div>
+    </div>
+
+    <!-- Scoring methodology note -->
+    <div class="info-note" style="margin-top:14px;">
+      <strong>How scoring works:</strong> &nbsp;Score (0–100) penalises three risk factors independently:
+      <strong>Strike distance</strong> (>5% OTM = −15 pts, >10% = −35 pts, >15% = −45 pts) ·
+      <strong>DTE</strong> (&lt;7 days = −35 pts, &lt;14 = −20 pts, &lt;21 = −10 pts) ·
+      <strong>Delta</strong> (&lt;0.05 = −20 pts, &lt;0.10 = −12 pts, &lt;0.20 = −5 pts).
+      &nbsp;🟢 Good Hedge ≥65 · 🟡 Watch 40–64 · 🔴 Lottery Ticket &lt;40
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════
+       MANOEUVRE
+  ════════════════════════════════════════════════ -->
+  <div class="section" id="page-manoeuvre">
+    <div class="page-hdr">
+      <div>
+        <div class="page-title">Position Manoeuvre</div>
+        <div class="page-sub">Each lot as a row · Entry · P&amp;L at SL and Target</div>
+      </div>
+      <span class="phase-tag p03">Manoeuvre</span>
+    </div>
+    <div id="manoeuvre-container">
+      <div style="text-align:center;padding:48px;font-family:var(--fm);font-size:12px;color:var(--t3);">Loading…</div>
+    </div>
+  </div>
+
 </div><!-- /main -->
 </div><!-- /shell -->
 
+<script src="fno-manoeuvre.js"></script>
 <script>
 // ── API key (set to match PORTFOLIO_API_KEY env var if configured) ────────────
 // Leave empty string for local dev where the env var is not set.
@@ -634,20 +865,24 @@ const RITA_API_KEY = '';
 
 // ── Global data (populated from API on init) ──────────────
 let marketData     = {};
-let positions      = [];
+var positions      = [];
 let greeksData     = [];
 let closedPositions = [];
 let realizedPnl    = 0;
 let portDelta      = {};
 let netGreeks      = {};
-let scenarioLevels = {};
+var scenarioLevels = {};
 let marginData     = {};
 let stressData     = [];
 let payoffData     = {};
+let hedgeQuality   = {};
+let hedgeHistory   = {};
+let hedgeHistoryLoaded = false;
+let hedgeTimelineChart = null;
 
 // ── Global state ──────────────────────────────────────────
-let currentUnd = 'ALL';
-let currentExpiry = 'ALL';
+var currentUnd = 'ALL';
+var currentExpiry = 'ALL';
 let currentPosFilter = 'ALL';
 
 function activePositions() {
@@ -677,6 +912,7 @@ async function initApp() {
     marginData      = d.margin || {};
     stressData      = d.stress || [];
     payoffData      = d.payoff || {};
+    hedgeQuality    = d.hedge_quality || {};
 
     // Update sidebar
     const asOf = d.as_of || '';
@@ -709,10 +945,12 @@ async function initApp() {
   renderStressScenarios();
   renderScenarios();
   renderPayoffChart();
+  renderHedgeRadar();
+  initManoeuvre();
 }
 
 // Chart references
-let segChart = null, undChart = null, marginChart = null, payoffChart = null, payoffChartBnkn = null;
+let segChart = null, dpChart = null, marginChart = null, payoffChart = null, payoffChartBnkn = null;
 
 // ── Helpers ───────────────────────────────────────────────
 function fmt(n) { return Math.abs(n).toLocaleString('en-IN',{minimumFractionDigits:0,maximumFractionDigits:2}); }
@@ -726,6 +964,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     item.classList.add('active');
     document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
     document.getElementById('page-' + item.dataset.page).classList.add('active');
+    if (item.dataset.page === 'history') loadHedgeHistory();
   });
 });
 
@@ -748,6 +987,8 @@ function setUnderlying(und, btn) {
   renderStressScenarios();
   renderPayoffChart();
   renderScenarios();
+  renderHedgeRadar();
+  renderManoeuvre();
 }
 
 function buildExpiryPills() {
@@ -777,6 +1018,8 @@ function setExpiry(exp, btn) {
   renderStressScenarios();
   renderPayoffChart();
   renderScenarios();
+  renderHedgeRadar();
+  renderManoeuvre();
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────
@@ -784,7 +1027,7 @@ function renderDashboard() {
   renderDashKpis();
   renderMarketSnapshot();
   renderSegmentChart();
-  renderUnderlyingChart();
+  renderDailyProgress();
   renderMovers();
 }
 
@@ -897,31 +1140,105 @@ function renderSegmentChart() {
   });
 }
 
-function renderUnderlyingChart() {
-  const expiries = currentExpiry !== 'ALL' ? [currentExpiry]
-    : [...new Set(positions.map(p => p.exp))].sort();
-  const sumPnl = (und, exp) => activePositions()
-    .filter(p=>p.und===und&&p.exp===exp).reduce((s,p)=>s+p.pnl, 0);
-  let labels = [], data = [];
-  const unds = currentUnd === 'ALL' ? ['NIFTY','BANKNIFTY']
-    : currentUnd === 'NIFTY' ? ['NIFTY'] : ['BANKNIFTY'];
-  unds.forEach(u => expiries.forEach(e => {
-    labels.push(`${u==='BANKNIFTY'?'BNKN':u} ${e}`);
-    data.push(sumPnl(u, e));
-  }));
-  const colors = data.map(v=>v>=0?'rgba(26,107,60,0.72)':'rgba(155,28,28,0.72)');
-  const borders = data.map(v=>v>=0?'#1A6B3C':'#9B1C1C');
+function renderDailyProgress() {
+  const canvas = document.getElementById('daily-progress-chart');
+  if (!canvas) return;
+  if (dpChart) { dpChart.destroy(); dpChart = null; }
 
-  if (undChart) undChart.destroy();
-  undChart = new Chart(document.getElementById('underlying-chart'), {
-    type:'bar',
-    data:{labels,datasets:[{label:'Unrealized P&L',data,backgroundColor:colors,borderColor:borders,borderWidth:1.5,borderRadius:4}]},
-    options:{
-      responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:d=>fmtPnl(d.raw)}}},
-      scales:{
-        x:{grid:{display:false},ticks:{font:{family:'IBM Plex Mono',size:11}}},
-        y:{grid:{color:'rgba(0,0,0,.05)'},ticks:{font:{family:'IBM Plex Mono',size:10},callback:v=>`₹${(v/1000).toFixed(0)}K`}}
+  const history = loadHistory();
+  if (!history.length) {
+    document.getElementById('daily-progress-wrap').innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--t3);font-family:var(--fm);font-size:12px;">No history yet — data accumulates automatically each day you open this page.</div>';
+    return;
+  }
+
+  const labels  = history.map(h => h.date);
+  const netPnl  = history.map(h => (h.niftyPnl || 0) + (h.bnknPnl || 0));
+
+  // % change from first data point so NIFTY and BANKNIFTY share the same axis
+  const base0N = history[0].nifty;
+  const base0B = history[0].banknifty;
+  const niftyPct = history.map(h => +((h.nifty  / base0N - 1) * 100).toFixed(2));
+  const bnknPct  = history.map(h => +((h.banknifty / base0B - 1) * 100).toFixed(2));
+
+  const pnlColors   = netPnl.map(v => v >= 0 ? 'rgba(26,107,60,0.75)'  : 'rgba(155,28,28,0.75)');
+  const pnlBorders  = netPnl.map(v => v >= 0 ? '#1A6B3C' : '#9B1C1C');
+
+  dpChart = new Chart(canvas, {
+    data: {
+      labels,
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Net P&L (₹)',
+          data: netPnl,
+          backgroundColor: pnlColors,
+          borderColor: pnlBorders,
+          borderWidth: 1.5,
+          borderRadius: 3,
+          yAxisID: 'yPnl',
+          order: 2,
+        },
+        {
+          type: 'line',
+          label: 'NIFTY %',
+          data: niftyPct,
+          borderColor: '#0056B8',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          tension: 0.3,
+          yAxisID: 'yIdx',
+          order: 1,
+        },
+        {
+          type: 'line',
+          label: 'BANKNIFTY %',
+          data: bnknPct,
+          borderColor: '#6B2FA0',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          tension: 0.3,
+          yAxisID: 'yIdx',
+          order: 1,
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true, position: 'top',
+          labels: { font: { family: 'IBM Plex Mono', size: 11 }, boxWidth: 12, padding: 14 }
+        },
+        tooltip: {
+          callbacks: {
+            label: ctx => ctx.dataset.yAxisID === 'yPnl'
+              ? `Net P&L: ${fmtPnl(ctx.raw)}`
+              : `${ctx.dataset.label}: ${ctx.raw >= 0 ? '+' : ''}${ctx.raw}%`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { font: { family: 'IBM Plex Mono', size: 10 }, maxRotation: 0, maxTicksLimit: 10 }
+        },
+        yPnl: {
+          position: 'left',
+          grid: { color: 'rgba(0,0,0,.05)' },
+          ticks: { font: { family: 'IBM Plex Mono', size: 10 }, callback: v => `₹${(v/1000).toFixed(0)}K` }
+        },
+        yIdx: {
+          position: 'right',
+          grid: { drawOnChartArea: false },
+          ticks: { font: { family: 'IBM Plex Mono', size: 10 }, callback: v => `${v >= 0 ? '+' : ''}${v}%` }
+        }
       }
     }
   });
@@ -971,6 +1288,10 @@ function renderPositionsKpis() {
 }
 
 function renderPositionsTable() {
+  // Build HQS lookup: instrument → scored position
+  const hqsMap = {};
+  ((hedgeQuality.positions) || []).forEach(h => { hqsMap[h.instrument] = h; });
+
   const filtered = positions.filter(p => {
     if (currentUnd !== 'ALL' && p.und !== currentUnd) return false;
     if (currentExpiry !== 'ALL' && p.exp !== currentExpiry) return false;
@@ -979,6 +1300,15 @@ function renderPositionsTable() {
   });
   document.getElementById('pos-tbody').innerHTML = filtered.map(p => {
     const chgClass = p.chg>=0?'pos':'neg';
+    // HQS badge — only for long options
+    let hqsCell = '<td></td>';
+    if (p.type !== 'FUT' && p.side === 'Long') {
+      const h = hqsMap[p.instrument];
+      if (h) {
+        const icon = {green:'🟢', yellow:'🟡', red:'🔴'}[h.hqs_tier];
+        hqsCell = `<td><span class="hqs-badge ${h.hqs_tier}">${icon} ${h.hqs}</span></td>`;
+      }
+    }
     return `<tr>
       <td>${p.full}</td>
       <td><span class="exp-badge ${p.exp.toLowerCase()}">${p.exp}</span></td>
@@ -990,6 +1320,7 @@ function renderPositionsTable() {
       <td class="val">${p.type==='FUT'?'₹'+fmt(p.ltp):p.ltp.toFixed(2)}</td>
       <td class="${chgClass} val">${p.chg>=0?'+':''}${p.chg.toFixed(2)}%</td>
       <td class="${pnlClass(p.pnl)}">${fmtPnl(p.pnl)}</td>
+      ${hqsCell}
     </tr>`;
   }).join('');
   const total = filtered.reduce((s,p)=>s+p.pnl,0);
@@ -1177,8 +1508,31 @@ function renderGreeksCards() {
 }
 
 // ── Stress scenarios ─────────────────────────────────────
+function computeFilteredStress() {
+  // Re-derive stress from filtered greeks so und/expiry pills are respected
+  const filtered = greeksData.filter(g =>
+    (currentUnd === 'ALL' || g.und === currentUnd) &&
+    (currentExpiry === 'ALL' || g.exp === currentExpiry)
+  );
+  const moves = [-0.04, -0.02, 0.0, 0.02, 0.04];
+  const niftySpot = (marketData.NIFTY || {}).close || 0;
+  return moves.map(move => {
+    let totalPnl = 0;
+    filtered.forEach(g => {
+      const spot = (marketData[g.und] || {}).close || 0;
+      totalPnl += g.delta * spot * move;
+    });
+    return {
+      move_pct:    move * 100,
+      move_label:  (move > 0 ? '+' : '') + (move * 100).toFixed(0) + '%',
+      nifty_level: niftySpot ? Math.round(niftySpot * (1 + move)) : null,
+      pnl:         Math.round(totalPnl),
+    };
+  });
+}
+
 function renderStressScenarios() {
-  document.getElementById('stress-row').innerHTML = stressData.map(s => {
+  document.getElementById('stress-row').innerHTML = computeFilteredStress().map(s => {
     const isFlat = s.move_pct === 0;
     const niftyLbl = s.nifty_level ? `~${s.nifty_level.toLocaleString('en-IN')}` : '—';
     return `<div class="scenario-card${isFlat?' flat':''}">
@@ -1581,6 +1935,424 @@ function renderScenarios() {
 
   document.getElementById('rr-history').innerHTML = renderRRHistory();
 }
+
+// ── HEDGE HISTORY ─────────────────────────────────────────
+async function loadHedgeHistory() {
+  if (hedgeHistoryLoaded) return;
+  try {
+    const resp = await fetch('/api/v1/portfolio/hedge-history',
+      RITA_API_KEY ? { headers: { 'X-API-Key': RITA_API_KEY } } : {});
+    if (!resp.ok) throw new Error(`API ${resp.status}`);
+    hedgeHistory = await resp.json();
+    hedgeHistoryLoaded = true;
+    document.getElementById('hist-loading').style.display = 'none';
+    document.getElementById('hist-content').style.display = 'block';
+    renderHedgeHistory();
+  } catch (e) {
+    document.getElementById('hist-loading').textContent = 'Failed to load hedge history: ' + e.message;
+  }
+}
+
+function renderHedgeHistory() {
+  const days    = hedgeHistory.days    || [];
+  const anchors = hedgeHistory.anchors || [];
+  const rs      = hedgeHistory.reactive_score || {};
+  const budget  = hedgeHistory.budget  || {};
+
+  // ── KPIs ──────────────────────────────────────────────────────────────────
+  const totalPremPeak = Math.max(...days.map(d => d.total_premium), 0);
+  const reactPct = rs.reactive_pct || 0;
+  const reactClass = reactPct >= 60 ? 'neg' : reactPct >= 30 ? 'warn' : 'pos';
+  document.getElementById('hist-kpis').innerHTML = `
+    <div class="kpi">
+      <div class="kpi-label">Days Analysed</div>
+      <div class="kpi-value">${days.length}</div>
+      <div class="kpi-sub">${days.length > 0 ? days[0].date + ' → ' + days[days.length-1].date : '—'}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Reactive Score</div>
+      <div class="kpi-value ${reactClass}">${reactPct}%</div>
+      <div class="kpi-sub ${reactClass}">${rs.label || '—'} · ${rs.reactive_opts||0}/${rs.total_new_opts||0} new opts</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Budget Peak</div>
+      <div class="kpi-value ${budget.max_pct > 5 ? 'neg' : budget.max_pct > 3 ? 'warn' : 'pos'}">${budget.max_pct}%</div>
+      <div class="kpi-sub">on ${budget.max_date} · avg ${budget.avg_pct}%</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Anchor Positions</div>
+      <div class="kpi-value ${anchors.length > 0 ? 'warn' : 'pos'}">${anchors.length}</div>
+      <div class="kpi-sub">${anchors.length > 0 ? 'Held 4+ days, declining quality' : 'None detected'}</div>
+    </div>`;
+
+  // ── Timeline chart ─────────────────────────────────────────────────────────
+  const labels   = days.map(d => d.is_down_day ? d.date + ' ▼' : d.date);
+  const nearData = days.map(d => d.near_atm_premium);
+  const midData  = days.map(d => d.mid_otm_premium);
+  const farData  = days.map(d => d.far_otm_premium);
+  const niftyData = days.map(d => d.nifty_close);
+
+  // Down-day bar borders
+  const barBorder = days.map(d => d.is_down_day ? 'rgba(155,28,28,0.6)' : 'transparent');
+  const barBorderW = days.map(d => d.is_down_day ? 2 : 0);
+
+  if (hedgeTimelineChart) { hedgeTimelineChart.destroy(); hedgeTimelineChart = null; }
+  const ctx = document.getElementById('hedge-timeline-chart');
+  if (ctx) {
+    requestAnimationFrame(() => { hedgeTimelineChart = new Chart(ctx, {
+      data: {
+        labels,
+        datasets: [
+          {
+            type: 'bar', label: 'Near-ATM (≤5%)', data: nearData,
+            backgroundColor: 'rgba(26,107,60,0.70)', stack: 'prem',
+            borderColor: barBorder, borderWidth: barBorderW, borderRadius: 2,
+          },
+          {
+            type: 'bar', label: 'Mid-OTM (5–10%)', data: midData,
+            backgroundColor: 'rgba(146,72,10,0.65)', stack: 'prem',
+            borderColor: barBorder, borderWidth: barBorderW,
+          },
+          {
+            type: 'bar', label: 'Far-OTM (>10%)', data: farData,
+            backgroundColor: 'rgba(155,28,28,0.75)', stack: 'prem',
+            borderColor: barBorder, borderWidth: barBorderW,
+          },
+          {
+            type: 'line', label: 'NIFTY Close', data: niftyData,
+            borderColor: 'var(--p02)', backgroundColor: 'transparent',
+            borderWidth: 2, pointRadius: 4, pointHoverRadius: 6,
+            tension: 0.3, yAxisID: 'yNifty',
+          },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                if (ctx.dataset.yAxisID === 'yNifty')
+                  return `NIFTY: ${ctx.raw.toLocaleString('en-IN', {minimumFractionDigits:2})}`;
+                return `${ctx.dataset.label}: ₹${fmt(ctx.raw)}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Mono', size: 11 } } },
+          y: {
+            stacked: true, position: 'left',
+            grid: { color: 'rgba(0,0,0,.05)' },
+            ticks: { font: { family: 'IBM Plex Mono', size: 10 }, callback: v => `₹${(v/1000).toFixed(0)}K` }
+          },
+          yNifty: {
+            position: 'right', grid: { display: false },
+            ticks: { font: { family: 'IBM Plex Mono', size: 10 }, callback: v => v.toLocaleString('en-IN') }
+          }
+        }
+      }
+    }); }); // end requestAnimationFrame
+  }
+
+  // ── Reactive analysis ──────────────────────────────────────────────────────
+  const rSumEl = document.getElementById('reactive-summary');
+  if (rSumEl) {
+    const barW = rs.reactive_pct || 0;
+    const labelColor = reactPct >= 60 ? 'var(--neg)' : reactPct >= 30 ? 'var(--p03)' : 'var(--p01)';
+    rSumEl.innerHTML = `
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px;">
+        <span style="font-family:var(--fm);font-size:26px;font-weight:600;color:${labelColor}">${reactPct}%</span>
+        <span style="font-family:var(--fm);font-size:11px;color:var(--t3);">of new positions added reactively (on NIFTY down days)</span>
+      </div>
+      <div style="background:var(--surface2);border-radius:100px;height:8px;overflow:hidden;margin-bottom:6px;">
+        <div style="width:${barW}%;height:100%;background:${labelColor};border-radius:100px;transition:width .5s;"></div>
+      </div>
+      <div style="font-family:var(--fm);font-size:10px;color:var(--t3);">${rs.reactive_opts||0} reactive · ${(rs.total_new_opts||0)-(rs.reactive_opts||0)} proactive/neutral</div>`;
+  }
+
+  const rTbody = document.getElementById('reactive-tbody');
+  if (rTbody) {
+    rTbody.innerHTML = days.map(d => {
+      const chgClass = d.nifty_chg_pct < 0 ? 'neg' : 'pos';
+      const isDown   = d.is_down_day;
+      const ctx      = isDown
+        ? `<span style="color:var(--neg);font-weight:600;">↓ Down day — hedges added reactively</span>`
+        : d.new_opts_count > 0
+          ? `<span style="color:var(--p01);">↑ Calm — proactive additions</span>`
+          : `<span style="color:var(--t4);">No new positions</span>`;
+      return `<tr style="${isDown ? 'background:rgba(155,28,28,0.04)' : ''}">
+        <td class="val">${d.date}</td>
+        <td class="val ${chgClass}">${d.nifty_chg_pct >= 0 ? '+' : ''}${d.nifty_chg_pct.toFixed(1)}%</td>
+        <td class="val">${d.new_opts_count}</td>
+        <td class="val ${d.reactive_new_count > 0 ? 'neg' : ''}">${d.reactive_new_count}</td>
+        <td>${ctx}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Budget bars ────────────────────────────────────────────────────────────
+  const budgetSumEl = document.getElementById('budget-summary');
+  if (budgetSumEl) {
+    const overDays = budget.days_over_5pct || 0;
+    budgetSumEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+        <div style="text-align:center;background:var(--surface2);padding:10px;border-radius:var(--r);">
+          <div style="font-family:var(--fm);font-size:18px;font-weight:600;">${budget.avg_pct}%</div>
+          <div style="font-family:var(--fm);font-size:10px;color:var(--t3);margin-top:2px;">Avg Budget</div>
+        </div>
+        <div style="text-align:center;background:var(--surface2);padding:10px;border-radius:var(--r);">
+          <div style="font-family:var(--fm);font-size:18px;font-weight:600;color:${budget.max_pct>5?'var(--neg)':budget.max_pct>3?'var(--p03)':'var(--p01)'}">${budget.max_pct}%</div>
+          <div style="font-family:var(--fm);font-size:10px;color:var(--t3);margin-top:2px;">Peak (${budget.max_date})</div>
+        </div>
+        <div style="text-align:center;background:var(--surface2);padding:10px;border-radius:var(--r);">
+          <div style="font-family:var(--fm);font-size:18px;font-weight:600;color:${overDays>0?'var(--neg)':'var(--p01)'}">${overDays}</div>
+          <div style="font-family:var(--fm);font-size:10px;color:var(--t3);margin-top:2px;">Days over 5%</div>
+        </div>
+      </div>`;
+  }
+
+  const budgetBarsEl = document.getElementById('budget-bars');
+  if (budgetBarsEl) {
+    const maxBudget = Math.max(...days.map(d => d.hedge_budget_pct), 6);
+    budgetBarsEl.innerHTML = days.map(d => {
+      const pct    = d.hedge_budget_pct;
+      const w      = (pct / maxBudget * 100).toFixed(1);
+      const col    = pct > 5 ? 'var(--neg)' : pct > 3 ? 'var(--p03)' : 'var(--p01)';
+      const thresh = (5 / maxBudget * 100).toFixed(1);
+      return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-family:var(--fm);font-size:10px;color:var(--t3);width:50px;flex-shrink:0;">${d.date}</span>
+        <div style="flex:1;position:relative;height:14px;background:var(--surface2);border-radius:100px;overflow:visible;">
+          <div style="width:${w}%;height:100%;background:${col};border-radius:100px;opacity:0.8;"></div>
+          <div style="position:absolute;left:${thresh}%;top:-3px;width:2px;height:20px;background:var(--neg);opacity:0.4;"></div>
+        </div>
+        <span style="font-family:var(--fm);font-size:10px;font-weight:600;color:${col};width:36px;text-align:right;flex-shrink:0;">${pct}%</span>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Anchor positions ───────────────────────────────────────────────────────
+  document.getElementById('anchor-sub').textContent =
+    `${anchors.length} position${anchors.length !== 1 ? 's' : ''} held 4+ days with below-par hedge quality`;
+
+  const aTbody = document.getElementById('anchor-tbody');
+  if (aTbody) {
+    if (anchors.length === 0) {
+      aTbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--t3);padding:20px;font-family:var(--fm);font-size:12px;">No anchor positions detected.</td></tr>';
+    } else {
+      aTbody.innerHTML = anchors.map(a => {
+        const decayClass  = a.pct_decay < -60 ? 'neg' : a.pct_decay < -30 ? 'warn' : '';
+        const otmClass    = a.pct_otm_at_entry > 10 ? 'neg' : a.pct_otm_at_entry > 5 ? 'warn' : '';
+        // Mini sparkline using text chars
+        const trail = a.ltp_history.map((v, i, arr) => {
+          if (i === 0) return v;
+          return arr[i] < arr[i-1] ? `${v}↓` : `${v}↑`;
+        });
+        const hqsArrow = a.hqs_current < a.hqs_first ? '↓' : a.hqs_current > a.hqs_first ? '↑' : '→';
+        const hqsColor = a.hqs_current < 40 ? 'var(--neg)' : a.hqs_current < 65 ? 'var(--p03)' : 'var(--p01)';
+        return `<tr>
+          <td>${a.full}</td>
+          <td class="val">${a.days_held}d</td>
+          <td class="val ${otmClass}">${a.pct_otm_at_entry.toFixed(1)}%</td>
+          <td class="val">${a.entry_avg.toFixed(2)}</td>
+          <td class="val">${a.current_ltp.toFixed(2)}</td>
+          <td class="val ${decayClass}">${a.pct_decay >= 0 ? '+' : ''}${a.pct_decay.toFixed(1)}%</td>
+          <td style="font-family:var(--fm);font-size:10px;"><span style="color:${hqsColor};font-weight:600;">${a.hqs_first}${hqsArrow}${a.hqs_current}</span></td>
+          <td class="${pnlClass(a.current_pnl)}">${fmtPnl(a.current_pnl)}</td>
+          <td style="font-family:var(--fm);font-size:9px;color:var(--t3);">${a.date_history.join(' ')}</td>
+        </tr>`;
+      }).join('');
+    }
+  }
+
+  // ── Daily summary table ────────────────────────────────────────────────────
+  const dTbody = document.getElementById('hist-day-tbody');
+  if (dTbody) {
+    dTbody.innerHTML = days.map(d => {
+      const chgClass  = d.nifty_chg_pct < 0 ? 'neg' : 'pos';
+      const budgClass = d.hedge_budget_pct > 5 ? 'neg' : d.hedge_budget_pct > 3 ? 'warn' : '';
+      const rowStyle  = d.is_down_day ? 'background:rgba(155,28,28,0.04);' : '';
+      return `<tr style="${rowStyle}">
+        <td class="val">${d.date}${d.is_down_day ? ' ▼' : ''}</td>
+        <td class="val">${d.nifty_close.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+        <td class="val ${chgClass}">${d.nifty_chg_pct >= 0 ? '+' : ''}${d.nifty_chg_pct.toFixed(1)}%</td>
+        <td class="val">₹${fmt(d.total_premium)}</td>
+        <td class="val" style="color:var(--p01);">₹${fmt(d.near_atm_premium)}</td>
+        <td class="val" style="color:var(--neg);">₹${fmt(d.far_otm_premium)}</td>
+        <td class="val ${budgClass}">${d.hedge_budget_pct}%</td>
+        <td class="val" style="color:var(--p01);">${d.hqs_counts.green}</td>
+        <td class="val" style="color:var(--p03);">${d.hqs_counts.yellow}</td>
+        <td class="val" style="color:var(--neg);">${d.hqs_counts.red}</td>
+        <td class="val ${d.reactive_new_count > 0 ? 'neg' : ''}">${d.new_opts_count}${d.reactive_new_count > 0 ? ` (${d.reactive_new_count} react)` : ''}</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+// ── HEDGE RADAR ───────────────────────────────────────────
+function renderHedgeRadar() {
+  const allPos = (hedgeQuality.positions || []).filter(p =>
+    (currentUnd === 'ALL' || p.und === currentUnd) &&
+    (currentExpiry === 'ALL' || p.exp === currentExpiry)
+  );
+
+  const totalPrem   = allPos.reduce((s,p) => s + p.premium_total, 0);
+  const redPos      = allPos.filter(p => p.hqs_tier === 'red');
+  const yellowPos   = allPos.filter(p => p.hqs_tier === 'yellow');
+  const greenPos    = allPos.filter(p => p.hqs_tier === 'green');
+  const redPrem     = redPos.reduce((s,p) => s + p.premium_total, 0);
+  const redPremPct  = totalPrem > 0 ? Math.round(redPrem / totalPrem * 100) : 0;
+  const totalPnl    = allPos.reduce((s,p) => s + p.pnl, 0);
+  const totalQty    = allPos.reduce((s,p) => s + p.qty, 0);
+  const avgDelta    = totalQty > 0
+    ? (allPos.reduce((s,p) => s + p.delta_abs * p.qty, 0) / totalQty).toFixed(3)
+    : '—';
+
+  // ── KPIs ──
+  const kpisEl = document.getElementById('hqs-kpis');
+  if (kpisEl) {
+    const deltaWarn = parseFloat(avgDelta) < 0.15;
+    kpisEl.innerHTML = `
+      <div class="kpi">
+        <div class="kpi-label">Premium Deployed</div>
+        <div class="kpi-value">₹${(totalPrem/100000).toFixed(2)}L</div>
+        <div class="kpi-sub">${allPos.length} long option${allPos.length!==1?'s':''}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Lottery Ticket %</div>
+        <div class="kpi-value ${redPos.length>0?'neg':'pos'}">${redPremPct}%</div>
+        <div class="kpi-sub ${redPos.length>0?'neg':''}">${redPos.length} position${redPos.length!==1?'s':''} flagged 🔴</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Avg Delta</div>
+        <div class="kpi-value ${deltaWarn?'warn':'pos'}">${avgDelta}</div>
+        <div class="kpi-sub">${deltaWarn?'Low — high decay risk':'Acceptable range'}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Hedge P&amp;L</div>
+        <div class="kpi-value ${pnlClass(totalPnl)}">${fmtPnl(totalPnl)}</div>
+        <div class="kpi-sub">${greenPos.length}🟢 ${yellowPos.length}🟡 ${redPos.length}🔴</div>
+      </div>`;
+  }
+
+  // ── Alert banner ──
+  const bannerEl = document.getElementById('hqs-alert-banner');
+  if (bannerEl) {
+    if (redPos.length > 0) {
+      const redPnl = redPos.reduce((s,p) => s + p.pnl, 0);
+      bannerEl.innerHTML = `<div class="alert-bar red">
+        <span style="font-size:16px;">⚠</span>
+        <span><strong>${redPos.length} Lottery Ticket position${redPos.length!==1?'s':''}</strong>
+        — currently down ${fmtPnl(Math.abs(redPnl))} with high theta decay.
+        Consider closing or rolling before further decay.</span>
+      </div>`;
+    } else if (yellowPos.length > 0) {
+      bannerEl.innerHTML = `<div class="alert-bar yellow">
+        <span style="font-size:16px;">◈</span>
+        <span><strong>${yellowPos.length} Watch position${yellowPos.length!==1?'s':''}</strong>
+        — monitor DTE and strike distance. Roll if approaching the danger zone.</span>
+      </div>`;
+    } else if (allPos.length > 0) {
+      bannerEl.innerHTML = `<div class="alert-bar green">
+        <span style="font-size:16px;">✓</span>
+        <span>All long option positions are within acceptable hedge quality parameters.</span>
+      </div>`;
+    } else {
+      bannerEl.innerHTML = '';
+    }
+  }
+
+  // ── Tier breakdown bar card ──
+  const tierCard = document.getElementById('hqs-tier-card');
+  if (tierCard && allPos.length > 0) {
+    const redPct    = Math.round(redPos.length / allPos.length * 100);
+    const yellowPct = Math.round(yellowPos.length / allPos.length * 100);
+    const greenPct  = 100 - redPct - yellowPct;
+    tierCard.innerHTML = `
+      <div class="card-hdr">
+        <span class="card-title">Portfolio Hedge Quality Distribution</span>
+        <span class="card-sub">${allPos.length} long options scored</span>
+      </div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:14px;">
+          <div style="text-align:center;">
+            <div style="font-family:var(--fm);font-size:22px;font-weight:600;color:var(--neg);">${redPos.length}</div>
+            <div style="font-family:var(--fm);font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-top:2px;">🔴 Lottery Ticket</div>
+            <div style="font-family:var(--fm);font-size:11px;color:var(--neg);margin-top:4px;">₹${fmt(redPrem)} premium</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-family:var(--fm);font-size:22px;font-weight:600;color:var(--p03);">${yellowPos.length}</div>
+            <div style="font-family:var(--fm);font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-top:2px;">🟡 Watch</div>
+            <div style="font-family:var(--fm);font-size:11px;color:var(--p03);margin-top:4px;">₹${fmt(yellowPos.reduce((s,p)=>s+p.premium_total,0))} premium</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-family:var(--fm);font-size:22px;font-weight:600;color:var(--p01);">${greenPos.length}</div>
+            <div style="font-family:var(--fm);font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-top:2px;">🟢 Good Hedge</div>
+            <div style="font-family:var(--fm);font-size:11px;color:var(--p01);margin-top:4px;">₹${fmt(greenPos.reduce((s,p)=>s+p.premium_total,0))} premium</div>
+          </div>
+        </div>
+        <div class="hqs-tier-bar">
+          <div class="hqs-tier-seg red"    style="width:${redPct}%"></div>
+          <div class="hqs-tier-seg yellow" style="width:${yellowPct}%"></div>
+          <div class="hqs-tier-seg green"  style="width:${Math.max(0,greenPct)}%"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-family:var(--fm);font-size:10px;color:var(--t3);margin-top:6px;">
+          <span>${redPct}% Lottery Ticket</span>
+          <span>${yellowPct}% Watch</span>
+          <span>${100-redPct-yellowPct}% Good</span>
+        </div>
+      </div>`;
+  }
+
+  // ── Scored positions table ──
+  const tbody = document.getElementById('hqs-tbody');
+  if (!tbody) return;
+
+  tbody.innerHTML = allPos.map(p => `
+    <tr>
+      <td>${p.full}</td>
+      <td><span class="exp-badge ${p.exp.toLowerCase()}">${p.exp}</span></td>
+      <td><span class="inst-badge ${p.type.toLowerCase()}">${p.type}</span></td>
+      <td class="val">${p.strike}</td>
+      <td class="val">${fmt(p.qty)}</td>
+      <td class="val">${p.avg.toFixed(2)}</td>
+      <td class="val">${p.ltp.toFixed(2)}</td>
+      <td class="${pnlClass(p.pnl)}">${fmtPnl(p.pnl)}</td>
+      <td class="val ${p.pct_otm>10?'neg':p.pct_otm>5?'warn':''}">${p.pct_otm.toFixed(1)}%</td>
+      <td class="val ${p.dte<14?'neg':p.dte<21?'warn':''}">${p.dte}d</td>
+      <td class="val ${p.delta_abs<0.10?'neg':p.delta_abs<0.20?'warn':''}">${p.delta_abs.toFixed(3)}</td>
+      <td class="val">₹${fmt(p.premium_total)}</td>
+      <td><span class="hqs-score ${p.hqs_tier}">${p.hqs}<span style="font-size:9px;opacity:.6;">/100</span></span></td>
+      <td><span class="hqs-badge ${p.hqs_tier}">${{green:'🟢',yellow:'🟡',red:'🔴'}[p.hqs_tier]} ${p.hqs_label}</span></td>
+    </tr>`).join('');
+
+  // ── Footer totals ──
+  const footerEl = document.getElementById('hqs-footer');
+  if (footerEl) {
+    footerEl.innerHTML = `
+      <span class="lbl">Total Premium Deployed:</span>
+      <span class="val">₹${fmt(totalPrem)}</span>
+      <span class="lbl" style="margin-left:20px;">Lottery Ticket Premium:</span>
+      <span class="val neg">₹${fmt(redPrem)}</span>
+      <span class="lbl" style="margin-left:20px;">Net Hedge P&amp;L:</span>
+      <span class="val ${pnlClass(totalPnl)}">${fmtPnl(totalPnl)}</span>`;
+  }
+
+  // ── Update nav badge ──
+  const badge = document.getElementById('nav-hedge-badge');
+  if (badge) {
+    const n = redPos.length;
+    if (n > 0) {
+      badge.textContent = n;
+      badge.style.display = 'inline';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+}
+
 
 // ── Init ─────────────────────────────────────────────────
 initApp();

@@ -815,11 +815,40 @@ def get_portfolio_summary():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/v1/portfolio/hedge-history", tags=["Portfolio"],
+         dependencies=[Depends(_require_portfolio_key)])
+def get_hedge_history():
+    """
+    Multi-day hedge behaviour analysis across all positions-*.csv files.
+
+    Returns per-day premium bucketing (near-ATM / mid-OTM / far-OTM),
+    reactive hedging score, anchor positions, and budget utilisation.
+    """
+    try:
+        from rita.core.hedge_analyzer import compute_hedge_history
+        return compute_hedge_history(INPUT_DIR)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ─── Chat ─────────────────────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=500, description="User's natural-language investment question")
     portfolio_inr: float = Field(default=1_000_000, ge=1, description="Portfolio size in INR for stress/comparison scenarios")
+
+
+@app.post("/api/v1/chat/warmup", tags=["Chat"], status_code=202)
+def chat_warmup():
+    """
+    Pre-warm the classifier (loads SentenceTransformer + builds seed index).
+    Called by the dashboard when the user opens Market Analysis so the first
+    chat message is not delayed by model loading.
+    Idempotent — safe to call multiple times.
+    """
+    from rita.core.classifier import _build_seed_index
+    _build_seed_index()
+    return {"status": "ready"}
 
 
 @app.post("/api/v1/chat", tags=["Chat"])

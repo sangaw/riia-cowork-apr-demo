@@ -293,6 +293,9 @@ tr:hover td{background:var(--surface2);}
     <div class="nav-item p03" data-s="trades" onclick="show('trades',this)">
       <span class="nav-icon">◎</span> Trade Journal
     </div>
+    <div class="nav-item p03" data-s="diagnostics" onclick="show('diagnostics',this)">
+      <span class="nav-icon">◎</span> Trade Diagnostics
+    </div>
     <div class="nav-item p03" data-s="explain" onclick="show('explain',this)">
       <span class="nav-icon">◎</span> Explainability
     </div>
@@ -414,12 +417,14 @@ tr:hover td{background:var(--surface2);}
   </div>
 
   <!-- Signal summary strip -->
-  <div class="kpi-row" id="ms-signals" style="margin-bottom:20px">
+  <div class="kpi-row" id="ms-signals" style="margin-bottom:20px;grid-template-columns:repeat(7,1fr)">
     <div class="kpi"><div class="kpi-label">RSI-14</div><div class="kpi-value neu" id="ms-rsi-val">—</div><div class="kpi-delta" id="ms-rsi-sig">—</div></div>
     <div class="kpi"><div class="kpi-label">MACD</div><div class="kpi-value neu" id="ms-macd-val">—</div><div class="kpi-delta" id="ms-macd-sig">—</div></div>
     <div class="kpi"><div class="kpi-label">BB %B</div><div class="kpi-value neu" id="ms-bb-val">—</div><div class="kpi-delta" id="ms-bb-sig">—</div></div>
     <div class="kpi"><div class="kpi-label">EMA 5</div><div class="kpi-value neu" id="ms-ema5-val">—</div><div class="kpi-delta" id="ms-ema5-sig">—</div></div>
     <div class="kpi"><div class="kpi-label">EMA 50</div><div class="kpi-value neu" id="ms-ema50-val">—</div><div class="kpi-delta" id="ms-ema50-sig">—</div></div>
+    <div class="kpi"><div class="kpi-label">ATR% (14)</div><div class="kpi-value neu" id="ms-atr-val">—</div><div class="kpi-delta" id="ms-atr-sig">—</div></div>
+    <div class="kpi"><div class="kpi-label">Trend Score</div><div class="kpi-value neu" id="ms-trend-val">—</div><div class="kpi-delta" id="ms-trend-sig">—</div></div>
   </div>
 
   <!-- Alerts strip -->
@@ -429,6 +434,18 @@ tr:hover td{background:var(--surface2);}
   <div class="chart-wrap">
     <div class="chart-title">Price &amp; Volume <span style="font-weight:400;color:var(--t3);font-size:11px">— close price · daily volume</span></div>
     <div class="chart-box" style="height:165px"><canvas id="chart-ms-pv"></canvas></div>
+  </div>
+
+  <!-- ATR% + Trend Score side by side -->
+  <div class="card-row-2">
+    <div class="chart-wrap" style="margin:0">
+      <div class="chart-title">ATR% (14) <span style="font-weight:400;color:var(--t3);font-size:11px">— volatility as % of price · high &gt;1.5% · compressed &lt;0.8%</span></div>
+      <div class="chart-box" style="height:150px"><canvas id="chart-ms-atr"></canvas></div>
+    </div>
+    <div class="chart-wrap" style="margin:0">
+      <div class="chart-title">Trend Score <span style="font-weight:400;color:var(--t3);font-size:11px">— normalized EMA50 slope · −1 bearish → +1 bullish</span></div>
+      <div class="chart-box" style="height:150px"><canvas id="chart-ms-trend"></canvas></div>
+    </div>
   </div>
 
   <!-- RSI + MACD side by side -->
@@ -691,6 +708,52 @@ tr:hover td{background:var(--surface2);}
   </div>
 </section>
 
+<!-- ════════════════ TRADE DIAGNOSTICS ════════════════ -->
+<section class="section" id="sec-diagnostics">
+  <div class="page-hdr">
+    <div>
+      <div class="page-title">Trade Diagnostics</div>
+      <div class="page-sub">Every allocation change — market context at entry, hold duration, outcome</div>
+    </div>
+    <div class="hdr-actions">
+      <button class="btn btn-ghost btn-sm" onclick="loadDiagnostics()">↺ Reload</button>
+    </div>
+  </div>
+
+  <div class="kpi-row-4" id="diag-kpis">
+    <div class="kpi"><div class="kpi-label">Allocation Changes</div><div class="kpi-value neu" id="diag-total">—</div><div class="kpi-delta">entries + adjustments</div></div>
+    <div class="kpi"><div class="kpi-label">Win Rate</div><div class="kpi-value neu" id="diag-wr">—</div><div class="kpi-delta" id="diag-wr-sub">closed trades</div></div>
+    <div class="kpi"><div class="kpi-label">Avg Hold</div><div class="kpi-value neu" id="diag-hold">—</div><div class="kpi-delta">days per position</div></div>
+    <div class="kpi"><div class="kpi-label">Avg Return / Trade</div><div class="kpi-value neu" id="diag-ret">—</div><div class="kpi-delta">allocation-weighted</div></div>
+  </div>
+
+  <div class="chart-wrap">
+    <div class="chart-title">NIFTY Price &amp; Allocation — backtest period</div>
+    <div class="chart-box" style="height:200px"><canvas id="chart-diag-price"></canvas></div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <div class="card-hdr">
+      <span class="card-title">Allocation Change Log</span>
+      <span class="card-sub" id="diag-table-sub">All entries, exits &amp; adjustments · backtest period</span>
+    </div>
+    <div class="card-body" style="padding:0">
+      <div class="tbl-wrap">
+        <table id="diag-table">
+          <thead>
+            <tr>
+              <th>#</th><th>Date</th><th>Change</th><th>NIFTY</th>
+              <th>RSI</th><th>ATR%</th><th>Trend</th><th>BB %B</th>
+              <th>Hold (d)</th><th>Return</th>
+            </tr>
+          </thead>
+          <tbody id="diag-tbody"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ════════════════ EXPLAINABILITY ════════════════ -->
 <section class="section" id="sec-explain">
   <div class="page-hdr">
@@ -941,11 +1004,20 @@ async function api(path, method = 'GET', body = null) {
 
 // ── Navigation ─────────────────────────────────────────────
 let _currentSection = 'home';
+let _chatWarmedUp = false;
+function warmupChat() {
+  if (_chatWarmedUp) return;
+  _chatWarmedUp = true;
+  fetch(`${API}/api/v1/chat/warmup`, { method: 'POST' }).catch(() => {});
+}
+
 const _sectionLoaders = {
+  market: warmupChat,
   'market-signals': loadMarketSignals,
   scenarios: loadScenarios,
   performance: loadPerformance,
   trades: loadTrades,
+  diagnostics: loadDiagnostics,
   explain: loadExplain,
   risk: loadRisk,
   'train-progress': loadTrainProgress,
@@ -1226,6 +1298,17 @@ async function loadMarketSignals() {
     document.getElementById('ms-ema50-val').className = 'kpi-value ' + (abv50 ? 'pos' : 'neg');
     setEl('ms-ema50-sig', abv50 ? 'Price above EMA50' : 'Price below EMA50');
 
+    const atrRaw  = parseFloat(last.atr_14);
+    const atrPct  = (!isNaN(atrRaw) && price) ? (atrRaw / price * 100) : NaN;
+    setEl('ms-atr-val', isNaN(atrPct) ? '—' : atrPct.toFixed(2) + '%');
+    document.getElementById('ms-atr-val').className = 'kpi-value ' + (atrPct > 1.5 ? 'neg' : atrPct < 0.8 ? 'pos' : 'neu');
+    setEl('ms-atr-sig', atrPct > 1.5 ? 'High volatility' : atrPct < 0.8 ? 'Compressed' : 'Normal range');
+
+    const trendVal = parseFloat(last.trend_score);
+    setEl('ms-trend-val', isNaN(trendVal) ? '—' : trendVal.toFixed(2));
+    document.getElementById('ms-trend-val').className = 'kpi-value ' + (trendVal > 0.2 ? 'pos' : trendVal < -0.2 ? 'neg' : 'neu');
+    setEl('ms-trend-sig', trendVal > 0.5 ? 'Strong uptrend' : trendVal > 0.2 ? 'Mild uptrend' : trendVal < -0.5 ? 'Strong downtrend' : trendVal < -0.2 ? 'Mild downtrend' : 'Sideways');
+
     // ── Price + Volume chart ────────────────────────────────
     mkChart('chart-ms-pv', {
       type: 'bar',
@@ -1370,6 +1453,68 @@ async function loadMarketSignals() {
       }
     });
 
+    // ── ATR% chart ──────────────────────────────────────────
+    const atrPctData = rows.map(r => {
+      const a = parseFloat(r.atr_14), c = parseFloat(r.Close);
+      return (!isNaN(a) && !isNaN(c) && c) ? +(a / c * 100).toFixed(3) : null;
+    });
+    mkChart('chart-ms-atr', {
+      type: 'line',
+      data: {
+        labels: dates,
+        datasets: [
+          { label: 'ATR%', data: atrPctData,
+            borderColor: C.warn, backgroundColor: 'rgba(146,72,10,0.07)',
+            fill: true, tension: 0.2, pointRadius: 0, borderWidth: 2 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          annotation: { annotations: {
+            hiLine: { type: 'line', yMin: 1.5, yMax: 1.5, borderColor: 'rgba(155,28,28,0.55)', borderWidth: 1, borderDash: [4,3] },
+            loLine: { type: 'line', yMin: 0.8, yMax: 0.8, borderColor: 'rgba(26,107,60,0.45)',  borderWidth: 1, borderDash: [4,3] },
+          }}
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxTicksLimit: 8, font: { family: C.mono, size: 10 } } },
+          y: { grid: { color: 'rgba(0,0,0,.04)' }, ticks: { callback: v => v.toFixed(1)+'%', font: { family: C.mono, size: 10 } } }
+        }
+      }
+    });
+
+    // ── Trend Score chart ────────────────────────────────────
+    const trendData = rows.map(r => r.trend_score != null ? +parseFloat(r.trend_score).toFixed(3) : null);
+    mkChart('chart-ms-trend', {
+      type: 'line',
+      data: {
+        labels: dates,
+        datasets: [
+          { label: 'Trend Score', data: trendData,
+            borderColor: C.mon, backgroundColor: 'rgba(107,47,160,0.07)',
+            fill: 'origin', tension: 0.25, pointRadius: 0, borderWidth: 2 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          annotation: { annotations: {
+            zero:  { type: 'line', yMin: 0,    yMax: 0,    borderColor: 'rgba(0,0,0,0.3)',           borderWidth: 1.5 },
+            upMid: { type: 'line', yMin: 0.2,  yMax: 0.2,  borderColor: 'rgba(26,107,60,0.35)',      borderWidth: 1, borderDash: [3,3] },
+            dnMid: { type: 'line', yMin: -0.2, yMax: -0.2, borderColor: 'rgba(155,28,28,0.35)',      borderWidth: 1, borderDash: [3,3] },
+            upStr: { type: 'line', yMin: 0.5,  yMax: 0.5,  borderColor: 'rgba(26,107,60,0.6)',       borderWidth: 1, borderDash: [4,3] },
+            dnStr: { type: 'line', yMin: -0.5, yMax: -0.5, borderColor: 'rgba(155,28,28,0.6)',       borderWidth: 1, borderDash: [4,3] },
+          }}
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxTicksLimit: 8, font: { family: C.mono, size: 10 } } },
+          y: { min: -1, max: 1, grid: { color: 'rgba(0,0,0,.04)' }, ticks: { callback: v => v.toFixed(1), font: { family: C.mono, size: 10 } } }
+        }
+      }
+    });
+
     // ── Alerts strip ────────────────────────────────────────
     const alerts = [];
     const mkAlert = (cls, txt) => `<span class="badge ${cls}" style="font-size:11px;padding:4px 10px">${txt}</span>`;
@@ -1407,6 +1552,21 @@ async function loadMarketSignals() {
     if (!isNaN(ema50)) {
       if   (price > ema50) alerts.push(mkAlert('ok',  `Price > EMA50 Uptrend`));
       else                 alerts.push(mkAlert('err', `Price < EMA50 Downtrend`));
+    }
+
+    // ATR%
+    if (!isNaN(atrPct)) {
+      if      (atrPct > 1.5) alerts.push(mkAlert('err',  `ATR High Volatility ${atrPct.toFixed(2)}%`));
+      else if (atrPct < 0.8) alerts.push(mkAlert('ok',   `ATR Compressed ${atrPct.toFixed(2)}%`));
+    }
+
+    // Trend Score
+    if (!isNaN(trendVal)) {
+      if      (trendVal >  0.5) alerts.push(mkAlert('ok',  `Trend Strong Uptrend ${trendVal.toFixed(2)}`));
+      else if (trendVal >  0.2) alerts.push(mkAlert('ok',  `Trend Mild Uptrend ${trendVal.toFixed(2)}`));
+      else if (trendVal < -0.5) alerts.push(mkAlert('err', `Trend Strong Downtrend ${trendVal.toFixed(2)}`));
+      else if (trendVal < -0.2) alerts.push(mkAlert('err', `Trend Mild Downtrend ${trendVal.toFixed(2)}`));
+      else                      alerts.push(mkAlert('neu', `Trend Sideways ${trendVal.toFixed(2)}`));
     }
 
     document.getElementById('ms-alerts').innerHTML = alerts.length
@@ -1617,6 +1777,155 @@ function allocBadge(v) {
   if (pct === 50) return '<span class="badge run">HALF 50%</span>';
   if (pct >= 99) return '<span class="badge ok">FULL 100%</span>';
   return `<span class="badge neu">${pct.toFixed(0)}%</span>`;
+}
+
+// ── Trade Diagnostics ──────────────────────────────────────
+async function loadDiagnostics() {
+  try {
+    const [bRows, mRows] = await Promise.all([
+      api('/api/v1/backtest-daily'),
+      api('/api/v1/market-signals?timeframe=daily&periods=2000'),
+    ]);
+    if (!bRows?.length) { setEl('diag-tbody', '<tr><td colspan="10" class="empty">No backtest data found — run the pipeline first.</td></tr>'); return; }
+
+    // ── Build date→signal lookup ──────────────────────────
+    const sigMap = {};
+    (mRows || []).forEach(r => { if (r.date) sigMap[r.date.slice(0,10)] = r; });
+
+    // ── Detect allocation-change rows ─────────────────────
+    const changes = [];
+    for (let i = 1; i < bRows.length; i++) {
+      const prev = bRows[i-1], cur = bRows[i];
+      const pa = parseFloat(prev.allocation) || 0;
+      const ca = parseFloat(cur.allocation)  || 0;
+      if (Math.abs(ca - pa) < 0.01) continue;
+
+      const sig   = sigMap[cur.date.slice(0,10)] || {};
+      const close = parseFloat(cur.close_price) || 0;
+      const atrRaw = parseFloat(sig.atr_14);
+      const atrPct = (!isNaN(atrRaw) && close) ? (atrRaw / close * 100) : NaN;
+      const type   = ca > pa ? 'open' : ca === 0 ? 'close' : 'adjust';
+
+      changes.push({
+        idx:      i,
+        date:     cur.date,
+        fromAlloc: pa,
+        toAlloc:   ca,
+        type,
+        close,
+        rsi:      parseFloat(sig.rsi_14),
+        macd:     parseFloat(sig.macd),
+        macdSig:  parseFloat(sig.macd_signal),
+        atrPct,
+        trend:    parseFloat(sig.trend_score),
+        bbPct:    parseFloat(sig.bb_pct_b),
+        holdDays: null,
+        returnPct: null,
+      });
+    }
+
+    // ── Pair each open/adjust with the next change ────────
+    for (let i = 0; i < changes.length; i++) {
+      const c = changes[i];
+      if (c.type === 'close') continue;
+      const next = changes[i + 1];
+      if (next) {
+        c.holdDays  = next.idx - c.idx;
+        const exitClose = parseFloat(bRows[next.idx].close_price) || 0;
+        c.returnPct = c.close && exitClose ? (exitClose / c.close - 1) * c.toAlloc * 100 : null;
+      }
+    }
+
+    // ── KPIs ─────────────────────────────────────────────
+    const entries   = changes.filter(c => c.type !== 'close');
+    const withRet   = entries.filter(c => c.returnPct !== null);
+    const wins      = withRet.filter(c => c.returnPct > 0);
+    const avgHold   = withRet.length ? (withRet.reduce((s,c) => s+(c.holdDays||0), 0) / withRet.length) : 0;
+    const avgRet    = withRet.length ? (withRet.reduce((s,c) => s+c.returnPct, 0) / withRet.length) : 0;
+    const wr        = withRet.length ? (wins.length / withRet.length * 100) : 0;
+
+    setEl('diag-total', entries.length);
+    const wrEl = document.getElementById('diag-wr');
+    wrEl.textContent = wr.toFixed(0) + '%';
+    wrEl.className = 'kpi-value ' + (wr >= 50 ? 'pos' : 'neg');
+    setEl('diag-wr-sub', `${wins.length} of ${withRet.length} closed`);
+    setEl('diag-hold', avgHold.toFixed(1) + 'd');
+    const retEl = document.getElementById('diag-ret');
+    retEl.textContent = (avgRet >= 0 ? '+' : '') + avgRet.toFixed(2) + '%';
+    retEl.className = 'kpi-value ' + (avgRet >= 0 ? 'pos' : 'neg');
+
+    // ── Price + Allocation chart ──────────────────────────
+    mkChart('chart-diag-price', {
+      data: {
+        labels: bRows.map(r => r.date),
+        datasets: [
+          { type: 'line', label: 'NIFTY Close',
+            data: bRows.map(r => parseFloat(r.close_price) || null),
+            borderColor: C.run, backgroundColor: 'transparent',
+            pointRadius: 0, borderWidth: 2, yAxisID: 'yP', order: 1 },
+          { type: 'bar', label: 'Allocation %',
+            data: bRows.map(r => (parseFloat(r.allocation) || 0) * 100),
+            backgroundColor: bRows.map(r => {
+              const a = parseFloat(r.allocation) || 0;
+              return a >= 1 ? 'rgba(0,86,184,0.22)' : a >= 0.5 ? 'rgba(0,86,184,0.10)' : 'rgba(0,0,0,0.02)';
+            }),
+            borderWidth: 0, yAxisID: 'yA', order: 2 },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { position: 'top', labels: { font: { size: 11 } } } },
+        scales: {
+          x:  { grid: { display: false }, ticks: { maxTicksLimit: 10, font: { family: C.mono, size: 10 } } },
+          yP: { position: 'left',  grid: { color: 'rgba(0,0,0,.04)' }, ticks: { callback: v => v.toFixed(0), font: { family: C.mono, size: 10 } } },
+          yA: { position: 'right', min: 0, max: 100, grid: { display: false }, ticks: { callback: v => v+'%', font: { family: C.mono, size: 10 } } },
+        }
+      }
+    });
+
+    // ── Trade table ───────────────────────────────────────
+    const fmtAlloc = v => `${Math.round(v * 100)}%`;
+    const fmtRsi   = v => isNaN(v) ? '—' : `<span style="color:${v>70?'var(--danger)':v<30?'var(--build)':'var(--t2)'}">${v.toFixed(1)}</span>`;
+    const fmtAtr   = v => isNaN(v) ? '—' : `<span style="color:${v>1.5?'var(--danger)':v<0.8?'var(--build)':'var(--t2)'}">${v.toFixed(2)}%</span>`;
+    const fmtTrend = v => isNaN(v) ? '—' : `<span style="color:${v>0.2?'var(--build)':v<-0.2?'var(--danger)':'var(--t2)'}">${v.toFixed(2)}</span>`;
+    const fmtBb    = v => isNaN(v) ? '—' : v.toFixed(2);
+    const fmtRet   = (v, type) => {
+      if (type === 'close') return '<span style="color:var(--t3)">exit</span>';
+      if (v === null)       return '<span style="color:var(--t3)">open</span>';
+      const rc = v>=0?'var(--build)':'var(--danger)';
+      return `<span style="color:${rc};font-weight:600">${v>=0?'+':''}${v.toFixed(2)}%</span>`;
+    };
+    const changeTag = c => {
+      if (c.type === 'open')   return `<span style="font-family:var(--fm);font-size:11px;padding:2px 7px;border-radius:3px;background:var(--build-bg);color:var(--build)">▲ ${fmtAlloc(c.fromAlloc)}→${fmtAlloc(c.toAlloc)}</span>`;
+      if (c.type === 'close')  return `<span style="font-family:var(--fm);font-size:11px;padding:2px 7px;border-radius:3px;background:var(--neg-bg);color:var(--danger)">▼ ${fmtAlloc(c.fromAlloc)}→${fmtAlloc(c.toAlloc)}</span>`;
+      return `<span style="font-family:var(--fm);font-size:11px;padding:2px 7px;border-radius:3px;background:var(--surface2);color:var(--t2)">⟳ ${fmtAlloc(c.fromAlloc)}→${fmtAlloc(c.toAlloc)}</span>`;
+    };
+    const rowBg = c => {
+      if (c.returnPct === null || c.type === 'close') return '';
+      return c.returnPct >= 0 ? 'background:rgba(26,107,60,0.04)' : 'background:rgba(155,28,28,0.04)';
+    };
+
+    document.getElementById('diag-tbody').innerHTML = changes.map((c, i) => `
+      <tr style="${rowBg(c)}">
+        <td style="font-family:var(--fm);color:var(--t3)">${i+1}</td>
+        <td style="font-family:var(--fm)">${c.date}</td>
+        <td>${changeTag(c)}</td>
+        <td style="font-family:var(--fm)">${c.close ? c.close.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}</td>
+        <td>${fmtRsi(c.rsi)}</td>
+        <td>${fmtAtr(c.atrPct)}</td>
+        <td>${fmtTrend(c.trend)}</td>
+        <td style="font-family:var(--fm)">${fmtBb(c.bbPct)}</td>
+        <td style="font-family:var(--fm)">${c.holdDays !== null ? c.holdDays : '—'}</td>
+        <td>${fmtRet(c.returnPct, c.type)}</td>
+      </tr>`).join('');
+
+    setEl('diag-table-sub', `${changes.length} allocation changes · ${entries.length} entries/adjustments · ${changes.length - entries.length} exits`);
+
+  } catch(e) {
+    console.warn('diagnostics error', e);
+    setEl('diag-tbody', `<tr><td colspan="10" class="empty" style="color:var(--danger)">Error: ${e.message}</td></tr>`);
+  }
 }
 
 // ── Explainability ─────────────────────────────────────────

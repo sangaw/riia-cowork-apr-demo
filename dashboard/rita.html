@@ -1004,6 +1004,7 @@ async function api(path, method = 'GET', body = null) {
 
 // ── Navigation ─────────────────────────────────────────────
 let _currentSection = 'home';
+let _mcpPollTimer = null;
 let _chatWarmedUp = false;
 function warmupChat() {
   if (_chatWarmedUp) return;
@@ -1035,6 +1036,12 @@ function show(name, navEl) {
   if (navEl) navEl.classList.add('active');
   _currentSection = name;
   if (_sectionLoaders[name]) requestAnimationFrame(() => _sectionLoaders[name]());
+
+  // Auto-refresh MCP Calls page every 10s while active; stop when leaving
+  clearInterval(_mcpPollTimer);
+  if (name === 'mcp') {
+    _mcpPollTimer = setInterval(loadMcp, 10000);
+  }
 }
 
 // ── Utility ────────────────────────────────────────────────

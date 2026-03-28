@@ -815,6 +815,21 @@ def get_portfolio_summary():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/v1/portfolio/price-history", tags=["Portfolio"],
+         dependencies=[Depends(_require_portfolio_key)])
+def get_price_history():
+    """
+    All available daily NIFTY + BANKNIFTY close prices from nifty_manual.csv /
+    banknifty_manual.csv.  Used by the dashboard to backfill the Daily Progress
+    History table without relying solely on browser localStorage.
+    """
+    try:
+        from rita.core.portfolio_manager import load_price_history
+        return load_price_history(INPUT_DIR)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/v1/portfolio/hedge-history", tags=["Portfolio"],
          dependencies=[Depends(_require_portfolio_key)])
 def get_hedge_history():
@@ -900,6 +915,23 @@ def chat(req: ChatRequest):
         response_preview=response_text[:200],
         status=status,
     )
+
+    # Also log to mcp_call_log.csv so MCP Calls page reflects chat activity
+    import csv as _csv
+    _mcp_log_path = os.path.join(OUTPUT_DIR, "mcp_call_log.csv")
+    _write_header = not os.path.exists(_mcp_log_path)
+    with open(_mcp_log_path, "a", newline="", encoding="utf-8") as _f:
+        _w = _csv.writer(_f)
+        if _write_header:
+            _w.writerow(["timestamp", "tool_name", "status", "duration_ms", "args_summary", "result_summary"])
+        _w.writerow([
+            __import__("time").strftime("%Y-%m-%d %H:%M:%S"),
+            "chat",
+            status,
+            round(latency_ms, 1),
+            f"intent={result.intent.name}, conf={round(result.confidence, 3)}",
+            response_text[:200],
+        ])
 
     return {
         "intent":          result.intent.name,

@@ -121,7 +121,7 @@ def load_market_data(input_dir: str) -> dict:
         if not os.path.exists(path):
             result[und] = None
             continue
-        df = pd.read_csv(path)
+        df = pd.read_csv(path).dropna(how="all")
         if df.empty:
             result[und] = None
             continue
@@ -170,6 +170,117 @@ def load_market_data(input_dir: str) -> dict:
         ) if prev_close else None
 
     return result
+
+
+def load_price_history(input_dir: str) -> list:
+    """
+    Return all rows from nifty_manual.csv and banknifty_manual.csv merged by date,
+    augmented with per-day P&L totals from positions-<date>.csv files.
+
+    Returns list of { date, nifty, banknifty, niftyPnl, bnknPnl } sorted oldest-first.
+    """
+    import re as _re
+
+    rows_by_date: dict = {}
+
+    # ── Step 1: build price rows from manual CSVs ─────────────────────────────
+    for und, fname, key in [
+        ("NIFTY",     "nifty_manual.csv",     "nifty"),
+        ("BANKNIFTY", "banknifty_manual.csv",  "banknifty"),
+    ]:
+        path = os.path.join(input_dir, fname)
+        if not os.path.exists(path):
+            continue
+        df = pd.read_csv(path).dropna(how="all")
+        if df.empty:
+            continue
+        for _, row in df.iterrows():
+            raw_date = str(row.get("Date", "")).strip()
+            parsed = None
+            for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d", "%d-%b-%y"):
+                try:
+                    parsed = datetime.strptime(raw_date, fmt)
+                    break
+                except ValueError:
+                    pass
+            if parsed is None:
+                continue
+            date_key = parsed.strftime("%d-%b-%Y").upper()   # e.g. "27-MAR-2026"
+            close_val = float(str(row.get("Close", 0)).replace(",", ""))
+            if date_key not in rows_by_date:
+                rows_by_date[date_key] = {"date": date_key}
+            rows_by_date[date_key][key] = close_val
+
+    # ── Step 2: add P&L from positions-<date>.csv files ───────────────────────
+    _MONTH_ABBR = {
+        "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+        "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+    }
+    pos_files = [
+        f for f in os.listdir(input_dir)
+        if f.lower().startswith("positions-") and f.lower().endswith(".csv")
+    ]
+    for fname in pos_files:
+        # Parse DD + MMM from filename e.g. "positions-27mar.csv"
+        m = _re.match(r"positions-(\d{1,2})([a-zA-Z]{3})\.csv", fname, _re.IGNORECASE)
+        if not m:
+            continue
+        day, mon = int(m.group(1)), m.group(2).lower()
+        month_num = _MONTH_ABBR.get(mon)
+        if not month_num:
+            continue
+
+        # Match against a known date_key to get the year
+        date_key = None
+        for dk in rows_by_date:
+            try:
+                d = datetime.strptime(dk, "%d-%b-%Y")
+                if d.day == day and d.month == month_num:
+                    date_key = dk
+                    break
+            except ValueError:
+                continue
+        if date_key is None:
+            continue
+
+        # Parse P&L from positions file — active (unrealized) and closed (realized) separately
+        fpath = os.path.join(input_dir, fname)
+        try:
+            df = pd.read_csv(fpath, quotechar='"')
+            df.columns = [c.strip().strip('"') for c in df.columns]
+            nifty_pnl = 0.0;  bnkn_pnl  = 0.0
+            nifty_rpnl = 0.0; bnkn_rpnl = 0.0
+            for _, row in df.iterrows():
+                qty  = float(str(row.get("Qty.", 0)).replace(",", ""))
+                inst = str(row.get("Instrument", "")).strip().strip('"')
+                parsed = parse_instrument(inst)
+                if not parsed:
+                    continue
+                if parsed["exp_month"] in EXCLUDE_EXPIRY_MONTHS:
+                    continue
+                pnl = float(str(row.get("P&L", 0)).replace(",", ""))
+                und = parsed["underlying"]
+                if qty == 0:
+                    # Closed position — contributes to realized P&L
+                    if und == "BANKNIFTY": bnkn_rpnl += pnl
+                    elif und == "NIFTY":   nifty_rpnl += pnl
+                else:
+                    # Active — contributes to unrealized P&L (matches saveToday)
+                    if und == "BANKNIFTY": bnkn_pnl += pnl
+                    elif und == "NIFTY":   nifty_pnl += pnl
+            rows_by_date[date_key]["niftyPnl"]  = round(nifty_pnl,  2)
+            rows_by_date[date_key]["bnknPnl"]   = round(bnkn_pnl,   2)
+            rows_by_date[date_key]["niftyRPnl"] = round(nifty_rpnl, 2)
+            rows_by_date[date_key]["bnknRPnl"]  = round(bnkn_rpnl,  2)
+        except Exception:
+            pass
+
+    complete = [
+        v for v in rows_by_date.values()
+        if v.get("nifty") and v.get("banknifty")
+    ]
+    complete.sort(key=lambda r: datetime.strptime(r["date"], "%d-%b-%Y"))
+    return complete
 
 
 # ─── Positions parser ────────────────────────────────────────────────────────

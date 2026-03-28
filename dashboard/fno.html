@@ -932,6 +932,7 @@ async function initApp() {
 
   // Render all sections
   saveToday();
+  syncPriceHistory().then(() => { renderScenarios(); renderDailyProgress(); });
   renderDashboard();
   renderPositionsKpis();
   renderPositionsTable();
@@ -1145,7 +1146,7 @@ function renderDailyProgress() {
   if (!canvas) return;
   if (dpChart) { dpChart.destroy(); dpChart = null; }
 
-  const history = loadHistory();
+  const history = loadHistory().filter(h => h.nifty && h.banknifty);
   if (!history.length) {
     document.getElementById('daily-progress-wrap').innerHTML =
       '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--t3);font-family:var(--fm);font-size:12px;">No history yet — data accumulates automatically each day you open this page.</div>';
@@ -1653,14 +1654,53 @@ function loadHistory() {
 }
 function saveToday() {
   const history = loadHistory();
-  const todayStr = marketData.NIFTY.date;
+  const todayStr = marketData.NIFTY && marketData.NIFTY.date;
+  if (!todayStr) return;
   const niftyPnl  = positions.filter(p => p.und === 'NIFTY').reduce((s, p) => s + p.pnl, 0);
   const bnknPnl   = positions.filter(p => p.und === 'BANKNIFTY').reduce((s, p) => s + p.pnl, 0);
-  if (!history.find(h => h.date === todayStr)) {
-    history.push({ date: todayStr, nifty: marketData.NIFTY.close, banknifty: marketData.BANKNIFTY.close, niftyPnl, bnknPnl });
+  const existing  = history.find(h => h.date === todayStr);
+  if (!existing || !existing.nifty) {
+    // Add new entry or overwrite a previously saved null entry
+    const idx = history.findIndex(h => h.date === todayStr);
+    const entry = { date: todayStr, nifty: marketData.NIFTY.close, banknifty: (marketData.BANKNIFTY||{}).close, niftyPnl, bnknPnl };
+    if (idx >= 0) history[idx] = entry; else history.push(entry);
     if (history.length > 30) history.shift();
     try { localStorage.setItem('rrHistory', JSON.stringify(history)); } catch {}
   }
+}
+async function syncPriceHistory() {
+  // Backfill localStorage from server nifty_manual + banknifty_manual data
+  try {
+    const serverDays = await fetch('/api/v1/portfolio/price-history').then(r => r.json());
+    if (!Array.isArray(serverDays) || !serverDays.length) return;
+    const history = loadHistory();
+    let changed = false;
+    serverDays.forEach(sd => {
+      const existing = history.find(h => h.date === sd.date);
+      if (!existing) {
+        history.push({ date: sd.date, nifty: sd.nifty, banknifty: sd.banknifty,
+                       niftyPnl: sd.niftyPnl ?? null, bnknPnl: sd.bnknPnl ?? null,
+                       niftyRPnl: sd.niftyRPnl ?? null, bnknRPnl: sd.bnknRPnl ?? null });
+        changed = true;
+      } else {
+        if (!existing.nifty || !existing.banknifty) {
+          existing.nifty = sd.nifty; existing.banknifty = sd.banknifty; changed = true;
+        }
+        if (sd.niftyPnl != null && (existing.niftyPnl == null || existing.niftyPnl === undefined)) {
+          existing.niftyPnl = sd.niftyPnl; existing.bnknPnl = sd.bnknPnl ?? null; changed = true;
+        }
+        // Always sync realized P&L from server (source of truth)
+        if (sd.niftyRPnl != null) {
+          existing.niftyRPnl = sd.niftyRPnl; existing.bnknRPnl = sd.bnknRPnl ?? null; changed = true;
+        }
+      }
+    });
+    if (changed) {
+      history.sort((a, b) => new Date(a.date.replace(/-/g,' ')) - new Date(b.date.replace(/-/g,' ')));
+      if (history.length > 60) history.splice(0, history.length - 60);
+      try { localStorage.setItem('rrHistory', JSON.stringify(history)); } catch {}
+    }
+  } catch (e) { /* non-critical */ }
 }
 function getProgressDir(und, mode) {
   const history = loadHistory();
@@ -1833,14 +1873,17 @@ function renderRRHistory() {
     const prevBBull = prev ? computeScen(scenarioLevels.BANKNIFTY.bull.sl, scenarioLevels.BANKNIFTY.bull.target, prev.banknifty, portDelta.BANKNIFTY).pct : null;
     const prevBBear = prev ? computeScen(scenarioLevels.BANKNIFTY.bear.sl, scenarioLevels.BANKNIFTY.bear.target, prev.banknifty, portDelta.BANKNIFTY).pct : null;
     // P&L columns — may be absent in older localStorage entries
-    const hasPnl   = h.niftyPnl !== undefined;
-    const totalPnl = hasPnl ? h.niftyPnl + h.bnknPnl : null;
-    const pnlCell  = (v) => v === null ? `<td class="val" style="color:var(--t3)">—</td>`
+    const hasPnl    = h.niftyPnl != null;
+    const totalPnl  = hasPnl ? h.niftyPnl + h.bnknPnl : null;
+    const hasRPnl   = h.niftyRPnl != null;
+    const totalRPnl = hasRPnl ? h.niftyRPnl + h.bnknRPnl : null;
+    const pnlCell   = (v) => v == null ? `<td class="val" style="color:var(--t3)">—</td>`
       : `<td class="${v >= 0 ? 'pos' : 'neg'}">${fmtPnl(v)}</td>`;
-    const arrowPnl = (cur, p) => !p || p.niftyPnl === undefined ? '' :
+    const arrowPnl  = (cur, p) => !p || p.niftyPnl == null ? '' :
       cur > (p.niftyPnl + p.bnknPnl) ? '<span style="color:var(--pos)">↑</span>' :
       cur < (p.niftyPnl + p.bnknPnl) ? '<span style="color:var(--p03)">↓</span>' : '=';
     const s = isToday ? 'font-weight:600;background:var(--surface2)' : '';
+    if (!h.nifty || !h.banknifty) return '';   // skip corrupt entries
     return `<tr style="${s}">
       <td class="val">${h.date}${isToday?' ◀':''}</td>
       <td class="val">${h.nifty.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
@@ -1848,6 +1891,7 @@ function renderRRHistory() {
       ${pnlCell(hasPnl ? h.niftyPnl : null)}
       ${pnlCell(hasPnl ? h.bnknPnl : null)}
       ${hasPnl ? `<td class="${totalPnl >= 0 ? 'pos' : 'neg'}" style="font-weight:600">${arrowPnl(totalPnl, prev)} ${fmtPnl(totalPnl)}</td>` : `<td class="val" style="color:var(--t3)">—</td>`}
+      ${pnlCell(totalRPnl)}
       <td class="val">${arrow(nBull,prevNBull)} ${nBull.toFixed(1)}%</td>
       <td class="val">${arrow(nBear,prevNBear)} ${nBear.toFixed(1)}%</td>
       <td class="val">${arrow(bBull,prevBBull)} ${bBull.toFixed(1)}%</td>
@@ -1857,12 +1901,12 @@ function renderRRHistory() {
   return `<div class="card" style="margin-top:18px;">
     <div class="card-hdr">
       <span class="card-title">Daily Progress History</span>
-      <span class="card-sub">Progress % = distance from SL → Target · ↑ green = improving · ↓ orange = retreating · P&amp;L = unrealized portfolio</span>
+      <span class="card-sub">Unrealized P&amp;L = open positions MTM · Realized P&amp;L = closed positions that day · Progress % = SL→Target distance</span>
     </div>
     <div class="card-body" style="padding:0">
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>Date</th><th>NIFTY</th><th>BANKNIFTY</th><th>N P&amp;L</th><th>BN P&amp;L</th><th>Total P&amp;L</th><th>N-Bull%</th><th>N-Bear%</th><th>BN-Bull%</th><th>BN-Bear%</th></tr></thead>
+          <thead><tr><th>Date</th><th>NIFTY</th><th>BANKNIFTY</th><th>N Unreal</th><th>BN Unreal</th><th>Total Unreal</th><th>Realized</th><th>N-Bull%</th><th>N-Bear%</th><th>BN-Bull%</th><th>BN-Bear%</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>

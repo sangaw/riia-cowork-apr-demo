@@ -248,56 +248,141 @@ def make_snapshot_service() -> SnapshotService:
 
 This is the mechanism that makes v1→v2 a configuration change, not a code rewrite.
 
-### File Structure (Target)
+### Backend File Structure (Target)
+
+The current repo has entry points (`run_api.py`, `run_ui.py`, `run_pipeline.py`) scattered at root, core logic mixed with interface code inside `src/rita/`, and no clear separation between calculators, services, and data access. The target structure enforces clean layering that mirrors the three-tier API design.
 
 ```
-src/rita/
-  interfaces/
-    bff/
-      __init__.py
-      dashboard_bff.py        # Experience API: RL dashboard
-      fno_bff.py              # Experience API: FnO portfolio page
-      ops_bff.py              # Experience API: Ops portal
-    bp/
-      __init__.py
-      workflow_bp.py          # Business Process: 8-step pipeline
-      backtest_bp.py          # Business Process: backtesting
-      training_bp.py          # Business Process: model training
-      analytics_bp.py         # Business Process: Greeks, risk metrics
-      manoeuvre_bp.py         # Business Process: snapshot, action log
-    system/
-      __init__.py
-      positions_api.py        # System API: position CRUD
-      orders_api.py           # System API: order CRUD
-      sessions_api.py         # System API: workflow session CRUD
-      snapshots_api.py        # System API: P&L snapshot CRUD
-      scenario_levels_api.py  # System API: scenario level CRUD
-      manoeuvre_groups_api.py # System API: group assignment CRUD
-      model_registry_api.py   # System API: model version CRUD
-    app.py                    # FastAPI app factory — registers all routers
-  core/                       # Unchanged domain logic (calculators only)
-    portfolio_manager.py
-    risk_engine.py
-    technical_analyzer.py
-    rl_agent.py
-    performance.py
-    ...
-  services/                   # NEW: service layer (business rules, no HTTP)
-    payoff_calculator.py
-    greeks_service.py
-    scenario_service.py
-    model_registry.py
-  repositories/               # NEW: data access (CSV v1, DB v2)
-    base.py                   # Abstract interface
-    csv/
-      positions_repo.py
-      snapshots_repo.py
-      ...
-    db/                       # Populated in v2
-      positions_repo.py
-      snapshots_repo.py
-      ...
+rita-cowork/                              ← repo root
+│
+├── pyproject.toml                        # single source of truth for deps + build
+├── .env.example                          # template — never commit .env
+├── run_api.py                            # thin launcher — uvicorn only, no logic
+├── run_ui.py                             # thin launcher — streamlit only
+│
+├── config/                               # NEW: environment configs
+│   ├── base.yaml                         # shared defaults
+│   ├── development.yaml
+│   ├── staging.yaml
+│   └── production.yaml
+│
+├── k8s/                                  # NEW: Kubernetes manifests
+│   ├── deployment.yaml
+│   ├── service.yaml
+│   ├── ingress.yaml
+│   ├── volumes.yaml
+│   └── alerting-rules.yaml
+│
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                        # quality gate on every push
+│       └── deploy.yml                    # build + staging + prod on main merge
+│
+├── scripts/                              # NEW: one-off operational scripts
+│   ├── migrate_csv_to_db.py             # v2 migration
+│   ├── backfill_snapshot_ids.py
+│   └── validate_csv_schemas.py
+│
+├── tests/
+│   ├── unit/
+│   │   ├── test_greeks.py               # Black-Scholes reference values
+│   │   ├── test_payoff_calculator.py
+│   │   ├── test_csv_repositories.py
+│   │   ├── test_scenario_service.py
+│   │   └── test_config.py
+│   ├── integration/
+│   │   ├── test_manoeuvre_snapshot.py   # API → CSV → read-back
+│   │   ├── test_workflow_pipeline.py
+│   │   └── conftest.py                  # tmp_path fixtures, test client
+│   ├── e2e/                             # Playwright, runs against staging
+│   │   ├── test_fno_portfolio.py
+│   │   └── test_daily_ops.py
+│   └── fixtures/
+│       ├── positions_sample.csv         # realistic test data
+│       ├── orders_sample.csv
+│       └── scenario_levels_sample.csv
+│
+└── src/rita/
+    │
+    ├── config.py                         # Pydantic Settings — validated at import
+    ├── logger.py                         # structlog setup
+    ├── exceptions.py                     # domain exception hierarchy
+    │
+    ├── core/                             # UNCHANGED: pure calculation, no I/O
+    │   ├── portfolio_manager.py          # Greeks, margin, payoff
+    │   ├── risk_engine.py               # VaR, CVaR, drawdown
+    │   ├── technical_analyzer.py        # RSI, MACD, BB, ATR
+    │   ├── rl_agent.py                  # DDQN env + stable-baselines3
+    │   ├── performance.py               # Sharpe, MDD, CAGR
+    │   ├── data_loader.py
+    │   ├── goal_engine.py
+    │   ├── strategy_engine.py
+    │   ├── classifier.py
+    │   └── chat_monitor.py
+    │
+    ├── services/                         # NEW: business rules, no HTTP, no I/O
+    │   ├── payoff_calculator.py          # at-expiry + scenario payoffs
+    │   ├── greeks_service.py             # wraps core/portfolio_manager Greeks
+    │   ├── scenario_service.py           # scenario level loading + validation
+    │   ├── model_registry.py             # active model selection + versioning
+    │   ├── lot_service.py               # lot expansion, lot size config
+    │   └── audit_service.py             # writes to audit_log
+    │
+    ├── repositories/                     # NEW: all data access behind interfaces
+    │   ├── base.py                       # abstract repo interfaces
+    │   ├── csv/                          # v1 implementations
+    │   │   ├── positions_repo.py
+    │   │   ├── orders_repo.py
+    │   │   ├── snapshots_repo.py
+    │   │   ├── manoeuvre_groups_repo.py
+    │   │   ├── session_repo.py
+    │   │   ├── model_registry_repo.py
+    │   │   └── audit_repo.py
+    │   └── db/                           # v2 implementations (stub in v1)
+    │       ├── positions_repo.py
+    │       ├── orders_repo.py
+    │       └── ...
+    │
+    ├── interfaces/
+    │   ├── app.py                        # FastAPI factory — mounts all routers
+    │   │
+    │   ├── bff/                          # Experience APIs — one per UI surface
+    │   │   ├── dashboard_bff.py          # /bff/dashboard/* — RL + backtest
+    │   │   ├── fno_bff.py               # /bff/fno/*       — portfolio + Greeks
+    │   │   └── ops_bff.py               # /bff/ops/*       — snapshot status
+    │   │
+    │   ├── bp/                           # Business Process APIs
+    │   │   ├── workflow_bp.py            # /api/v1/workflow/*
+    │   │   ├── backtest_bp.py            # /api/v1/backtest/*
+    │   │   ├── training_bp.py            # /api/v1/model/train
+    │   │   ├── analytics_bp.py           # /api/v1/analytics/greeks
+    │   │   └── manoeuvre_bp.py           # /api/v1/manoeuvre/*
+    │   │
+    │   ├── system/                       # System APIs — domain object CRUD
+    │   │   ├── positions_api.py          # /api/v1/positions
+    │   │   ├── orders_api.py             # /api/v1/orders
+    │   │   ├── sessions_api.py           # /api/v1/sessions
+    │   │   ├── snapshots_api.py          # /api/v1/snapshots
+    │   │   ├── scenario_levels_api.py    # /api/v1/scenario-levels
+    │   │   ├── manoeuvre_groups_api.py   # /api/v1/manoeuvre-groups
+    │   │   ├── model_registry_api.py     # /api/v1/model-registry
+    │   │   └── health_api.py             # /health, /health/ready
+    │   │
+    │   ├── streamlit_app.py              # Streamlit UI (internal/analyst tool)
+    │   └── mcp_server.py                 # Claude MCP tool server
+    │
+    └── orchestration/
+        ├── workflow.py                   # 8-step pipeline runner
+        ├── session.py                    # workflow session state
+        └── monitor.py                    # phase timing + CSV logging
 ```
+
+**Key rules enforced by this structure:**
+- `core/` never imports from `services/`, `repositories/`, or `interfaces/`
+- `services/` imports from `core/` and `repositories/` only — no HTTP, no FastAPI
+- `repositories/` imports from nothing in `rita/` — only stdlib + pandas
+- `interfaces/bff/` imports from `services/` — never from `core/` or `repositories/` directly
+- `interfaces/system/` imports from `repositories/` only — no business logic
 
 ---
 
@@ -1331,45 +1416,446 @@ In v2 this maps directly to a PostgreSQL `audit_log` table with triggers.
 | `dashboard/rita.html` | 142 KB | Single-file SPA — 4,000+ lines of HTML + CSS + JS |
 | `dashboard/fno.html` | 134 KB | Same — 3,500+ lines |
 | `dashboard/ops.html` | 75 KB | Same |
-| `dashboard/fno-manoeuvre.js` | 35 KB | Extracted helper, but still global state everywhere |
+| `dashboard/fno-manoeuvre.js` | 35 KB | Extracted helper, but still global state |
 
-### Hardcoded API URL
+All pages are desktop-only. No responsive breakpoints exist. Layout breaks below ~1100px. Not usable on tablet or mobile.
+
+---
+
+### Hardcoded API URL (fix immediately)
 
 ```javascript
-// dashboard/index.html line ~8
+// dashboard/index.html — breaks in every non-local deployment
 const API_BASE = 'http://localhost:8000';
 ```
 
-This breaks in any cloud deployment. Must be:
+Fix:
 ```javascript
-const API_BASE = window.RITA_API_BASE || '';  // relative URL in production
+// Resolves to relative path in production (same origin); explicit in dev
+const API_BASE = window.RITA_API_BASE || window.location.origin;
 ```
 
-Or injected at build time via a template variable.
+In Kubernetes, inject at nginx serve time via a `config.js` sidecar or a `window.__RITA_CONFIG__` block in the HTML template.
 
-### Target Frontend Architecture
+---
 
-For v1, the minimum change is to extract the JS from HTML into separate files and fix the hardcoded URL:
+### UI Section Decomposition
+
+Each monolithic HTML file is decomposed into discrete sections. Every section is an independently loadable ES module with its own JS file, its own CSS file, and its own BFF endpoint. Sections can be loaded lazily — the shell page loads the nav and first visible section immediately; remaining sections load on tab activation.
+
+#### `fno.html` — FnO Portfolio App
 
 ```
-dashboard/
-  index.html              # Thin shell (no inline JS)
-  rita.html               # Thin shell
-  fno.html                # Thin shell
-  ops.html                # Thin shell
-  js/
-    config.js             # API_BASE, auth headers
-    api-client.js         # All fetch() wrappers in one place
-    fno-portfolio.js      # Portfolio section
-    fno-manoeuvre.js      # Already extracted
-    fno-hedgeradar.js     # Hedge radar section
-    rita-backtest.js      # Backtest charts
-    ops-daily.js          # Ops portal
-  css/
-    design-system.css     # Variables, typography, components (extracted from inline)
+fno/
+  index.html                    # Shell: topbar, sidebar nav, section mount points
+  sections/
+    portfolio-grid/
+      portfolio-grid.js         # Positions table + Greeks columns
+      portfolio-grid.css
+      # BFF: GET /bff/fno/portfolio-grid
+    risk-greeks/
+      risk-greeks.js            # Delta/Gamma/Theta/Vega summary cards + curves
+      risk-greeks.css
+      # BFF: GET /bff/fno/risk-greeks
+    hedge-radar/
+      hedge-radar.js            # Radar chart + hedge quality scores
+      hedge-radar.css
+      # BFF: GET /bff/fno/hedge-radar
+    hedge-history/
+      hedge-history.js          # Historical hedge ratio timeline
+      hedge-history.css
+      # BFF: GET /bff/fno/hedge-history
+    manoeuvre/
+      manoeuvre.js              # Month tiles + group tabs + pool
+      manoeuvre-groups.js       # Group card + sparklines (was fno-manoeuvre.js)
+      manoeuvre-pool.js         # Position pool + drag-drop
+      manoeuvre.css
+      # BFF: GET /bff/fno/manoeuvre
+    payoff/
+      payoff.js                 # Strategy payoff curves at expiry
+      payoff.css
+      # BFF: GET /bff/fno/payoff
+  shared/
+    api-client.js               # All fetch() wrappers for fno app
+    fno-formatters.js           # fmtPnl(), pnlClass(), fmtGreek()
+    fno-state.js                # Shared state: positions[], scenarioLevels{}, marketData{}
 ```
 
-For v2+, migrate to React + TypeScript with Vite build pipeline. Each "page" becomes a React app with proper component hierarchy, state management, and unit tests.
+#### `rita.html` — RL Model App
+
+```
+rita/
+  index.html                    # Shell: topbar, sidebar nav
+  sections/
+    model-status/
+      model-status.js           # Active model card + training history
+      model-status.css
+      # BFF: GET /bff/dashboard/model-status
+    backtest/
+      backtest.js               # Equity curve chart + metrics table
+      backtest.css
+      # BFF: GET /bff/dashboard/backtest
+    trade-diagnostics/
+      trade-diagnostics.js      # Per-trade win/loss analysis
+      trade-diagnostics.css
+      # BFF: GET /bff/dashboard/trade-diagnostics
+    performance/
+      performance.js            # Sharpe, MDD, CAGR, monthly heatmap
+      performance.css
+      # BFF: GET /bff/dashboard/performance
+    workflow/
+      workflow.js               # 8-step pipeline runner + step status
+      workflow.css
+      # BFF: POST /api/v1/workflow/run (Business Process API)
+  shared/
+    api-client.js
+    rita-charts.js              # Chart.js wrapper (equity curve, heatmap)
+```
+
+#### `ops.html` — Operations Portal App
+
+```
+ops/
+  index.html                    # Shell: topbar, sidebar nav
+  sections/
+    daily-ops/
+      daily-ops.js              # Snapshot status cards + trigger buttons
+      daily-ops.css
+      # BFF: GET /bff/ops/daily-status
+    session-notes/
+      session-notes.js          # Session note history timeline
+      session-notes.css
+      # BFF: GET /bff/ops/session-notes
+    action-log/
+      action-log.js             # Drag-drop action log table + filters
+      action-log.css
+      # BFF: GET /bff/ops/action-log
+    chat-analytics/
+      chat-analytics.js         # Chat classifier analytics
+      chat-analytics.css
+      # BFF: GET /bff/ops/chat-analytics
+  shared/
+    api-client.js
+```
+
+#### Shared Design System (across all apps)
+
+```
+shared/
+  design-system.css             # CSS custom properties, typography, spacing
+  components/
+    kpi-card.js                 # Reusable KPI tile (value + label + sub)
+    badge.js                    # Status badges (ok/warn/danger/neutral)
+    data-table.js               # Sortable, filterable table component
+    sparkline.js                # Chart.js sparkline wrapper
+    topbar.js                   # App shell topbar
+    sidebar-nav.js              # Collapsible sidebar navigation
+  config.js                     # API_BASE, auth headers, environment
+  auth.js                       # Token management, logout
+  error-handler.js              # Global fetch error + toast notifications
+```
+
+**Section loading pattern:**
+```javascript
+// index.html shell — lazy loads sections on nav click
+async function loadSection(sectionId) {
+  const mount = document.getElementById('section-mount');
+  if (sectionCache[sectionId]) {
+    mount.innerHTML = sectionCache[sectionId];
+    return;
+  }
+  const { render } = await import(`./sections/${sectionId}/${sectionId}.js`);
+  sectionCache[sectionId] = await render(mount);
+}
+```
+
+---
+
+### Responsive Design Strategy
+
+RITA is primarily a desktop trading tool, but read-only views must work on tablet for monitoring during market hours, and critical alerts must be readable on mobile. The strategy uses a **progressive enhancement** model: full functionality on desktop, read-only monitoring on tablet, summary/alert view on mobile.
+
+#### Breakpoints
+
+```css
+/* shared/design-system.css */
+:root {
+  --bp-mobile:  480px;   /* iPhone SE and up */
+  --bp-tablet:  768px;   /* iPad portrait and up */
+  --bp-desktop: 1100px;  /* Standard laptop and up */
+  --bp-wide:    1440px;  /* Wide monitor */
+}
+
+/* Usage */
+@media (max-width: 767px)  { /* mobile */  }
+@media (max-width: 1099px) { /* tablet */  }
+@media (min-width: 1440px) { /* wide */    }
+```
+
+#### Layout Behaviour Per Breakpoint
+
+| Element | Desktop (≥1100px) | Tablet (768–1099px) | Mobile (<768px) |
+|---------|-------------------|---------------------|-----------------|
+| Shell sidebar | 220px fixed | Collapsible overlay (hamburger) | Hidden — bottom tab bar |
+| FnO Portfolio Grid | All columns visible | Hide Greeks columns; show on row expand | Card-per-position layout |
+| Greeks cards | 4-column row | 2-column grid | Single column stack |
+| Manoeuvre month tiles | 6 tiles in one row | 3 tiles per row | 2 tiles per row |
+| Group tab strip | Horizontal pill tabs | Horizontal scroll | Dropdown select |
+| Manoeuvre group card | Table with 5 columns | 3 columns; SL/Target on expand | Card list |
+| Position Pool | 2-column grid | 1-column grid | 1-column compact |
+| Backtest equity chart | Full width | Full width | Full width, no legend |
+| KPI strip | 4–6 per row | 3 per row | 2 per row, smaller font |
+| Topbar | Logo + nav links + user | Logo + hamburger | Logo + hamburger |
+| Snapshot history table | 4 columns | 3 columns | 2 columns |
+
+#### Sidebar Collapse (tablet)
+
+The sidebar becomes an overlay on tablet rather than taking up a fixed column, maximising the content area:
+
+```css
+/* shared/sidebar-nav.js CSS */
+@media (max-width: 1099px) {
+  .shell { grid-template-columns: 0px 1fr; }  /* already in ops.html */
+
+  .sidebar {
+    position: fixed;
+    left: -220px;
+    top: 0; bottom: 0;
+    z-index: 300;
+    transition: left .22s cubic-bezier(.4,0,.2,1);
+    box-shadow: 4px 0 16px rgba(0,0,0,.35);
+  }
+  .sidebar.open { left: 0; }
+
+  .overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.45);
+    z-index: 299;
+  }
+  .overlay.visible { display: block; }
+}
+```
+
+#### Mobile Bottom Tab Bar (replaces sidebar)
+
+On mobile, the sidebar is replaced by a bottom tab bar with 4–5 primary destinations per app:
+
+```
+FnO app tabs:    Portfolio | Greeks | Manoeuvre | Hedge | Ops
+Rita app tabs:   Backtest  | Model  | Trades    | Workflow
+Ops app tabs:    Daily Ops | Notes  | Actions   | Chat
+```
+
+```css
+@media (max-width: 767px) {
+  .sidebar { display: none; }
+
+  .bottom-tab-bar {
+    display: flex;
+    position: fixed; bottom: 0; left: 0; right: 0;
+    height: 56px;
+    background: var(--surface);
+    border-top: 1.5px solid var(--border);
+    z-index: 200;
+  }
+
+  .bottom-tab-bar button {
+    flex: 1;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 2px;
+    font-size: 9px; font-weight: 600;
+    color: var(--t3);
+    background: none; border: none;
+    cursor: pointer;
+  }
+
+  .bottom-tab-bar button.active { color: var(--p01); }
+
+  /* Give content area bottom padding so it clears the tab bar */
+  .content { padding-bottom: 64px; }
+}
+```
+
+#### FnO Portfolio Grid — Responsive Columns
+
+The position table collapses gracefully rather than horizontal-scrolling on narrow screens:
+
+```javascript
+// sections/portfolio-grid/portfolio-grid.js
+const COLUMNS = {
+  desktop: ['instrument', 'side', 'qty', 'avg', 'ltp', 'pnl',
+            'delta', 'gamma', 'theta', 'vega', 'margin'],
+  tablet:  ['instrument', 'side', 'qty', 'pnl', 'delta', 'margin'],
+  mobile:  ['instrument', 'pnl'],   // expandable row reveals full detail
+};
+
+function getVisibleColumns() {
+  const w = window.innerWidth;
+  if (w >= 1100) return COLUMNS.desktop;
+  if (w >= 768)  return COLUMNS.tablet;
+  return COLUMNS.mobile;
+}
+
+// Mobile: tapping a row expands an inline detail card
+function renderMobileRow(position) {
+  return `
+    <div class="pos-card" onclick="toggleDetail(this)">
+      <div class="pos-card-header">
+        <span class="pos-instrument">${position.instrument}</span>
+        <span class="pnl ${pnlClass(position.pnl)}">${fmtPnl(position.pnl)}</span>
+      </div>
+      <div class="pos-card-detail" hidden>
+        <div class="detail-row"><span>Qty</span><span>${position.qty}</span></div>
+        <div class="detail-row"><span>Avg</span><span>${position.avg}</span></div>
+        <div class="detail-row"><span>Delta</span><span>${position.delta?.toFixed(2)}</span></div>
+        <div class="detail-row"><span>Margin</span><span>${fmtInr(position.margin)}</span></div>
+      </div>
+    </div>`;
+}
+```
+
+#### Manoeuvre Section — Responsive
+
+```css
+/* Tablets: 2-column group layout instead of side-by-side group+spark */
+@media (max-width: 1099px) {
+  .man-group-layout { grid-template-columns: 1fr; }
+  .man-spark-panel  { min-height: 120px; }
+  .man-month-grid   { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* Mobile: month tiles 2-up, tabs become a dropdown */
+@media (max-width: 767px) {
+  .man-month-grid { grid-template-columns: repeat(2, 1fr); }
+  .man-tab-strip  { display: none; }
+  .man-tab-select { display: block; width: 100%; }  /* <select> fallback */
+}
+```
+
+#### Touch Interactions
+
+On tablet/mobile, drag-and-drop (used in Manoeuvre pool) must be supplemented with a tap-to-assign flow, since touch drag-drop is unreliable across browsers:
+
+```javascript
+// manoeuvre-pool.js — tap-to-assign for touch devices
+function isTouchDevice() {
+  return window.matchMedia('(pointer: coarse)').matches;
+}
+
+if (isTouchDevice()) {
+  // Tap pool item → highlight it as "selected"
+  // Then tap a group tab → assign to that group
+  // No drag-drop; avoids touch event complications
+  poolEl.addEventListener('click', e => {
+    const lotEl = e.target.closest('[data-lot-key]');
+    if (lotEl) selectLotForAssignment(lotEl.dataset.lotKey);
+  });
+  groupTabsEl.addEventListener('click', e => {
+    const tab = e.target.closest('[data-group-id]');
+    if (tab && selectedLotKey) assignLot(selectedLotKey, tab.dataset.groupId);
+  });
+}
+```
+
+#### Font and Density
+
+Trading UIs are information-dense on desktop. On mobile, density must be reduced to avoid mis-taps:
+
+```css
+@media (max-width: 767px) {
+  :root {
+    --fd: 'Inter', sans-serif;
+    font-size: 14px;              /* up from 13px */
+    --cell-padding: 10px 12px;   /* up from 6px 8px */
+    --touch-target: 44px;        /* min tap target per WCAG */
+  }
+
+  button, .btn-sm, .man-tab {
+    min-height: var(--touch-target);
+  }
+}
+```
+
+#### Read-Only Mode on Mobile
+
+Certain operations (drag-drop group assignment, scenario level edits, snapshot save) are write operations that require precise interaction. On mobile, these are hidden and the user sees a read-only view with a "Open on desktop to edit" banner:
+
+```javascript
+const READ_ONLY_SECTIONS = ['manoeuvre-pool', 'scenario-editor'];
+
+if (window.innerWidth < 768) {
+  READ_ONLY_SECTIONS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.setAttribute('inert', '');
+      el.insertAdjacentHTML('beforebegin',
+        '<div class="mobile-read-only-banner">View only — open on desktop to edit</div>');
+    }
+  });
+}
+```
+
+#### Target Frontend Folder Structure (v1)
+
+```
+frontend/                                 # replaces dashboard/
+  shared/
+    design-system.css                     # CSS variables, typography, spacing
+    components/
+      kpi-card.js
+      badge.js
+      data-table.js
+      sparkline.js
+      topbar.js
+      sidebar-nav.js
+      bottom-tab-bar.js                   # mobile only
+    config.js                             # API_BASE, environment
+    auth.js
+    error-handler.js
+    responsive.js                         # getBreakpoint(), isTouchDevice()
+  apps/
+    fno/
+      index.html
+      sections/
+        portfolio-grid/  ...
+        risk-greeks/     ...
+        hedge-radar/     ...
+        hedge-history/   ...
+        manoeuvre/       ...
+        payoff/          ...
+      shared/
+        fno-state.js
+        fno-formatters.js
+        api-client.js
+    rita/
+      index.html
+      sections/
+        model-status/    ...
+        backtest/        ...
+        trade-diagnostics/ ...
+        performance/     ...
+        workflow/        ...
+      shared/
+        rita-charts.js
+        api-client.js
+    ops/
+      index.html
+      sections/
+        daily-ops/       ...
+        session-notes/   ...
+        action-log/      ...
+        chat-analytics/  ...
+      shared/
+        api-client.js
+    index/
+      index.html                          # Landing page
+```
+
+**v1 uses native ES modules** (`<script type="module">`) — no build step required. Works in all modern browsers without webpack/vite.
+
+**v2 migrates to React + TypeScript + Vite** — each app in `apps/` becomes a React SPA, each section becomes a `<Section />` component, shared components become a proper component library with Storybook, and all responsive behaviour is unit-tested with `@testing-library/react`.
 
 ---
 
@@ -1393,12 +1879,19 @@ For v2+, migrate to React + TypeScript with Vite build pipeline. Each "page" bec
 | **P1** | Deployment | Secrets in cloud vault (not env vars) | 2 days |
 | **P1** | Resiliency | Circuit breaker + timeouts + graceful shutdown | 3 days |
 | **P1** | Observability | Prometheus metrics + AlertManager rules | 3 days |
-| **P1** | Frontend | Extract JS from HTML, fix hardcoded API URL, config.js | 1 week |
+| **P1** | Frontend | Decompose HTML apps into section modules per app | 2 weeks |
+| **P1** | Frontend | Shared design system CSS + shared component JS files | 3 days |
+| **P1** | Frontend | Fix hardcoded API URL; inject API_BASE via config.js | 1 day |
+| **P1** | Responsive | Breakpoints + sidebar overlay + bottom tab bar (mobile) | 1 week |
+| **P1** | Responsive | FnO portfolio grid responsive columns + mobile card layout | 3 days |
+| **P1** | Responsive | Manoeuvre responsive tiles + tab→dropdown on mobile | 2 days |
+| **P1** | Responsive | Tap-to-assign flow for touch devices (replaces drag-drop) | 2 days |
 | **P2** | Lot sizes | Move LOT_SIZES to lot_sizes.csv with effective dates | 1 day |
 | **P2** | Model | model_registry.csv with version metadata and is_active flag | 2 days |
 | **P2** | Audit | audit_log.csv for all portfolio/scenario level changes | 2 days |
 | **v2** | Data | PostgreSQL migration (mechanical COPY from normalised CSVs) | 3–4 weeks |
-| **v2** | Frontend | React + TypeScript with Vite; component tests | 4 weeks |
+| **v2** | Frontend | React + TypeScript + Vite; component tests; Storybook | 4 weeks |
+| **v2** | Responsive | Full responsive test suite with @testing-library/react | 1 week |
 
 ---
 

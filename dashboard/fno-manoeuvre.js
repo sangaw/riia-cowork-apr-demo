@@ -9,7 +9,7 @@
 //   currentUnd, fmtPnl(), pnlClass()
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const MAN_STORE_PFX = 'rita_man_v6_';   // + month key e.g. rita_man_v6_APR
+const MAN_STORE_PFX = 'rita_man_v7_';   // + und_month key e.g. rita_man_v7_NIFTY_APR
 const MAN_LOT = { NIFTY: 65, BANKNIFTY: 30 };
 
 const MAN_GROUPS = [
@@ -89,33 +89,35 @@ function manPctFromLevel(spot, level) {
 }
 
 // ── Per-month Persistence ─────────────────────────────────────────────────────
-function manStoreKey(month) { return MAN_STORE_PFX + month; }
+function manStoreKey(und, month) { return MAN_STORE_PFX + und + '_' + month; }
 
 function manSave(month) {
+  const und = manSelectedUnd;
   // 1. localStorage (fast, local fallback)
   try {
-    localStorage.setItem(manStoreKey(month),
+    localStorage.setItem(manStoreKey(und, month),
       JSON.stringify({ groupState: manGroupState, assign: manAssign }));
   } catch(e) {}
   // 2. Server-side persistence (fire-and-forget — enables cron + cross-device)
   fetch('/api/v1/portfolio/man-groups', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ month, groupState: manGroupState, assign: manAssign }),
+    body: JSON.stringify({ month, und, groupState: manGroupState, assign: manAssign }),
   }).catch(() => {});
 }
 
 async function manLoad(month) {
+  const und = manSelectedUnd;
   // Try server first (authoritative, survives browser cache clears)
   try {
-    const res = await fetch(`/api/v1/portfolio/man-groups?month=${month}`);
+    const res = await fetch(`/api/v1/portfolio/man-groups?month=${month}&und=${und}`);
     if (res.ok) {
       const d = await res.json();
       manGroupState = d.groupState || {};
       manAssign     = d.assign     || {};
       // Keep localStorage in sync
       try {
-        localStorage.setItem(manStoreKey(month),
+        localStorage.setItem(manStoreKey(und, month),
           JSON.stringify({ groupState: manGroupState, assign: manAssign }));
       } catch(e) {}
       return;
@@ -123,7 +125,7 @@ async function manLoad(month) {
   } catch(e) {}
   // Fall back to localStorage
   try {
-    const s = localStorage.getItem(manStoreKey(month));
+    const s = localStorage.getItem(manStoreKey(und, month));
     if (s) {
       const d = JSON.parse(s);
       manGroupState = d.groupState || {};
@@ -229,7 +231,7 @@ function renderTabStrip() {
   if (!el) return;
   el.innerHTML = MAN_GROUPS.map(g => {
     const eff = manGroupEffective(g.id);
-    const allLots = positions.filter(p => p.exp === manSelectedMonth).flatMap(manLots);
+    const allLots = positions.filter(p => p.exp === manSelectedMonth && p.und === manSelectedUnd).flatMap(manLots);
     const count = allLots.filter(lot => manAssign[lot.lotKey] === g.id).length;
     const isActive = g.id === manActiveTab;
     return `<button class="man-tab${isActive ? ' active' : ''}"
@@ -259,7 +261,7 @@ function renderActiveGroupCard() {
 
 // ── Group Card ────────────────────────────────────────────────────────────────
 function renderGroupCard(gid, eff) {
-  const allLots = positions.filter(p => p.exp === manSelectedMonth).flatMap(manLots);
+  const allLots = positions.filter(p => p.exp === manSelectedMonth && p.und === manSelectedUnd).flatMap(manLots);
   const gLots   = allLots.filter(lot => manAssign[lot.lotKey] === gid);
   const isBull  = eff.view === 'bull';
 
@@ -505,7 +507,7 @@ async function manSaveSnapshot() {
   const notesEl = document.getElementById('man-snapshot-notes');
   const notes   = notesEl ? notesEl.value.trim() : '';
 
-  const allLots = positions.filter(p => p.exp === manSelectedMonth).flatMap(manLots);
+  const allLots = positions.filter(p => p.exp === manSelectedMonth && p.und === manSelectedUnd).flatMap(manLots);
 
   const groupPayload = MAN_GROUPS.map(g => {
     const eff   = manGroupEffective(g.id);
@@ -560,6 +562,7 @@ async function manSaveSnapshot() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         month:          manSelectedMonth,
+        und:            manSelectedUnd,
         date:           today,
         nifty_spot:     niftySpot,
         banknifty_spot: bankniftySpot,
@@ -586,7 +589,7 @@ async function manSaveSnapshot() {
 
 async function manLoadHistory(month) {
   try {
-    const data = await fetch(`/api/v1/portfolio/man-pnl-history?month=${month}`).then(r => r.json());
+    const data = await fetch(`/api/v1/portfolio/man-pnl-history?month=${month}&und=${manSelectedUnd}`).then(r => r.json());
     manPnlHistory = (data.days || []).slice(-30); // last 30 days
   } catch(e) {
     manPnlHistory = [];
@@ -743,7 +746,7 @@ function manSaveCsv() {
   const hdr = ['Date','Month','Group','View','Instrument','Lot','Underlying','Expiry',
                 'Type','Side','Qty','Entry','@SL_PnL','@Target_PnL','PnL_Now'];
   const rowData = [];
-  const allLots = positions.filter(p => p.exp === manSelectedMonth).flatMap(manLots);
+  const allLots = positions.filter(p => p.exp === manSelectedMonth && p.und === manSelectedUnd).flatMap(manLots);
   for (const g of MAN_GROUPS) {
     const eff   = manGroupEffective(g.id);
     const gLots = allLots.filter(lot => manAssign[lot.lotKey] === g.id);

@@ -15,6 +15,7 @@ import csv
 import os
 import sys
 import time
+from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../.."))
 
@@ -842,6 +843,579 @@ def get_hedge_history():
     try:
         from rita.core.hedge_analyzer import compute_hedge_history
         return compute_hedge_history(INPUT_DIR)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+import json as _json
+
+# ─── Manoeuvre group state helpers ───────────────────────────────────────────
+
+def _man_groups_path(month: str) -> str:
+    return os.path.join(OUTPUT_DIR, f"man_groups_{month.upper()}.json")
+
+def _man_write_history(date, month, groups, nifty_spot, banknifty_spot, dte):
+    """Shared helper — write/update man_pnl_history.csv rows."""
+    hist_path  = os.path.join(OUTPUT_DIR, "man_pnl_history.csv")
+    hist_fields = ["date","month","group_id","group_name","view",
+                   "pnl_now","sl_pnl","target_pnl","lot_count",
+                   "nifty_spot","banknifty_spot","dte",
+                   "pct_from_sl","pct_from_target"]
+    existing: list[dict] = []
+    if os.path.exists(hist_path):
+        with open(hist_path, newline="", encoding="utf-8") as f:
+            existing = list(csv.DictReader(f))
+    new_keys = {(date, month, str(g.get("id","")).strip()) for g in groups}
+    kept = [r for r in existing if (r["date"], r["month"], r.get("group_id","")) not in new_keys]
+    new_rows = []
+    for g in groups:
+        new_rows.append({
+            "date": date, "month": month,
+            "group_id":        str(g.get("id","")).strip(),
+            "group_name":      str(g.get("name","")).strip(),
+            "view":            str(g.get("view","")).strip(),
+            "pnl_now":         g.get("pnl_now",    0),
+            "sl_pnl":          g.get("sl_pnl",     ""),
+            "target_pnl":      g.get("target_pnl", ""),
+            "lot_count":       g.get("lot_count",  0),
+            "nifty_spot":      nifty_spot     if nifty_spot     is not None else "",
+            "banknifty_spot":  banknifty_spot if banknifty_spot is not None else "",
+            "dte":             dte            if dte            is not None else "",
+            "pct_from_sl":     g.get("pct_from_sl",    ""),
+            "pct_from_target": g.get("pct_from_target",""),
+        })
+    with open(hist_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=hist_fields)
+        writer.writeheader()
+        writer.writerows(kept + new_rows)
+    return len(new_rows), len(kept) + len(new_rows)
+
+
+@app.put("/api/v1/portfolio/man-groups", tags=["Portfolio"],
+         dependencies=[Depends(_require_portfolio_key)])
+def put_man_groups(payload: dict):
+    """
+    Persist browser group assignments to server so daily cron can snapshot
+    without the page being open.
+
+    Payload: ``{"month": "APR", "groupState": {...}, "assign": {...}}``
+    Writes to ``rita_output/man_groups_APR.json``.
+    """
+    try:
+        month = str(payload.get("month","")).strip().upper()
+        if not month:
+            raise HTTPException(status_code=422, detail="month is required")
+        data = {
+            "month":      month,
+            "groupState": payload.get("groupState", {}),
+            "assign":     payload.get("assign",     {}),
+            "saved_at":   datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        with open(_man_groups_path(month), "w", encoding="utf-8") as f:
+            _json.dump(data, f)
+        return {"status": "ok", "month": month}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/portfolio/man-groups", tags=["Portfolio"],
+         dependencies=[Depends(_require_portfolio_key)])
+def get_man_groups(month: str = ""):
+    """
+    Load server-side group assignments for a month.
+    Returns ``{"month","groupState","assign","saved_at"}`` or 404 if not saved yet.
+    """
+    try:
+        month = month.strip().upper()
+        if not month:
+            raise HTTPException(status_code=422, detail="month is required")
+        path = _man_groups_path(month)
+        if not os.path.exists(path):
+            raise HTTPException(status_code=404, detail=f"No saved groups for {month}")
+        with open(path, encoding="utf-8") as f:
+            return _json.load(f)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/portfolio/man-daily-snapshot", tags=["Portfolio"],
+          dependencies=[Depends(_require_portfolio_key)])
+def post_man_daily_snapshot(payload: dict):
+    """
+    Server-triggered daily snapshot — called by scheduled cron at market close.
+    Reads group assignments from ``man_groups_{MONTH}.json`` and current
+    positions from portfolio_manager, then writes man_pnl_history.csv and
+    man_session_notes.csv (marks entry as 'auto').
+
+    Payload: ``{"month": "APR"}``  (date defaults to today)
+    """
+    try:
+        from rita.core.portfolio_manager import get_portfolio_summary as _build
+        month = str(payload.get("month","")).strip().upper()
+        if not month:
+            raise HTTPException(status_code=422, detail="month is required")
+
+        # Load group assignments
+        gpath = _man_groups_path(month)
+        if not os.path.exists(gpath):
+            return {"status": "skipped", "reason": f"No saved group assignments for {month}"}
+        with open(gpath, encoding="utf-8") as f:
+            gdata = _json.load(f)
+        assign      = gdata.get("assign", {})      # lotKey → group_id
+        group_state = gdata.get("groupState", {})  # group_id → {name, view}
+
+        # Load current portfolio
+        summary        = _build(INPUT_DIR)
+        positions      = [p for p in summary.get("positions", []) if p.get("exp") == month]
+        market         = summary.get("market", {})
+        sc_levels      = summary.get("scenario_levels", {})
+        nifty_spot     = (market.get("NIFTY")     or {}).get("close")
+        banknifty_spot = (market.get("BANKNIFTY") or {}).get("close")
+        date_str       = (market.get("NIFTY")     or {}).get("date",
+                          datetime.utcnow().strftime("%d-%b-%Y"))
+
+        # Compute DTE
+        from datetime import date as _date
+        today   = _date.today()
+        lot_sizes = {"NIFTY": 65, "BANKNIFTY": 30}
+
+        # Expand positions → lots (mirrors JS manLots)
+        all_lots = []
+        for p in positions:
+            lsz   = lot_sizes.get(p.get("und","NIFTY"), 1)
+            n     = max(1, round(p.get("qty", 0) / lsz))
+            pnl_per = p.get("pnl", 0) / n
+            for i in range(1, n + 1):
+                lot = dict(p)
+                lot["lotKey"]  = f"{p['instrument']}_L{i}"
+                lot["lotSz"]   = lsz
+                lot["lotPnl"]  = pnl_per
+                lot["nLots"]   = n
+                all_lots.append(lot)
+
+        GROUP_DEFS = [
+            {"id":"anchor",      "name":"Monthly Anchor",  "defaultView":"bull"},
+            {"id":"directional", "name":"Directional",     "defaultView":"bull"},
+            {"id":"futures",     "name":"Futures",         "defaultView":"bull"},
+            {"id":"spread",      "name":"Spread",          "defaultView":"bull"},
+            {"id":"hedge",       "name":"Hedge",           "defaultView":"bear"},
+        ]
+
+        def payoff(lot, price):
+            sign = 1 if lot.get("side") == "Long" else -1
+            t    = lot.get("type","")
+            avg  = lot.get("avg", 0)
+            sk   = lot.get("strike_val", 0) or 0
+            lsz  = lot.get("lotSz", 1)
+            if t == "FUT":   intr = price
+            elif t == "CE":  intr = max(0, price - sk)
+            else:            intr = max(0, sk - price)
+            return sign * lsz * (intr - avg)
+
+        groups_payload = []
+        for gd in GROUP_DEFS:
+            gs       = group_state.get(gd["id"], {})
+            name     = gs.get("name", gd["name"])
+            view     = gs.get("view", gd["defaultView"])
+            g_lots   = [l for l in all_lots if assign.get(l["lotKey"]) == gd["id"]]
+            tot_now  = sum(l["lotPnl"] for l in g_lots)
+            tot_sl   = sum(payoff(l, (sc_levels.get(l.get("und","NIFTY"),{}).get(view,{}) or {}).get("sl", l.get("avg",0)))
+                          for l in g_lots if (sc_levels.get(l.get("und","NIFTY"),{}).get(view,{}) or {}).get("sl") is not None)
+            tot_tgt  = sum(payoff(l, (sc_levels.get(l.get("und","NIFTY"),{}).get(view,{}) or {}).get("target", l.get("avg",0)))
+                          for l in g_lots if (sc_levels.get(l.get("und","NIFTY"),{}).get(view,{}) or {}).get("target") is not None)
+            ref_spot = banknifty_spot if g_lots and g_lots[0].get("und") == "BANKNIFTY" else nifty_spot
+            ref_und  = g_lots[0].get("und","NIFTY") if g_lots else "NIFTY"
+            sc_g     = (sc_levels.get(ref_und,{}).get(view,{}) or {})
+            def pct(s, l):
+                return round(((s - l) / l) * 10000) / 100 if s and l else None
+            groups_payload.append({
+                "id": gd["id"], "name": name, "view": view,
+                "pnl_now":         round(tot_now),
+                "sl_pnl":          round(tot_sl)  if g_lots else None,
+                "target_pnl":      round(tot_tgt) if g_lots else None,
+                "lot_count":       len(g_lots),
+                "pct_from_sl":     pct(ref_spot, sc_g.get("sl")),
+                "pct_from_target": pct(ref_spot, sc_g.get("target")),
+            })
+
+        rows_written, total = _man_write_history(
+            date_str, month, groups_payload, nifty_spot, banknifty_spot, None)
+
+        # Append auto note
+        notes_path   = os.path.join(OUTPUT_DIR, "man_session_notes.csv")
+        notes_fields = ["ts","date","month","nifty_spot","banknifty_spot","dte","notes"]
+        write_header = not os.path.exists(notes_path)
+        with open(notes_path, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=notes_fields)
+            if write_header:
+                writer.writeheader()
+            writer.writerow({
+                "ts":            datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "date":          date_str, "month": month,
+                "nifty_spot":    nifty_spot     or "",
+                "banknifty_spot":banknifty_spot or "",
+                "dte":           "",
+                "notes":         "auto-snapshot",
+            })
+
+        return {"status": "ok", "month": month, "date": date_str,
+                "rows_written": rows_written, "total_rows": total}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/portfolio/man-daily-status", tags=["Portfolio"],
+         dependencies=[Depends(_require_portfolio_key)])
+def get_man_daily_status():
+    """
+    Ops portal status endpoint — returns today's snapshot state, 7-day history,
+    action counts, and recent session notes for the Daily Ops page.
+    """
+    try:
+        from rita.core.portfolio_manager import get_portfolio_summary as _build
+        from datetime import date as _date
+
+        summary   = _build(INPUT_DIR)
+        positions = summary.get("positions", [])
+        market    = summary.get("market", {})
+        today_str = (_date.today()).strftime("%d-%b-%Y")
+
+        # Active months from live positions
+        active_months = sorted({p.get("exp","") for p in positions if p.get("exp")})
+
+        # Snapshot status per month
+        hist_path = os.path.join(OUTPUT_DIR, "man_pnl_history.csv")
+        hist_rows: list[dict] = []
+        if os.path.exists(hist_path):
+            with open(hist_path, newline="", encoding="utf-8") as f:
+                hist_rows = list(csv.DictReader(f))
+
+        snapshot_status = {}
+        for m in active_months:
+            m_rows     = [r for r in hist_rows if r.get("month","").upper() == m.upper()]
+            today_rows = [r for r in m_rows if r.get("date","") == today_str]
+            last_date  = m_rows[-1]["date"] if m_rows else None
+            gpath      = _man_groups_path(m)
+            has_groups = os.path.exists(gpath)
+            snapshot_status[m] = {
+                "snapshotted_today": bool(today_rows),
+                "last_date":         last_date,
+                "groups_saved":      has_groups,
+                "lot_count":         sum(int(r.get("lot_count",0) or 0) for r in today_rows),
+            }
+
+        # Action log — today's count + last action
+        action_path = os.path.join(OUTPUT_DIR, "man_action_log.csv")
+        actions_today = 0
+        last_action_ts = None
+        if os.path.exists(action_path):
+            with open(action_path, newline="", encoding="utf-8") as f:
+                for row in csv.DictReader(f):
+                    if row.get("date","") == today_str:
+                        actions_today += 1
+                        last_action_ts = row.get("ts")
+
+        # Recent snapshots (last 7 unique dates across all months)
+        seen_dates: set = set()
+        recent_snapshots = []
+        for r in reversed(hist_rows):
+            key = (r.get("date",""), r.get("month",""))
+            if key not in seen_dates:
+                seen_dates.add(key)
+                recent_snapshots.append({
+                    "date":      r.get("date"),
+                    "month":     r.get("month"),
+                    "nifty_spot":r.get("nifty_spot",""),
+                    "lot_count": r.get("lot_count",""),
+                })
+            if len(seen_dates) >= 14:
+                break
+        recent_snapshots.reverse()
+
+        # Recent session notes (last 5)
+        notes_path = os.path.join(OUTPUT_DIR, "man_session_notes.csv")
+        recent_notes = []
+        if os.path.exists(notes_path):
+            with open(notes_path, newline="", encoding="utf-8") as f:
+                all_notes = list(csv.DictReader(f))
+            recent_notes = [
+                {"ts": r.get("ts",""), "date": r.get("date",""),
+                 "month": r.get("month",""), "notes": r.get("notes","")}
+                for r in all_notes[-5:]
+            ]
+
+        return {
+            "today":            today_str,
+            "active_months":    active_months,
+            "snapshot_status":  snapshot_status,
+            "actions_today":    actions_today,
+            "last_action_ts":   last_action_ts,
+            "recent_snapshots": recent_snapshots,
+            "recent_notes":     recent_notes,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/portfolio/man-snapshot", tags=["Portfolio"],
+          dependencies=[Depends(_require_portfolio_key)])
+def post_man_snapshot(payload: dict):
+    """
+    Save a full manoeuvre snapshot — writes three CSVs in one call:
+
+    1. ``rita_output/man_pnl_history.csv``   — group-level P&L + market context
+    2. ``rita_output/man_position_snapshot.csv`` — per-lot detail per group
+    3. ``rita_output/man_session_notes.csv`` — free-text session note (append-only)
+
+    Payload::
+
+        {
+          "month": "APR", "date": "29-Mar-2026",
+          "nifty_spot": 22400.50, "banknifty_spot": 48200.0, "dte": 3,
+          "notes": "Rolled anchor after breakout",
+          "groups": [{
+            "id": "anchor", "name": "Monthly Anchor", "view": "bull",
+            "pnl_now": -12400, "sl_pnl": -45000, "target_pnl": 38000,
+            "lot_count": 3, "pct_from_sl": 2.14, "pct_from_target": -5.60,
+            "lots": [{
+              "lot_key": "NIFTY25APR22500CE_L1", "instrument": "NIFTY25APR22500CE",
+              "und": "NIFTY", "type": "CE", "side": "Long",
+              "lot_sz": 65, "avg": 180.0, "pnl_now": -1200,
+              "pnl_sl": -3800, "pnl_target": 6500
+            }]
+          }]
+        }
+
+    Re-saving on the same day overwrites existing rows for the same date+month+group_id
+    (history + position CSVs).  Notes are always appended.
+    """
+    try:
+        month          = str(payload.get("month", "")).strip().upper()
+        date           = str(payload.get("date",  "")).strip()
+        groups         = payload.get("groups", [])
+        nifty_spot     = payload.get("nifty_spot")
+        banknifty_spot = payload.get("banknifty_spot")
+        dte            = payload.get("dte")
+        notes          = str(payload.get("notes", "")).strip()
+
+        if not month or not date or not groups:
+            raise HTTPException(status_code=422, detail="month, date and groups are required")
+
+        # ── CSV 1: man_pnl_history.csv (group-level + market context) ─────────
+        hist_path  = os.path.join(OUTPUT_DIR, "man_pnl_history.csv")
+        hist_fields = ["date", "month", "group_id", "group_name", "view",
+                        "pnl_now", "sl_pnl", "target_pnl", "lot_count",
+                        "nifty_spot", "banknifty_spot", "dte",
+                        "pct_from_sl", "pct_from_target"]
+
+        existing_hist: list[dict] = []
+        if os.path.exists(hist_path):
+            with open(hist_path, newline="", encoding="utf-8") as f:
+                existing_hist = list(csv.DictReader(f))
+        new_keys = {(date, month, str(g.get("id", "")).strip()) for g in groups}
+        kept_hist = [r for r in existing_hist
+                     if (r["date"], r["month"], r["group_id"]) not in new_keys]
+
+        new_hist_rows = []
+        for g in groups:
+            new_hist_rows.append({
+                "date":           date,
+                "month":          month,
+                "group_id":       str(g.get("id",             "")).strip(),
+                "group_name":     str(g.get("name",           "")).strip(),
+                "view":           str(g.get("view",           "")).strip(),
+                "pnl_now":        g.get("pnl_now",        0),
+                "sl_pnl":         g.get("sl_pnl",         ""),
+                "target_pnl":     g.get("target_pnl",     ""),
+                "lot_count":      g.get("lot_count",      0),
+                "nifty_spot":     nifty_spot     if nifty_spot     is not None else "",
+                "banknifty_spot": banknifty_spot if banknifty_spot is not None else "",
+                "dte":            dte            if dte            is not None else "",
+                "pct_from_sl":    g.get("pct_from_sl",    ""),
+                "pct_from_target":g.get("pct_from_target",""),
+            })
+
+        all_hist = kept_hist + new_hist_rows
+        with open(hist_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=hist_fields)
+            writer.writeheader()
+            writer.writerows(all_hist)
+
+        # ── CSV 2: man_position_snapshot.csv (per-lot detail) ─────────────────
+        pos_path   = os.path.join(OUTPUT_DIR, "man_position_snapshot.csv")
+        pos_fields = ["date", "month", "group_id", "group_name", "view",
+                       "lot_key", "instrument", "und", "type", "side",
+                       "lot_sz", "avg", "pnl_now", "pnl_sl", "pnl_target"]
+
+        existing_pos: list[dict] = []
+        if os.path.exists(pos_path):
+            with open(pos_path, newline="", encoding="utf-8") as f:
+                existing_pos = list(csv.DictReader(f))
+        new_lot_keys = {
+            (date, month, str(lot.get("lot_key", "")).strip())
+            for g in groups for lot in g.get("lots", [])
+        }
+        kept_pos = [r for r in existing_pos
+                    if (r["date"], r["month"], r["lot_key"]) not in new_lot_keys]
+
+        new_pos_rows = []
+        for g in groups:
+            for lot in g.get("lots", []):
+                new_pos_rows.append({
+                    "date":       date,
+                    "month":      month,
+                    "group_id":   str(g.get("id",   "")).strip(),
+                    "group_name": str(g.get("name", "")).strip(),
+                    "view":       str(g.get("view", "")).strip(),
+                    "lot_key":    str(lot.get("lot_key",    "")).strip(),
+                    "instrument": str(lot.get("instrument", "")).strip(),
+                    "und":        str(lot.get("und",  "")).strip(),
+                    "type":       str(lot.get("type", "")).strip(),
+                    "side":       str(lot.get("side", "")).strip(),
+                    "lot_sz":     lot.get("lot_sz",     0),
+                    "avg":        lot.get("avg",        0),
+                    "pnl_now":    lot.get("pnl_now",    0),
+                    "pnl_sl":     lot.get("pnl_sl",     ""),
+                    "pnl_target": lot.get("pnl_target", ""),
+                })
+
+        with open(pos_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=pos_fields)
+            writer.writeheader()
+            writer.writerows(kept_pos + new_pos_rows)
+
+        # ── CSV 3: man_session_notes.csv (append-only, one row per save) ──────
+        notes_path   = os.path.join(OUTPUT_DIR, "man_session_notes.csv")
+        notes_fields = ["ts", "date", "month", "nifty_spot", "banknifty_spot", "dte", "notes"]
+        write_header = not os.path.exists(notes_path)
+        with open(notes_path, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=notes_fields)
+            if write_header:
+                writer.writeheader()
+            writer.writerow({
+                "ts":            datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "date":          date,
+                "month":         month,
+                "nifty_spot":    nifty_spot     if nifty_spot     is not None else "",
+                "banknifty_spot":banknifty_spot if banknifty_spot is not None else "",
+                "dte":           dte            if dte            is not None else "",
+                "notes":         notes,
+            })
+
+        return {
+            "status": "ok",
+            "rows_written": len(new_hist_rows),
+            "total_rows":   len(all_hist),
+            "position_rows_written": len(new_pos_rows),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/portfolio/man-action", tags=["Portfolio"],
+          dependencies=[Depends(_require_portfolio_key)])
+def post_man_action(payload: dict):
+    """
+    Append one drag-drop / remove event to rita_output/man_action_log.csv.
+
+    This is the primary training-signal dataset for future ML/RAG models —
+    captures every expert decision in its market context.
+
+    Payload::
+
+        {
+          "date": "29-Mar-2026", "month": "APR",
+          "action": "assign",           // "assign" | "unassign" | "remove"
+          "lot_key": "NIFTY25APR22500CE_L1",
+          "from_group": "",             // "" = pool
+          "to_group":   "anchor",       // "" = pool / remove
+          "nifty_spot": 22400.50,       // optional
+          "banknifty_spot": 48200.0     // optional
+        }
+    """
+    try:
+        action  = str(payload.get("action",  "")).strip()
+        lot_key = str(payload.get("lot_key", "")).strip()
+        if not action or not lot_key:
+            raise HTTPException(status_code=422, detail="action and lot_key are required")
+
+        log_path   = os.path.join(OUTPUT_DIR, "man_action_log.csv")
+        fieldnames = ["ts", "date", "month", "action", "lot_key",
+                      "from_group", "to_group", "nifty_spot", "banknifty_spot"]
+        write_header = not os.path.exists(log_path)
+
+        nspot = payload.get("nifty_spot")
+        bspot = payload.get("banknifty_spot")
+
+        with open(log_path, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            if write_header:
+                writer.writeheader()
+            writer.writerow({
+                "ts":            datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "date":          str(payload.get("date",       "")).strip(),
+                "month":         str(payload.get("month",      "")).strip().upper(),
+                "action":        action,
+                "lot_key":       lot_key,
+                "from_group":    str(payload.get("from_group", "")).strip(),
+                "to_group":      str(payload.get("to_group",   "")).strip(),
+                "nifty_spot":    nspot if nspot is not None else "",
+                "banknifty_spot":bspot if bspot is not None else "",
+            })
+
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/portfolio/man-pnl-history", tags=["Portfolio"],
+         dependencies=[Depends(_require_portfolio_key)])
+def get_man_pnl_history(month: str = ""):
+    """
+    Return manoeuvre P&L history from rita_output/man_pnl_history.csv.
+
+    Optional ?month=APR filter.  Returns rows grouped by date, each with a
+    list of group snapshots — ready for sparkline rendering.
+    """
+    try:
+        csv_path = os.path.join(OUTPUT_DIR, "man_pnl_history.csv")
+        if not os.path.exists(csv_path):
+            return {"days": []}
+
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+
+        if month:
+            rows = [r for r in rows if r["month"].upper() == month.upper()]
+
+        # Group by date preserving insertion order
+        by_date: dict = {}
+        for r in rows:
+            d = r["date"]
+            if d not in by_date:
+                by_date[d] = []
+            by_date[d].append({
+                "id":         r["group_id"],
+                "name":       r["group_name"],
+                "view":       r["view"],
+                "pnl_now":    float(r["pnl_now"])    if r["pnl_now"]    not in ("", None) else None,
+                "sl_pnl":     float(r["sl_pnl"])     if r["sl_pnl"]     not in ("", None) else None,
+                "target_pnl": float(r["target_pnl"]) if r["target_pnl"] not in ("", None) else None,
+                "lot_count":  int(r["lot_count"])    if r["lot_count"]   not in ("", None) else 0,
+            })
+
+        days = [{"date": d, "groups": gs} for d, gs in by_date.items()]
+        return {"days": days}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

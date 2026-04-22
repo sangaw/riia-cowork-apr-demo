@@ -12,11 +12,13 @@ import pandas as pd
 
 from rita.core.data_loader import (
     load_nifty_csv,
+    load_prepared_csv,
     get_training_data,
     get_validation_data,
     get_backtest_data,
     get_historical_stats,
     BACKTEST_START,
+    RISK_FREE_RATE,
 )
 from rita.core.technical_analyzer import calculate_indicators, get_market_summary
 from rita.core.rl_agent import train_agent, train_best_of_n, load_agent, run_episode, validate_agent
@@ -102,9 +104,17 @@ class WorkflowOrchestrator:
       - returns a plain dict (no protocol-specific types)
     """
 
-    def __init__(self, csv_path: str, output_dir: str = "./rita_output"):
+    def __init__(self, csv_path: str, output_dir: str = "./rita_output",
+                 risk_free_rate: float = RISK_FREE_RATE,
+                 instrument_id: str = "nifty50"):
         self.csv_path = csv_path
         self.output_dir = output_dir
+        self.risk_free_rate = risk_free_rate
+        self.instrument_id = instrument_id
+        # Instrument-namespaced output paths
+        self.model_zip        = os.path.join(output_dir, f"model_{instrument_id}.zip")
+        self._train_cache     = os.path.join(output_dir, f"train_episode_cache_{instrument_id}.json")
+        self._val_cache       = os.path.join(output_dir, f"val_episode_cache_{instrument_id}.json")
         self.session = SessionManager(output_dir)
         self.session.load()   # restore persisted state across API restarts
         self.monitor = PhaseMonitor(output_dir)
@@ -112,11 +122,14 @@ class WorkflowOrchestrator:
         # Load raw + feature-enriched data once
         self._raw_df: pd.DataFrame = None
         self._feat_df: pd.DataFrame = None
+        self._is_prepared: bool = False   # True when CSV has pre-computed indicators
 
     def _ensure_data(self) -> None:
         if self._raw_df is None:
-            self._raw_df = load_nifty_csv(self.csv_path)
-            self._feat_df = calculate_indicators(self._raw_df)
+            self._raw_df, self._feat_df = load_prepared_csv(self.csv_path)
+            self._is_prepared = self._feat_df is not self._raw_df
+            if not self._is_prepared:
+                self._feat_df = calculate_indicators(self._raw_df)
 
     # ─── STEP 1 ──────────────────────────────────────────────────────────────
 
@@ -130,7 +143,7 @@ class WorkflowOrchestrator:
         self.monitor.start_step(1)
         try:
             self._ensure_data()
-            hist_stats = get_historical_stats(self._raw_df)
+            hist_stats = get_historical_stats(self._raw_df, risk_free_rate=self.risk_free_rate)
             goal = set_goal(target_return_pct, time_horizon_days, risk_tolerance, hist_stats)
             self.session.set("goal", goal)
             self.session.set("historical_stats", hist_stats)
@@ -195,13 +208,13 @@ class WorkflowOrchestrator:
         """
         self.monitor.start_step(4)
         try:
-            model_zip = os.path.join(self.output_dir, "rita_ddqn_model.zip")
+            model_zip = self.model_zip
 
             # Reuse existing model if available and not forced to retrain
             if not force_retrain and os.path.exists(model_zip):
                 model = load_agent(model_zip)
                 self._ensure_data()
-                val_df = calculate_indicators(get_validation_data(self._raw_df))
+                val_df = get_validation_data(self._feat_df)
                 val_metrics = validate_agent(model, val_df)
 
                 self.session.set("model_path", model_zip)
@@ -225,8 +238,8 @@ class WorkflowOrchestrator:
 
             # Train from scratch
             self._ensure_data()
-            train_df = calculate_indicators(get_training_data(self._raw_df))
-            val_df = calculate_indicators(get_validation_data(self._raw_df))
+            train_df = get_training_data(self._feat_df)
+            val_df = get_validation_data(self._feat_df)
 
             if n_seeds > 1:
                 model, training_metrics = train_best_of_n(
@@ -267,7 +280,7 @@ class WorkflowOrchestrator:
         try:
             self._ensure_data()
             if end is None:
-                end = self._raw_df.index.max().strftime("%Y-%m-%d")
+                end = self._feat_df.index.max().strftime("%Y-%m-%d")
 
             # Validate period doesn't overlap training data
             if start < "2023-01-01":
@@ -294,24 +307,27 @@ class WorkflowOrchestrator:
             model_path = self.session.get("model_path")
             # Fall back to the model file on disk (survives API restarts)
             if not model_path:
-                default_zip = os.path.join(self.output_dir, "rita_ddqn_model.zip")
-                if os.path.exists(default_zip):
-                    model_path = default_zip
+                if os.path.exists(self.model_zip):
+                    model_path = self.model_zip
                     self.session.set("model_path", model_path)
             sim_period = self.session.get("simulation_period")
             if not model_path or not sim_period:
                 raise RuntimeError("Run step4 and step5 before step6.")
 
             self._ensure_data()
-            # Fetch 200 extra warmup days before start so indicators (MACD, EMA, ATR)
-            # have enough history to be non-NaN by the time the slice begins.
-            WARMUP_DAYS = 200
             start_ts = pd.Timestamp(sim_period["start"])
-            warmup_start = (start_ts - pd.offsets.BDay(WARMUP_DAYS)).strftime("%Y-%m-%d")
-            raw_with_warmup = get_backtest_data(self._raw_df, warmup_start, sim_period["end"])
-            full_indicators = calculate_indicators(raw_with_warmup)
-            # Trim back to the requested period after indicators are computed
-            backtest_df = full_indicators[full_indicators.index >= start_ts]
+            if self._is_prepared:
+                # Fully-featured CSV: indicators computed on full history — slice directly.
+                backtest_df = get_backtest_data(self._feat_df, sim_period["start"], sim_period["end"])
+            else:
+                # OHLCV-only CSV: fetch 200 extra warmup days so indicators (MACD, EMA, ATR)
+                # have enough history to be non-NaN by the time the slice begins.
+                WARMUP_DAYS = 200
+                warmup_start = (start_ts - pd.offsets.BDay(WARMUP_DAYS)).strftime("%Y-%m-%d")
+                raw_with_warmup = get_backtest_data(self._raw_df, warmup_start, sim_period["end"])
+                full_indicators = calculate_indicators(raw_with_warmup)
+                # Trim back to the requested period after indicators are computed
+                backtest_df = full_indicators[full_indicators.index >= start_ts]
 
             model = load_agent(model_path)
             backtest_results = run_episode(model, backtest_df)
@@ -432,20 +448,16 @@ class WorkflowOrchestrator:
         rerunning inference a second time.
         """
         self._ensure_data()
-        train_cache = os.path.join(self.output_dir, "train_episode_cache.json")
-        val_cache = os.path.join(self.output_dir, "val_episode_cache.json")
+        train_df = get_training_data(self._feat_df)
+        val_df = get_validation_data(self._feat_df)
 
-        train_df = calculate_indicators(get_training_data(self._raw_df))
-        val_df = calculate_indicators(get_validation_data(self._raw_df))
-
-        model_zip = os.path.join(self.output_dir, "rita_ddqn_model.zip")
         print("[RITA] Caching train episode for Risk View (may take a few seconds)…")
         train_ep = run_episode(model, train_df)
-        _save_episode_cache(train_ep, train_cache, model_path=model_zip)
+        _save_episode_cache(train_ep, self._train_cache, model_path=self.model_zip)
 
         print("[RITA] Caching val episode for Risk View…")
         val_ep = run_episode(model, val_df)
-        _save_episode_cache(val_ep, val_cache, model_path=model_zip)
+        _save_episode_cache(val_ep, self._val_cache, model_path=self.model_zip)
 
     def _compute_risk_arc(self) -> None:
         """
@@ -467,18 +479,13 @@ class WorkflowOrchestrator:
         bt_end = sim_period.get("end")
 
         # Feature DataFrames for regime detection per phase
-        train_feat = calculate_indicators(get_training_data(self._raw_df))
-        val_feat = calculate_indicators(get_validation_data(self._raw_df))
-        bt_feat = calculate_indicators(get_backtest_data(self._raw_df, bt_start, bt_end))
+        train_feat = get_training_data(self._feat_df)
+        val_feat = get_validation_data(self._feat_df)
+        bt_feat = get_backtest_data(self._feat_df, bt_start, bt_end)
 
         # Load cached episodes (produced in step4) — invalidated automatically if model changed
-        model_zip = os.path.join(self.output_dir, "rita_ddqn_model.zip")
-        train_ep = _load_episode_cache(
-            os.path.join(self.output_dir, "train_episode_cache.json"), model_path=model_zip
-        )
-        val_ep = _load_episode_cache(
-            os.path.join(self.output_dir, "val_episode_cache.json"), model_path=model_zip
-        )
+        train_ep = _load_episode_cache(self._train_cache, model_path=self.model_zip)
+        val_ep   = _load_episode_cache(self._val_cache,   model_path=self.model_zip)
 
         # Fall back: rerun inference if cache is missing or stale, then re-save
         if train_ep is None:
@@ -488,16 +495,8 @@ class WorkflowOrchestrator:
                 m = load_agent(model_path)
                 train_ep = run_episode(m, train_feat)
                 val_ep = run_episode(m, val_feat)
-                _save_episode_cache(
-                    train_ep,
-                    os.path.join(self.output_dir, "train_episode_cache.json"),
-                    model_path=model_zip,
-                )
-                _save_episode_cache(
-                    val_ep,
-                    os.path.join(self.output_dir, "val_episode_cache.json"),
-                    model_path=model_zip,
-                )
+                _save_episode_cache(train_ep, self._train_cache, model_path=self.model_zip)
+                _save_episode_cache(val_ep,   self._val_cache,   model_path=self.model_zip)
 
         timelines = []
 
@@ -538,10 +537,7 @@ class WorkflowOrchestrator:
             return
 
         # Background observations — from cached training episode (invalidated if model changed)
-        model_zip = os.path.join(self.output_dir, "rita_ddqn_model.zip")
-        train_ep = _load_episode_cache(
-            os.path.join(self.output_dir, "train_episode_cache.json"), model_path=model_zip
-        )
+        train_ep = _load_episode_cache(self._train_cache, model_path=self.model_zip)
         if train_ep is None or not len(train_ep.get("observations", [])):
             print("[RITA] SHAP: train episode cache missing — skipping")
             return
@@ -554,9 +550,7 @@ class WorkflowOrchestrator:
             print("[RITA] SHAP: backtest observations missing — skipping")
             return
 
-        val_ep = _load_episode_cache(
-            os.path.join(self.output_dir, "val_episode_cache.json"), model_path=model_zip
-        )
+        val_ep = _load_episode_cache(self._val_cache, model_path=self.model_zip)
 
         obs_parts, phase_parts = [bt_obs], ["Backtest"] * len(bt_obs)
         if val_ep is not None and len(val_ep.get("observations", [])):

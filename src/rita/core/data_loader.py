@@ -33,8 +33,14 @@ def load_nifty_csv(csv_path: str) -> pd.DataFrame:
     # Normalize column names
     df.columns = [c.strip().lower() for c in df.columns]
 
-    # Parse and normalize the date column (strip timezone)
-    df["date"] = pd.to_datetime(df["date"], utc=True).dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
+    # Parse and normalize the date column (strip timezone if present)
+    sample = str(df["date"].iloc[0])
+    if "+" in sample or len(sample) > 12:
+        # Timezone-aware format (e.g. Nifty: "1999-07-01 00:00:00+05:30")
+        df["date"] = pd.to_datetime(df["date"], utc=True).dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
+    else:
+        # Plain ISO date (e.g. ASML: "2001-03-09")
+        df["date"] = pd.to_datetime(df["date"])
     df = df.set_index("date")
     df.index.name = "Date"
 
@@ -44,7 +50,8 @@ def load_nifty_csv(csv_path: str) -> pd.DataFrame:
         "high": "High",
         "low": "Low",
         "close": "Close",
-        "shares traded": "Volume",
+        "shares traded": "Volume",  # Nifty NSE column name
+        "volume": "Volume",         # Generic / international column name
     }
     df = df.rename(columns=rename_map)
 
@@ -61,6 +68,61 @@ def load_nifty_csv(csv_path: str) -> pd.DataFrame:
         raise ValueError(f"No valid data found in {csv_path}")
 
     return df
+
+
+def load_prepared_csv(csv_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Load a prepared instrument CSV that may already contain pre-computed indicator columns.
+
+    Detection: if 'rsi_14' is present the CSV is fully-featured; the indicator
+    DataFrame is returned as-is.  Otherwise falls back to load_nifty_csv() and
+    the caller is responsible for running calculate_indicators().
+
+    Returns:
+        (raw_df, feat_df)
+        - raw_df  : OHLCV-only DataFrame (DatetimeIndex)
+        - feat_df : DataFrame with all indicator columns (DatetimeIndex).
+                    Equals raw_df when the CSV is OHLCV-only (no indicators pre-computed).
+    """
+    df = pd.read_csv(csv_path)
+    df.columns = [c.strip() for c in df.columns]
+
+    # Detect date column (case-insensitive)
+    date_col = next((c for c in df.columns if c.lower() == "date"), None)
+    if date_col is None:
+        raise ValueError(f"No 'date' column found in {csv_path}")
+
+    # Parse dates
+    sample = str(df[date_col].iloc[0])
+    if "+" in sample or len(sample) > 12:
+        df[date_col] = pd.to_datetime(df[date_col], utc=True).dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
+    else:
+        df[date_col] = pd.to_datetime(df[date_col])
+    df = df.set_index(date_col)
+    df.index.name = "Date"
+    df = df.sort_index()
+    df = df[~df.index.duplicated(keep="first")]
+
+    # Normalise OHLCV column names
+    rename_map = {
+        "open": "Open", "high": "High", "low": "Low", "close": "Close",
+        "shares traded": "Volume", "volume": "Volume",
+    }
+    df = df.rename(columns={c: rename_map[c.lower()] for c in df.columns if c.lower() in rename_map})
+
+    ohlcv_cols = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in df.columns]
+    raw_df = df[ohlcv_cols].dropna(subset=["Close"])
+
+    if len(raw_df) == 0:
+        raise ValueError(f"No valid data found in {csv_path}")
+
+    if "rsi_14" in df.columns:
+        # Fully-featured CSV — use pre-computed indicators, drop rows missing Close
+        feat_df = df.dropna(subset=["Close"])
+        return raw_df, feat_df
+
+    # OHLCV-only — caller must call calculate_indicators()
+    return raw_df, raw_df
 
 
 def get_date_slice(df: pd.DataFrame, start_date: str, end_date: str) -> pd.DataFrame:
@@ -355,10 +417,16 @@ def get_bear_episodes(df: pd.DataFrame, min_duration_days: int = 20, buffer_days
     return result
 
 
-def get_historical_stats(df: pd.DataFrame) -> dict:
+def get_historical_stats(df: pd.DataFrame, risk_free_rate: float = RISK_FREE_RATE) -> dict:
     """
     Calculate full-history performance statistics from the loaded DataFrame.
     Used in Step 1 to anchor the financial goal to real data.
+
+    Args:
+        df: DataFrame with at minimum a 'Close' column and DatetimeIndex.
+        risk_free_rate: Annualised risk-free rate for Sharpe calculation.
+            Defaults to RISK_FREE_RATE (India 10Y).  Pass the instrument-specific
+            rate from instruments.json for non-INR instruments.
     """
     daily_returns = df["Close"].pct_change().dropna()
     years = len(df) / 252.0
@@ -370,7 +438,7 @@ def get_historical_stats(df: pd.DataFrame) -> dict:
 
     annual_vol = daily_returns.std() * math.sqrt(252)
 
-    sharpe = (daily_returns.mean() - RISK_FREE_RATE / 252) / daily_returns.std() * math.sqrt(252)
+    sharpe = (daily_returns.mean() - risk_free_rate / 252) / daily_returns.std() * math.sqrt(252)
 
     # Rolling max drawdown
     rolling_max = df["Close"].cummax()
@@ -379,6 +447,17 @@ def get_historical_stats(df: pd.DataFrame) -> dict:
 
     # Best and worst annual returns
     annual_rets = df["Close"].resample("YE").last().pct_change().dropna()
+
+    # Last 12 months return (~252 trading days)
+    lookback = min(252, len(df) - 1)
+    last_12m_return = float((df["Close"].iloc[-1] / df["Close"].iloc[-lookback]) - 1)
+
+    # Yearly returns for last 15 years (for chart)
+    yearly_rets_15 = annual_rets.tail(15)
+    yearly_returns_list = [
+        {"year": str(idx.year), "return_pct": round(float(v * 100), 2)}
+        for idx, v in yearly_rets_15.items()
+    ]
 
     return {
         "start_date": df.index.min().strftime("%Y-%m-%d"),
@@ -395,4 +474,6 @@ def get_historical_stats(df: pd.DataFrame) -> dict:
         "best_year_pct": round(float(annual_rets.max() * 100), 2),
         "worst_year_pct": round(float(annual_rets.min() * 100), 2),
         "avg_annual_return_pct": round(float(annual_rets.mean() * 100), 2),
+        "last_12m_return_pct": round(last_12m_return * 100, 2),
+        "yearly_returns": yearly_returns_list,
     }

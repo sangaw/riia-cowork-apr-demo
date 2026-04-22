@@ -1,0 +1,24 @@
+RITA App
+
+1. Overall
+	a. Add ema 5, ema 13 and ema 26 in the analysis. This will need to be added where we create technical indicators from OHLCV data.
+2. Financial Goal 
+	a. Historical Nifty 50 avg: 12–15% label should reflect last 12 months avg return.
+	b. Risk Tolerance make it a radio button that drop down as we have space on this row.
+	c. On the market analysis, target return pct, time horizon days, years, risk tolerance and annualized target pct, required monthly return pct should be in first row. 
+		Then second row should show feasibility, feasibility note, historical cagr pct, historical best year pct, historical worst year pct, historical sharpe, suggested realistic target pct
+	d. We have some space on the page below, we can show line chart for % return for nifty for last 15 years and then show a horizontal line for suggested realistic target pct and target return pct
+2. Market Analysis
+	a. Should mention timeframe as daily
+	c. Show section wise - Trend and Sentiment, RSI, MACD, BB, ATR. This is for better readability and use of space
+	b. ema shown should be 5, 13, 26. 
+	c. For RSI value, add a mention as "RSI range 40 - 60" 
+3. Market Signals
+	a. Change from current structure of 3 rows 2 columns to 2 rows 3 columns. First row will have ATR%, Trend Score and EMA. Rest RSI, MACD and BB will be second row
+4. Strategy 
+	a. What is the rationale for this strategy? Is this how out model is now trained?
+	
+	
+Target Return, Time Horizon, Risk Tolerance, Annualized Target. Req. Monthly Return, Feasibility, Suggested Target and ast 12m Return
+-5.6%
+	

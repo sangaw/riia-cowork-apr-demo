@@ -102,6 +102,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--fd);font-size:13px
 .card-sub{font-size:11px;color:var(--t3);}
 .card-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px;}
 .card-row-2{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:16px;}
+.card-row-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px;}
 
 /* HMC — horizontal metric cards */
 .hmc-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
@@ -152,6 +153,10 @@ tr:hover td{background:var(--surface2);}
 .form-input,.form-select{background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r);padding:8px 10px;font-family:var(--fd);font-size:13px;color:var(--text);outline:none;transition:border-color .12s;}
 .form-input:focus,.form-select:focus{border-color:var(--run);}
 .form-hint{font-size:10px;color:var(--t4);}
+.radio-group{display:flex;gap:6px;flex-wrap:wrap;}
+.radio-btn{display:flex;align-items:center;gap:5px;padding:7px 12px;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r);font-size:12px;cursor:pointer;transition:border-color .12s,background .12s;user-select:none;}
+.radio-btn:has(input:checked){border-color:var(--run);background:var(--run-bg);color:var(--run);}
+.radio-btn input[type="radio"]{display:none;}
 
 /* Result panel */
 .result-panel{background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r);padding:16px;margin-top:14px;}
@@ -246,6 +251,14 @@ tr:hover td{background:var(--surface2);}
   <div class="topbar-mid"></div>
 
   <div class="topbar-right">
+    <!-- Active instrument pill -->
+    <div id="inst-pill" style="display:none;align-items:center;gap:8px;background:var(--surface2);border:1.5px solid var(--border);border-radius:100px;padding:4px 12px 4px 8px;font-family:var(--fm);font-size:11px;color:var(--t2)">
+      <span id="inst-pill-flag" style="font-size:15px"></span>
+      <span id="inst-pill-name"></span>
+      <span id="inst-pill-exch" style="color:var(--t4)"></span>
+      <span style="color:var(--border2)">·</span>
+      <a href="/dashboard/" style="color:var(--run);text-decoration:none;font-size:10px;font-weight:600;letter-spacing:.04em">SWITCH ↗</a>
+    </div>
     <div class="status-pill">
       <span class="status-dot" id="status-dot"></span>
       <span id="status-text" style="font-family:var(--fm);font-size:11px">Connecting</span>
@@ -401,7 +414,7 @@ tr:hover td{background:var(--surface2);}
   <div class="page-hdr">
     <div>
       <div class="page-title">Market Signals</div>
-      <div class="page-sub">Technical indicators across timeframes — Nifty 50</div>
+      <div class="page-sub" id="ms-page-sub">Technical indicators across timeframes — Nifty 50</div>
     </div>
     <div class="hdr-actions">
       <button class="btn btn-ghost btn-sm" onclick="loadMarketSignals()">↺ Refresh</button>
@@ -417,27 +430,28 @@ tr:hover td{background:var(--surface2);}
   </div>
 
   <!-- Signal summary strip -->
-  <div class="kpi-row" id="ms-signals" style="margin-bottom:20px;grid-template-columns:repeat(7,1fr)">
+  <div class="kpi-row" id="ms-signals" style="margin-bottom:8px;grid-template-columns:repeat(8,1fr)">
     <div class="kpi"><div class="kpi-label">RSI-14</div><div class="kpi-value neu" id="ms-rsi-val">—</div><div class="kpi-delta" id="ms-rsi-sig">—</div></div>
     <div class="kpi"><div class="kpi-label">MACD</div><div class="kpi-value neu" id="ms-macd-val">—</div><div class="kpi-delta" id="ms-macd-sig">—</div></div>
     <div class="kpi"><div class="kpi-label">BB %B</div><div class="kpi-value neu" id="ms-bb-val">—</div><div class="kpi-delta" id="ms-bb-sig">—</div></div>
     <div class="kpi"><div class="kpi-label">EMA 5</div><div class="kpi-value neu" id="ms-ema5-val">—</div><div class="kpi-delta" id="ms-ema5-sig">—</div></div>
-    <div class="kpi"><div class="kpi-label">EMA 50</div><div class="kpi-value neu" id="ms-ema50-val">—</div><div class="kpi-delta" id="ms-ema50-sig">—</div></div>
+    <div class="kpi"><div class="kpi-label">EMA 13</div><div class="kpi-value neu" id="ms-ema13-val">—</div><div class="kpi-delta" id="ms-ema13-sig">—</div></div>
+    <div class="kpi"><div class="kpi-label">EMA 26</div><div class="kpi-value neu" id="ms-ema26-val">—</div><div class="kpi-delta" id="ms-ema26-sig">—</div></div>
     <div class="kpi"><div class="kpi-label">ATR% (14)</div><div class="kpi-value neu" id="ms-atr-val">—</div><div class="kpi-delta" id="ms-atr-sig">—</div></div>
     <div class="kpi"><div class="kpi-label">Trend Score</div><div class="kpi-value neu" id="ms-trend-val">—</div><div class="kpi-delta" id="ms-trend-sig">—</div></div>
   </div>
 
   <!-- Alerts strip -->
-  <div id="ms-alerts" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px;min-height:28px"></div>
+  <div id="ms-alerts" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;min-height:24px"></div>
 
   <!-- Price + Volume -->
-  <div class="chart-wrap">
+  <div class="chart-wrap" style="margin-bottom:10px">
     <div class="chart-title">Price &amp; Volume <span style="font-weight:400;color:var(--t3);font-size:11px">— close price · daily volume</span></div>
     <div class="chart-box" style="height:165px"><canvas id="chart-ms-pv"></canvas></div>
   </div>
 
-  <!-- ATR% + Trend Score side by side -->
-  <div class="card-row-2">
+  <!-- Row 1: ATR% + Trend Score + EMA -->
+  <div class="card-row-3">
     <div class="chart-wrap" style="margin:0">
       <div class="chart-title">ATR% (14) <span style="font-weight:400;color:var(--t3);font-size:11px">— volatility as % of price · high &gt;1.5% · compressed &lt;0.8%</span></div>
       <div class="chart-box" style="height:150px"><canvas id="chart-ms-atr"></canvas></div>
@@ -446,29 +460,25 @@ tr:hover td{background:var(--surface2);}
       <div class="chart-title">Trend Score <span style="font-weight:400;color:var(--t3);font-size:11px">— normalized EMA50 slope · −1 bearish → +1 bullish</span></div>
       <div class="chart-box" style="height:150px"><canvas id="chart-ms-trend"></canvas></div>
     </div>
+    <div class="chart-wrap" style="margin:0">
+      <div class="chart-title">EMA <span style="font-weight:400;color:var(--t3);font-size:11px">— price · EMA 5 · EMA 13 · EMA 26</span></div>
+      <div class="chart-box" style="height:150px"><canvas id="chart-ms-ema"></canvas></div>
+    </div>
   </div>
 
-  <!-- RSI + MACD side by side -->
-  <div class="card-row-2">
+  <!-- Row 2: RSI + MACD + Bollinger Bands -->
+  <div class="card-row-3">
     <div class="chart-wrap" style="margin:0">
-      <div class="chart-title">RSI-14 <span style="font-weight:400;color:var(--t3);font-size:11px">— overbought &gt;70 · oversold &lt;30</span></div>
+      <div class="chart-title">RSI-14 <span style="font-weight:400;color:var(--t3);font-size:11px">— overbought &gt;70 · oversold &lt;30 · range 40–60</span></div>
       <div class="chart-box" style="height:150px"><canvas id="chart-ms-rsi"></canvas></div>
     </div>
     <div class="chart-wrap" style="margin:0">
       <div class="chart-title">MACD <span style="font-weight:400;color:var(--t3);font-size:11px">— line · signal · histogram</span></div>
       <div class="chart-box" style="height:150px"><canvas id="chart-ms-macd"></canvas></div>
     </div>
-  </div>
-
-  <!-- Bollinger Bands + EMA side by side -->
-  <div class="card-row-2">
     <div class="chart-wrap" style="margin:0">
       <div class="chart-title">Bollinger Bands <span style="font-weight:400;color:var(--t3);font-size:11px">— price · upper · lower</span></div>
-      <div class="chart-box" style="height:165px"><canvas id="chart-ms-bb"></canvas></div>
-    </div>
-    <div class="chart-wrap" style="margin:0">
-      <div class="chart-title">EMA <span style="font-weight:400;color:var(--t3);font-size:11px">— price · 50-period · 200-period</span></div>
-      <div class="chart-box" style="height:165px"><canvas id="chart-ms-ema"></canvas></div>
+      <div class="chart-box" style="height:150px"><canvas id="chart-ms-bb"></canvas></div>
     </div>
   </div>
 
@@ -485,28 +495,30 @@ tr:hover td{background:var(--surface2);}
 
   <div class="card">
     <div class="card-hdr"><span class="card-title">Goal Parameters</span></div>
-    <div class="form-grid">
-      <div class="form-group">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;align-items:start;margin-bottom:0">
+      <div class="form-group" style="margin:0">
         <label class="form-label">Target Annual Return (%)</label>
         <input class="form-input" type="number" id="inp-target" value="15" min="1" max="100" step="0.5">
-        <span class="form-hint">Historical Nifty 50 avg: 12–15%</span>
+        <span class="form-hint" id="historical-avg-hint">Historical Nifty 50 avg: 12–15%</span>
       </div>
-      <div class="form-group">
+      <div class="form-group" style="margin:0">
         <label class="form-label">Time Horizon (days)</label>
         <input class="form-input" type="number" id="inp-horizon" value="365" min="30" step="30">
         <span class="form-hint">Minimum 30 days</span>
       </div>
-      <div class="form-group">
+      <div class="form-group" style="margin:0">
         <label class="form-label">Risk Tolerance</label>
-        <select class="form-select" id="inp-risk">
-          <option value="conservative">Conservative</option>
-          <option value="moderate" selected>Moderate</option>
-          <option value="aggressive">Aggressive</option>
-        </select>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="radio-group" style="flex:1;min-width:0">
+            <label class="radio-btn"><input type="radio" name="inp-risk" value="conservative"><span>Conservative</span></label>
+            <label class="radio-btn"><input type="radio" name="inp-risk" value="moderate" checked><span>Moderate</span></label>
+            <label class="radio-btn"><input type="radio" name="inp-risk" value="aggressive"><span>Aggressive</span></label>
+          </div>
+          <button class="btn btn-build" onclick="runGoal()" id="btn-goal" style="white-space:nowrap;flex-shrink:0">Set Goal →</button>
+        </div>
         <span class="form-hint">Influences allocation strategy</span>
       </div>
     </div>
-    <button class="btn btn-build" onclick="runGoal()" id="btn-goal">Set Goal →</button>
   </div>
 
   <div id="goal-result"></div>
@@ -525,7 +537,7 @@ tr:hover td{background:var(--surface2);}
       <div class="mpanel-hdr">
         <div>
           <div class="mpanel-title">Current Market Analysis</div>
-          <div class="mpanel-sub">Latest Nifty 50 technical indicators</div>
+          <div class="mpanel-sub" id="ma-page-sub">Latest Nifty 50 technical indicators · Timeframe: Daily</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
           <span id="market-status-badge" class="badge neu">Not Run</span>
@@ -554,7 +566,7 @@ tr:hover td{background:var(--surface2);}
       </div>
       <div class="mpanel-body chat-msgs" id="chat-messages">
         <div class="cmsg rita">
-          <div class="cbubble">Hi! Ask me anything about Nifty investment — market sentiment, return estimates, allocation advice, or stress scenarios.</div>
+          <div class="cbubble" id="chat-greeting">Hi! Ask me anything about Nifty investment — market sentiment, return estimates, allocation advice, or stress scenarios.</div>
         </div>
       </div>
       <div class="mpanel-footer">
@@ -573,15 +585,15 @@ tr:hover td{background:var(--surface2);}
         <div class="mpanel-title">Suggested Questions</div>
       </div>
       <div class="mpanel-body">
-        <button class="chat-chip" onclick="useChip(this)">Can I invest in Nifty now?</button>
+        <button class="chat-chip" id="chip-invest"  onclick="useChip(this)">Can I invest in Nifty now?</button>
         <button class="chat-chip" onclick="useChip(this)">What's the current market trend?</button>
         <button class="chat-chip" onclick="useChip(this)">Expected returns in 1 year?</button>
-        <button class="chat-chip" onclick="useChip(this)">What if Nifty falls 10%?</button>
+        <button class="chat-chip" id="chip-fall"    onclick="useChip(this)">What if Nifty falls 10%?</button>
         <button class="chat-chip" onclick="useChip(this)">Is the market overbought?</button>
         <button class="chat-chip" onclick="useChip(this)">How has RITA performed?</button>
         <button class="chat-chip" onclick="useChip(this)">Conservative allocation strategy?</button>
         <button class="chat-chip" onclick="useChip(this)">3-year return outlook?</button>
-        <button class="chat-chip" onclick="useChip(this)">What if Nifty rallies 10%?</button>
+        <button class="chat-chip" id="chip-rally"   onclick="useChip(this)">What if Nifty rallies 10%?</button>
         <button class="chat-chip" onclick="useChip(this)">Current volatility level?</button>
       </div>
     </div>
@@ -599,6 +611,16 @@ tr:hover td{background:var(--surface2);}
     </div>
   </div>
 
+  <div class="card" style="padding:12px 18px;margin-bottom:8px;border-left:3px solid var(--run)">
+    <div style="font-size:11px;color:var(--t3);font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Strategy Rationale</div>
+    <ul style="font-size:12px;color:var(--t2);line-height:1.7;margin:0;padding-left:18px">
+      <li>Strategy is derived by combining your <strong>financial goal</strong> (Step 1) with the current <strong>market regime</strong> (Step 2).</li>
+      <li id="strategy-instrument-li">RITA's <strong>Double DQN model</strong> is trained on Nifty 50 OHLCV data with 9 features including EMAs, RSI, MACD, BB, ATR and Trend Score.</li>
+      <li><strong>Regime detection</strong> uses EMA-26/EMA-50 ratio — ratio &lt; 0.99 for 3+ consecutive days signals a Bear regime; otherwise Bull.</li>
+      <li><strong>Allocation</strong> adjusts equity exposure based on regime, feasibility of your target return, and risk tolerance.</li>
+      <li><strong>Constraints</strong>: Sharpe Ratio ≥ 1.0 · Max Drawdown ≤ 10%.</li>
+    </ul>
+  </div>
   <div id="strategy-result">
     <div class="card"><div class="empty">Click "Design Strategy" to generate an allocation recommendation.</div></div>
   </div>
@@ -646,7 +668,7 @@ tr:hover td{background:var(--surface2);}
 <!-- ════════════════ PERFORMANCE ════════════════ -->
 <section class="section" id="sec-performance">
   <div class="page-hdr">
-    <div><div class="page-title">Performance</div><div class="page-sub">2025 backtest results vs Nifty 50 Buy &amp; Hold benchmark</div></div>
+    <div><div class="page-title">Performance</div><div class="page-sub" id="perf-page-sub">2025 backtest results vs Nifty 50 Buy &amp; Hold benchmark</div></div>
     <div class="hdr-actions">
       <button class="btn btn-ghost btn-sm" onclick="loadPerformance()">↺ Reload</button>
     </div>
@@ -1196,6 +1218,20 @@ async function loadMetrics() {
 async function loadPerfSummary() {
   try {
     const d = await api('/api/v1/performance-summary');
+    const stale = d._run_instrument_id && d._active_instrument_id &&
+                  d._run_instrument_id !== d._active_instrument_id;
+    if (stale) {
+      // Output files belong to a different instrument — show blanks
+      ['kpi-return','kpi-cagr','kpi-sharpe','kpi-mdd','kpi-winrate'].forEach(id => {
+        setEl(id, '—');
+        const el = document.getElementById(id);
+        if (el) el.className = 'kpi-value';
+      });
+      setEl('kpi-bnh', 'No backtest yet');
+      setEl('kpi-cagr-bnh', '');
+      setEl('kpi-days', 'Run pipeline');
+      return;
+    }
     setEl('kpi-return', fmtPct(d.portfolio_total_return_pct));
     document.getElementById('kpi-return').className = 'kpi-value ' + (parseFloat(d.portfolio_total_return_pct) > 0 ? 'pos' : 'neg');
     setEl('kpi-bnh', `vs B&H ${fmtPct(d.benchmark_total_return_pct)}`);
@@ -1295,15 +1331,27 @@ async function loadMarketSignals() {
 
     const price  = parseFloat(last.Close);
     const ema5   = parseFloat(last.ema_5);
-    const ema50  = parseFloat(last.ema_50);
+    const ema13  = parseFloat(last.ema_13);
+    const ema26  = parseFloat(last.ema_26);
     const abv5   = price > ema5;
-    const abv50  = price > ema50;
+    const abv13  = price > ema13;
+    const abv26  = price > ema26;
     setEl('ms-ema5-val',  isNaN(ema5)  ? '—' : ema5.toFixed(0));
     document.getElementById('ms-ema5-val').className  = 'kpi-value ' + (abv5  ? 'pos' : 'neg');
-    setEl('ms-ema5-sig',  abv5  ? 'Price above EMA5'  : 'Price below EMA5');
-    setEl('ms-ema50-val', isNaN(ema50) ? '—' : ema50.toFixed(0));
-    document.getElementById('ms-ema50-val').className = 'kpi-value ' + (abv50 ? 'pos' : 'neg');
-    setEl('ms-ema50-sig', abv50 ? 'Price above EMA50' : 'Price below EMA50');
+    setEl('ms-ema5-sig',  abv5  ? 'Above EMA5'  : 'Below EMA5');
+    setEl('ms-ema13-val', isNaN(ema13) ? '—' : ema13.toFixed(0));
+    document.getElementById('ms-ema13-val').className = 'kpi-value ' + (abv13 ? 'pos' : 'neg');
+    setEl('ms-ema13-sig', abv13 ? 'Above EMA13' : 'Below EMA13');
+    setEl('ms-ema26-val', isNaN(ema26) ? '—' : ema26.toFixed(0));
+    document.getElementById('ms-ema26-val').className = 'kpi-value ' + (abv26 ? 'pos' : 'neg');
+    setEl('ms-ema26-sig', abv26 ? 'Above EMA26' : 'Below EMA26');
+
+    // Update historical avg hint from last 252 days
+    const histHint = document.getElementById('historical-avg-hint');
+    if (histHint && rows.length >= 2) {
+      const ret12m = ((parseFloat(last.Close) / parseFloat(rows[0].Close)) - 1) * 100;
+      if (!isNaN(ret12m)) histHint.textContent = `Last ${rows.length} trading days: ${ret12m.toFixed(1)}%`;
+    }
 
     const atrRaw  = parseFloat(last.atr_14);
     const atrPct  = (!isNaN(atrRaw) && price) ? (atrRaw / price * 100) : NaN;
@@ -1555,10 +1603,10 @@ async function loadMarketSignals() {
       else                         alerts.push(mkAlert('err', `Fresh Bear Cross EMA5×EMA13 (${label})`));
     }
 
-    // Price vs EMA50 trend
-    if (!isNaN(ema50)) {
-      if   (price > ema50) alerts.push(mkAlert('ok',  `Price > EMA50 Uptrend`));
-      else                 alerts.push(mkAlert('err', `Price < EMA50 Downtrend`));
+    // Price vs EMA26 trend
+    if (!isNaN(ema26)) {
+      if   (price > ema26) alerts.push(mkAlert('ok',  `Price > EMA26 Uptrend`));
+      else                 alerts.push(mkAlert('err', `Price < EMA26 Downtrend`));
     }
 
     // ATR%
@@ -2282,11 +2330,11 @@ async function runGoal() {
     const d = await api('/api/v1/goal', 'POST', {
       target_return_pct: parseFloat(document.getElementById('inp-target').value),
       time_horizon_days: parseInt(document.getElementById('inp-horizon').value),
-      risk_tolerance: document.getElementById('inp-risk').value,
+      risk_tolerance: document.querySelector('input[name="inp-risk"]:checked')?.value || 'moderate',
     });
     document.getElementById('goal-status-badge').className = 'badge ok';
     setEl('goal-status-badge', 'Done');
-    renderStepResult('goal-result', d);
+    renderGoalResult('goal-result', d);
   } catch (e) {
     document.getElementById('goal-status-badge').className = 'badge err';
     setEl('goal-status-badge', 'Error');
@@ -2305,7 +2353,7 @@ async function runMarket() {
   try {
     const d = await api('/api/v1/market', 'POST');
     badge.className = 'badge ok'; badge.textContent = 'Done';
-    renderStepResult('market-result', d);
+    renderMarketResult('market-result', d);
   } catch (e) {
     badge.className = 'badge err'; badge.textContent = 'Error';
     setEl('market-result', `<div class="card"><div style="color:var(--danger);font-size:12px">Error: ${e.message}</div></div>`);
@@ -2366,6 +2414,7 @@ async function runScenarioBacktest() {
   try {
     await api('/api/v1/period',   'POST', { start: from, end: to });
     await api('/api/v1/backtest', 'POST', {});
+    await api('/api/v1/results?record_history=false');   // write fresh CSVs without logging to training history
     const [perf, daily] = await Promise.all([
       api('/api/v1/performance-summary'),
       api('/api/v1/backtest-daily'),
@@ -2456,6 +2505,132 @@ async function doReset() {
   if (!confirm('Reset session? This clears in-memory state but keeps saved model files.')) return;
   await api('/reset', 'POST');
   await refresh();
+}
+
+function renderGoalResult(containerId, d) {
+  const r = d.result || d;
+  const fv = (v, dec=1, sfx='') => (v != null && !isNaN(parseFloat(v))) ? parseFloat(v).toFixed(dec) + sfx : '—';
+  const feasCls = {conservative:'ok', realistic:'ok', ambitious:'warn', unrealistic:'err'};
+  const cls = feasCls[r.feasibility] || 'neu';
+
+  const metrics = [
+    {label:'Target Return',      value: fv(r.target_return_pct, 1, '%')},
+    {label:'Time Horizon',       value: `${r.time_horizon_days ?? '—'}d (${fv(r.years, 2)}yr)`},
+    {label:'Risk Tolerance',     value: r.risk_tolerance ? r.risk_tolerance.charAt(0).toUpperCase()+r.risk_tolerance.slice(1) : '—'},
+    {label:'Annualized Target',  value: fv(r.annualized_target_pct, 2, '%')},
+    {label:'Req. Monthly Ret.',  value: fv(r.required_monthly_return_pct, 3, '%')},
+    {label:'Feasibility',        value: r.feasibility || '—', badge: cls},
+    {label:'Suggested Target',   value: fv(r.suggested_realistic_target_pct, 1, '%')},
+    {label:'Last 12m Return',    value: fv(r.last_12m_return_pct, 1, '%')},
+  ];
+
+  const mkMetric = m => `<div style="background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:8px 12px">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--t3);margin-bottom:3px;white-space:nowrap">${m.label}</div>
+    ${m.badge ? `<span class="badge ${m.badge}" style="font-size:11px;padding:2px 7px">${m.value}</span>` :
+      `<div style="font-family:var(--fm);font-size:15px;font-weight:500;color:var(--text)">${m.value}</div>`}
+  </div>`;
+
+  let html = `<div class="result-panel">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+      <div class="result-title" style="margin-bottom:0">Step ${d.step || 1} — ${d.name || 'Financial Goal'} <span class="badge ok">Done</span></div>
+      ${r.feasibility_note ? `<span style="font-size:11px;color:var(--t3)">${r.feasibility_note}</span>` : ''}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin-bottom:10px">${metrics.map(mkMetric).join('')}</div>`;
+
+  // 15-year annual returns chart
+  if (r.yearly_returns && r.yearly_returns.length) {
+    html += `<div class="chart-wrap" style="margin:0"><div class="chart-title">Nifty 50 Annual Returns — Last ${r.yearly_returns.length} Years
+      <span style="font-weight:400;color:var(--t3);font-size:11px"> · <span style="color:var(--run)">─</span> Target <span style="color:var(--build)">─</span> Suggested</span>
+    </div><div class="chart-box" style="height:200px"><canvas id="chart-goal-returns"></canvas></div></div>`;
+  }
+  html += '</div>';
+  setEl(containerId, html);
+
+  if (r.yearly_returns && r.yearly_returns.length) {
+    const labels = r.yearly_returns.map(y => y.year);
+    const vals   = r.yearly_returns.map(y => y.return_pct);
+    mkChart('chart-goal-returns', {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{ label: 'Annual Return %', data: vals,
+          backgroundColor: vals.map(v => v >= 0 ? 'rgba(26,107,60,0.55)' : 'rgba(155,28,28,0.55)'),
+          borderColor:     vals.map(v => v >= 0 ? 'rgba(26,107,60,0.9)'  : 'rgba(155,28,28,0.9)'),
+          borderWidth: 1.5 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          annotation: { annotations: {
+            target:    { type:'line', yMin: r.target_return_pct,               yMax: r.target_return_pct,               borderColor: C.run,   borderWidth:1.5, borderDash:[5,3], label:{content:'Target',    display:true, position:'end', font:{size:10}} },
+            suggested: { type:'line', yMin: r.suggested_realistic_target_pct,  yMax: r.suggested_realistic_target_pct,  borderColor: C.build, borderWidth:1.5, borderDash:[5,3], label:{content:'Suggested', display:true, position:'end', font:{size:10}} },
+          }}
+        },
+        scales: {
+          x: { grid:{display:false}, ticks:{font:{family:C.mono,size:10}} },
+          y: { grid:{color:'rgba(0,0,0,.04)'}, ticks:{callback:v=>v.toFixed(0)+'%', font:{family:C.mono,size:10}} }
+        }
+      }
+    });
+  }
+}
+
+function renderMarketResult(containerId, d) {
+  const r = d.result || d;
+  const fv = (v, dec=2) => (v != null && !isNaN(parseFloat(v))) ? parseFloat(v).toFixed(dec) : '—';
+  const trendCls = {uptrend:'ok', sideways:'neu', downtrend:'err'};
+  const macdCls  = {bullish:'ok', bearish:'err'};
+  const rsiCls   = {overbought:'err', oversold:'ok', neutral:'neu'};
+  const bbCls    = {near_upper_band:'err', near_lower_band:'ok', middle:'neu'};
+  const sentCls  = {complacent:'ok', neutral:'neu', fearful:'err'};
+
+  const mkRow = (label, value, note='') => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
+      <span style="color:var(--t3)">${label}</span>
+      <span style="font-family:var(--fm);color:var(--text)">${value}${note ? ` <span style="color:var(--t4);font-size:10px">${note}</span>` : ''}</span>
+    </div>`;
+  const mkSection = (title, color, rows) => `
+    <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:12px 14px">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:${color};margin-bottom:8px">${title}</div>
+      ${rows}
+    </div>`;
+
+  const html = `<div class="result-panel">
+    <div class="result-title">Step ${d.step||2} — ${d.name||'Market Analysis'} <span class="badge ok">Done</span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      ${mkSection('Trend &amp; Sentiment', 'var(--run)',
+        mkRow('Date', r.date||'—') +
+        mkRow('Close', r.close != null ? r.close.toLocaleString('en-IN') : '—') +
+        mkRow('Trend', `<span class="badge ${trendCls[r.trend]||'neu'}">${r.trend||'—'}</span>`) +
+        mkRow('Trend Score', fv(r.trend_score, 3), '(-1 bear → +1 bull)') +
+        mkRow('Sentiment', `<span class="badge ${sentCls[r.sentiment_proxy]||'neu'}">${r.sentiment_proxy||'—'}</span>`)
+      )}
+      ${mkSection('RSI', 'var(--warn)',
+        mkRow('RSI-14', fv(r.rsi_14, 2)) +
+        mkRow('Signal', `<span class="badge ${rsiCls[r.rsi_signal]||'neu'}">${r.rsi_signal||'—'}</span>`) +
+        mkRow('Range', '40–60 neutral zone', '') +
+        mkRow('Overbought / Oversold', '&gt;70 / &lt;30')
+      )}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+      ${mkSection('MACD', 'var(--build)',
+        mkRow('MACD Line', fv(r.macd, 4)) +
+        mkRow('Signal Line', fv(r.macd_signal_line, 4)) +
+        mkRow('Signal', `<span class="badge ${macdCls[r.macd_signal]||'neu'}">${r.macd_signal||'—'}</span>`)
+      )}
+      ${mkSection('Bollinger Bands', 'var(--t2)',
+        mkRow('BB %B', fv(r.bb_pct_b, 3)) +
+        mkRow('Position', `<span class="badge ${bbCls[r.bb_position]||'neu'}">${(r.bb_position||'—').replace(/_/g,' ')}</span>`)
+      )}
+      ${mkSection('ATR', 'var(--mon)',
+        mkRow('ATR-14', fv(r.atr_14, 2)) +
+        mkRow('ATR Percentile', fv(r.atr_percentile, 3), '0=low · 1=high vol') +
+        mkRow('EMA 5 / 13 / 26', `${fv(r.ema_5,0)} / ${fv(r.ema_13,0)} / ${fv(r.ema_26,0)}`)
+      )}
+    </div>
+  </div>`;
+  setEl(containerId, html);
 }
 
 function renderStepResult(containerId, d) {
@@ -2691,7 +2866,8 @@ function chatMd(s) {
 
 function clearChat() {
   const box = document.getElementById('chat-messages');
-  box.innerHTML = '<div class="cmsg rita"><div class="cbubble">Hi! Ask me anything about Nifty investment — market sentiment, return estimates, allocation advice, or stress scenarios.</div></div>';
+  const _n = (_activeInst && _activeInst.name) ? _activeInst.name : 'Nifty';
+  box.innerHTML = `<div class="cmsg rita"><div class="cbubble" id="chat-greeting">Hi! Ask me anything about ${_n} — market sentiment, return estimates, allocation advice, or stress scenarios.</div></div>`;
   _chatConfs = []; _chatLats = [];
   const qEl = document.getElementById('cs-count');
   const cEl = document.getElementById('cs-conf');
@@ -2721,8 +2897,59 @@ async function refresh() {
   if (_sectionLoaders[_currentSection]) _sectionLoaders[_currentSection]();
 }
 
+// ── Active instrument pill ─────────────────────────────────
+let _activeInst = { name: 'Nifty 50', id: 'nifty50' };
+
+async function loadActiveInstrument() {
+  try {
+    const inst = await api('/api/v1/instrument/active');
+    if (!inst || !inst.id) return;
+    _activeInst = inst;
+
+    // Topbar pill
+    const pill = document.getElementById('inst-pill');
+    document.getElementById('inst-pill-flag').textContent = inst.flag || '';
+    document.getElementById('inst-pill-name').textContent = inst.name || inst.id;
+    document.getElementById('inst-pill-exch').textContent = inst.exchange ? `· ${inst.exchange}` : '';
+    pill.style.display = 'flex';
+    document.title = `RITA — ${inst.name || inst.id}`;
+
+    const n = inst.name || inst.id;
+
+    // Sidebar footer
+    const sbInfo = document.getElementById('sb-data-info');
+    if (sbInfo) sbInfo.textContent = `${inst.flag || ''} ${n} · ${inst.exchange || ''}`.trim();
+
+    // Page subtitles
+    const msSub = document.getElementById('ms-page-sub');
+    if (msSub) msSub.textContent = `Technical indicators across timeframes — ${n}`;
+    const maSub = document.getElementById('ma-page-sub');
+    if (maSub) maSub.textContent = `Latest ${n} technical indicators · Timeframe: Daily`;
+    const perfSub = document.getElementById('perf-page-sub');
+    if (perfSub) perfSub.textContent = `Backtest results vs ${n} Buy & Hold benchmark`;
+
+    // Goal form hint
+    const hint = document.getElementById('historical-avg-hint');
+    if (hint) hint.textContent = `Historical ${n} avg: varies by period`;
+
+    // Strategy rationale
+    const stratLi = document.getElementById('strategy-instrument-li');
+    if (stratLi) stratLi.innerHTML = `RITA's <strong>Double DQN model</strong> is trained on ${n} OHLCV data with 9 features including EMAs, RSI, MACD, BB, ATR and Trend Score.`;
+
+    // Chat greeting + chips
+    const greeting = document.getElementById('chat-greeting');
+    if (greeting) greeting.textContent = `Hi! Ask me anything about ${n} — market sentiment, return estimates, allocation advice, or stress scenarios.`;
+    const chipInvest = document.getElementById('chip-invest');
+    if (chipInvest) chipInvest.textContent = `Can I invest in ${n} now?`;
+    const chipFall = document.getElementById('chip-fall');
+    if (chipFall) chipFall.textContent = `What if ${n} falls 10%?`;
+    const chipRally = document.getElementById('chip-rally');
+    if (chipRally) chipRally.textContent = `What if ${n} rallies 10%?`;
+  } catch { /* silently skip if API not ready */ }
+}
+
 // ── Init ───────────────────────────────────────────────────
-window.addEventListener('load', refresh);
+window.addEventListener('load', () => { refresh(); loadActiveInstrument(); });
 </script>
 
 <!-- ── Chart expand modal ───────────────────────────────── -->

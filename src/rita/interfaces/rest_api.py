@@ -42,12 +42,43 @@ from rita.config import (
 
 API_LOG_PATH = os.path.join(OUTPUT_DIR, "api_request_log.csv")
 
-# Path where prepare_data() writes the extended merged CSV
+# Path where prepare_data() writes the extended merged CSV (legacy default)
 _PREPARED_CSV = os.path.join(OUTPUT_DIR, "nifty_merged.csv")
+
+# ─── Active instrument state ──────────────────────────────────────────────────
+
+_active_instrument_id: str = "nifty50"   # default on startup
+
+
+def _get_instrument_registry() -> list:
+    """Load instruments.json from rita_input/. Returns [] if missing."""
+    import json as _json
+    registry_path = os.path.join(INPUT_DIR, "instruments.json")
+    if not os.path.exists(registry_path):
+        return []
+    with open(registry_path, "r", encoding="utf-8") as f:
+        return _json.load(f)
+
+
+def _get_active_instrument() -> dict | None:
+    """Return the registry entry for the currently selected instrument."""
+    for inst in _get_instrument_registry():
+        if inst["id"] == _active_instrument_id:
+            return inst
+    return None
 
 
 def _get_active_csv() -> str:
-    """Return the extended CSV if prepare_data() has been run, else the base CSV."""
+    """
+    Return the prepared CSV for the active instrument.
+    Falls back to the legacy nifty_merged.csv / CSV_PATH if registry is missing.
+    """
+    inst = _get_active_instrument()
+    if inst:
+        csv_path = os.path.join(OUTPUT_DIR, inst["prepared_csv"])
+        if os.path.exists(csv_path):
+            return csv_path
+    # Legacy fallback
     return _PREPARED_CSV if os.path.exists(_PREPARED_CSV) else CSV_PATH
 
 # ─── Portfolio auth guard ─────────────────────────────────────────────────────
@@ -64,6 +95,26 @@ def _require_portfolio_key(x_api_key: str = Header(default="")) -> None:
 # Recompute only when the CSV file changes (mtime-based invalidation).
 # Avoids re-running load_nifty_csv + calculate_indicators (~2 s) on every request.
 _market_signals_cache: dict = {"df": None, "csv_mtime": -1.0}
+
+# ─── Run context helpers ──────────────────────────────────────────────────────
+_RUN_CONTEXT_PATH = os.path.join(OUTPUT_DIR, "run_context.json")
+
+
+def _save_run_context() -> None:
+    """Persist which instrument the current output files (backtest, perf) belong to."""
+    import json as _json
+    with open(_RUN_CONTEXT_PATH, "w", encoding="utf-8") as f:
+        _json.dump({"instrument_id": _active_instrument_id}, f)
+
+
+def _get_run_instrument_id() -> str:
+    """Return the instrument_id the output files were last written for."""
+    import json as _json
+    try:
+        with open(_RUN_CONTEXT_PATH, "r", encoding="utf-8") as f:
+            return _json.load(f).get("instrument_id", "nifty50")
+    except (FileNotFoundError, ValueError):
+        return "nifty50"
 
 # ─── Request Logging Middleware ───────────────────────────────────────────────
 
@@ -139,7 +190,11 @@ def get_orchestrator() -> WorkflowOrchestrator:
         active_csv = _get_active_csv()
         if not os.path.exists(active_csv):
             raise RuntimeError(f"Data CSV not found: {active_csv}. Set NIFTY_CSV_PATH env var.")
-        _orchestrator = WorkflowOrchestrator(active_csv, OUTPUT_DIR)
+        inst = _get_active_instrument()
+        rfr = inst.get("risk_free_rate", 0.07) if inst else 0.07
+        _orchestrator = WorkflowOrchestrator(
+            active_csv, OUTPUT_DIR, risk_free_rate=rfr, instrument_id=_active_instrument_id
+        )
     return _orchestrator
 
 
@@ -227,7 +282,7 @@ def health():
     from datetime import datetime
 
     orch = get_orchestrator()
-    model_path = os.path.join(OUTPUT_DIR, "rita_ddqn_model.zip")
+    model_path = orch.model_zip
     model_exists = os.path.exists(model_path)
 
     # Model age
@@ -289,7 +344,11 @@ def progress():
 def reset():
     """Reset orchestrator session (clears in-memory state, keeps saved files)."""
     global _orchestrator
-    _orchestrator = WorkflowOrchestrator(_get_active_csv(), OUTPUT_DIR)
+    inst = _get_active_instrument()
+    rfr = inst.get("risk_free_rate", 0.07) if inst else 0.07
+    _orchestrator = WorkflowOrchestrator(
+        _get_active_csv(), OUTPUT_DIR, risk_free_rate=rfr, instrument_id=_active_instrument_id
+    )
     return {"status": "reset", "message": "Orchestrator session cleared."}
 
 
@@ -489,6 +548,7 @@ def run_backtest():
     """
     try:
         result = get_orchestrator().step6_run_backtest()
+        _save_run_context()
         return _wrap(result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -497,15 +557,18 @@ def run_backtest():
 # ─── Step 7 ───────────────────────────────────────────────────────────────────
 
 @app.get("/api/v1/results", response_model=StepResponse, tags=["Workflow"])
-def get_results():
+def get_results(record_history: bool = True):
     """
     **Step 7** — Get full results report.
 
     Generates all 5 performance and interpretability plots, checks constraints
     (Sharpe > 1.0, MDD < 10%), and returns the complete performance summary.
+
+    Pass `record_history=false` for scenario/exploration runs to avoid
+    polluting the training history log.
     """
     try:
-        result = get_orchestrator().step7_get_results()
+        result = get_orchestrator().step7_get_results(record_to_history=record_history)
         return _wrap(result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -535,6 +598,7 @@ class PipelineRequest(BaseModel):
     time_horizon_days: int = Field(365, ge=30)
     risk_tolerance: str = Field("moderate")
     timesteps: int = Field(TRAIN_TIMESTEPS, ge=10_000)
+    seeds: int = Field(3, ge=1, le=20)
     force_retrain: bool = Field(False)
     sim_start: str = Field(BACKTEST_START)
     sim_end: Optional[str] = Field(None)
@@ -554,6 +618,7 @@ def run_pipeline(body: PipelineRequest):
             "time_horizon_days": body.time_horizon_days,
             "risk_tolerance": body.risk_tolerance,
             "timesteps": body.timesteps,
+            "seeds": body.seeds,
             "force_retrain": body.force_retrain,
             "sim_start": body.sim_start,
             "sim_end": body.sim_end,
@@ -566,10 +631,12 @@ def run_pipeline(body: PipelineRequest):
         results["step2"] = orch.step2_analyze_market()
         results["step3"] = orch.step3_design_strategy()
         results["step4"] = orch.step4_train_model(
-            timesteps=config["timesteps"], force_retrain=config["force_retrain"]
+            timesteps=config["timesteps"], force_retrain=config["force_retrain"],
+            n_seeds=config.get("seeds", 3)
         )
         results["step5"] = orch.step5_set_simulation_period(config["sim_start"], config["sim_end"])
         results["step6"] = orch.step6_run_backtest()
+        _save_run_context()
         results["step7"] = orch.step7_get_results()
         results["step8"] = orch.step8_update_goal()
         results["progress"] = orch.session.get_progress_summary()
@@ -587,6 +654,70 @@ def _df_to_json(df):
 
 
 # ─── Data Preparation ─────────────────────────────────────────────────────────
+
+@app.get("/api/v1/instruments", tags=["Data"])
+def list_instruments():
+    """
+    Return the instrument registry with data availability status.
+    data_ready=true means the prepared CSV exists in rita_output/.
+    """
+    import json as _json
+    registry_path = os.path.join(INPUT_DIR, "instruments.json")
+    if not os.path.exists(registry_path):
+        return []
+    with open(registry_path, "r", encoding="utf-8") as f:
+        instruments = _json.load(f)
+    for inst in instruments:
+        csv_path = os.path.join(OUTPUT_DIR, inst["prepared_csv"])
+        inst["data_ready"] = os.path.exists(csv_path)
+        inst["csv_path"] = csv_path if inst["data_ready"] else None
+    return instruments
+
+
+@app.get("/api/v1/instrument/active", tags=["Data"])
+def get_active_instrument():
+    """Return the currently selected instrument with its data_ready status."""
+    inst = _get_active_instrument()
+    if not inst:
+        return {"id": "nifty50", "name": "Nifty 50", "data_ready": True}
+    csv_path = os.path.join(OUTPUT_DIR, inst["prepared_csv"])
+    inst = dict(inst)
+    inst["data_ready"] = os.path.exists(csv_path)
+    return inst
+
+
+@app.post("/api/v1/instrument/select", tags=["Data"])
+def select_instrument(body: dict):
+    """
+    Set the active instrument. Resets the orchestrator and market signals cache
+    so subsequent calls load the new instrument's data.
+
+    Body: { "instrument_id": "nifty50" }
+    """
+    global _active_instrument_id, _orchestrator
+    instrument_id = body.get("instrument_id", "").strip()
+    if not instrument_id:
+        raise HTTPException(status_code=400, detail="instrument_id is required")
+
+    registry = _get_instrument_registry()
+    match = next((i for i in registry if i["id"] == instrument_id), None)
+    if not match:
+        raise HTTPException(status_code=404, detail=f"Unknown instrument: {instrument_id}")
+
+    csv_path = os.path.join(OUTPUT_DIR, match["prepared_csv"])
+    if not os.path.exists(csv_path):
+        raise HTTPException(
+            status_code=422,
+            detail=f"No data for {match['name']} — prepare the CSV first ({match['prepared_csv']})"
+        )
+
+    _active_instrument_id = instrument_id
+    _orchestrator = None  # force re-init with new CSV on next request
+    _market_signals_cache["df"] = None
+    _market_signals_cache["csv_mtime"] = -1.0
+
+    return {"status": "ok", "active_instrument": match["id"], "name": match["name"]}
+
 
 @app.get("/api/v1/data-prep/status", tags=["Data"])
 def data_prep_status():
@@ -669,13 +800,16 @@ def get_backtest_daily():
 
 @app.get("/api/v1/performance-summary", tags=["Data"])
 def get_performance_summary():
-    """Serve performance_summary.csv as a flat JSON dict."""
+    """Serve performance_summary.csv as a flat JSON dict, annotated with instrument context."""
     import pandas as pd
     path = os.path.join(OUTPUT_DIR, "performance_summary.csv")
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="performance_summary.csv not found — run pipeline first")
     df = pd.read_csv(path)
-    return df.set_index("metric")["value"].to_dict()
+    result = df.set_index("metric")["value"].to_dict()
+    result["_run_instrument_id"] = _get_run_instrument_id()
+    result["_active_instrument_id"] = _active_instrument_id
+    return result
 
 
 @app.get("/api/v1/training-history", tags=["Data"])
@@ -727,6 +861,216 @@ def get_shap():
     return _df_to_json(df)
 
 
+@app.get("/api/v1/data-understanding", tags=["Data"])
+def get_data_understanding(instrument_id: str = ""):
+    """
+    Compute and return data understanding statistics and chart data for the
+    selected instrument's prepared CSV.
+
+    Returns:
+      - summary: row count, feature count, date range, missing %
+      - distributions: histogram bins/values for 8 key features
+      - correlation: feature names + correlation matrix
+      - timeseries: sampled dates + close, volume, rsi, macd series
+      - clustering: elbow inertia (k=2..8) + PCA 2D scatter with cluster labels
+    """
+    import pandas as pd
+    import numpy as np
+
+    # ── Resolve CSV ──────────────────────────────────────────────────────────
+    if instrument_id:
+        registry = _get_instrument_registry()
+        match = next((i for i in registry if i["id"] == instrument_id), None)
+        if match:
+            candidate = os.path.join(OUTPUT_DIR, match["prepared_csv"])
+            csv_path = candidate if os.path.exists(candidate) else _get_active_csv()
+        else:
+            csv_path = _get_active_csv()
+    else:
+        csv_path = _get_active_csv()
+
+    if not os.path.exists(csv_path):
+        raise HTTPException(status_code=404, detail="No prepared CSV found. Run Data Prep first.")
+
+    df = pd.read_csv(csv_path)
+
+    # Normalise column names to lowercase
+    df.columns = [c.lower() for c in df.columns]
+
+    # Rename NSE-style volume column
+    if "shares traded" in df.columns and "volume" not in df.columns:
+        df.rename(columns={"shares traded": "volume"}, inplace=True)
+
+    # Parse date
+    date_col = next((c for c in df.columns if c in ("date", "datetime", "time")), None)
+    if date_col:
+        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+        df = df.sort_values(date_col).reset_index(drop=True)
+
+    # ── Compute indicators if not present (e.g. raw Nifty CSV) ───────────────
+    if "rsi_14" not in df.columns and "close" in df.columns:
+        try:
+            from rita.core.technical_analyzer import calculate_indicators
+            # calculate_indicators expects title-case OHLCV columns
+            ohlcv_map = {"open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume"}
+            df_titled = df.rename(columns={k: v for k, v in ohlcv_map.items() if k in df.columns})
+            df_ind = calculate_indicators(df_titled)
+            df_ind.columns = [c.lower() for c in df_ind.columns]
+            df = df_ind
+        except Exception:
+            pass  # proceed with what we have
+
+    # Add log_return if not present
+    if "log_return" not in df.columns and "close" in df.columns:
+        df["log_return"] = np.log(df["close"] / df["close"].shift(1))
+
+    # ── Summary ──────────────────────────────────────────────────────────────
+    numeric_df = df.select_dtypes(include=[np.number])
+    total_cells = numeric_df.size
+    missing_pct = round(numeric_df.isna().sum().sum() / total_cells * 100, 2) if total_cells else 0.0
+
+    trend_classes = 0
+    for col in ("trend_code", "final_trend", "dow_trend_spec"):
+        if col in df.columns:
+            trend_classes = int(df[col].nunique())
+            break
+
+    summary = {
+        "rows": len(df),
+        "features": len(numeric_df.columns),
+        "date_from": str(df[date_col].min())[:10] if date_col else "",
+        "date_to":   str(df[date_col].max())[:10] if date_col else "",
+        "missing_pct": missing_pct,
+        "trend_classes": trend_classes,
+    }
+
+    # ── Distributions (histogram) ────────────────────────────────────────────
+    # Column aliases: prefer first name found in df
+    def _first(candidates):
+        return next((c for c in candidates if c in df.columns), None)
+
+    DIST_FEATURES = [
+        (_first(["close"]),                          "Close Price"),
+        (_first(["daily_return"]),                   "Daily Return"),
+        (_first(["rsi_14"]),                         "RSI (14)"),
+        (_first(["volume"]),                         "Volume"),
+        (_first(["macd", "macd_12_26"]),             "MACD"),
+        (_first(["log_return"]),                     "Log Return"),
+        (_first(["macd_hist", "macd_histogram_12_26"]), "MACD Histogram"),
+        (_first(["bb_pct_b", "volatility_20"]),      "BB %B / Volatility"),
+    ]
+    distributions = {}
+    for col, label in DIST_FEATURES:
+        if not col:
+            continue
+        series = df[col].dropna()
+        if len(series) < 10:
+            continue
+        counts, edges = np.histogram(series, bins=40)
+        centers = [round(float((edges[i] + edges[i + 1]) / 2), 4) for i in range(len(edges) - 1)]
+        distributions[col] = {
+            "label": label,
+            "labels": centers,
+            "values": [int(v) for v in counts],
+        }
+
+    # ── Correlation ──────────────────────────────────────────────────────────
+    CORR_CANDIDATES = [
+        "close", "daily_return", "log_return", "rsi_14",
+        "macd", "macd_12_26", "macd_hist", "macd_histogram_12_26",
+        "bb_pct_b", "volatility_20", "volume", "trend_code",
+        "ema_ratio", "trend_score", "atr_14",
+    ]
+    CORR_FEATURES = [c for c in CORR_CANDIDATES if c in df.columns]
+    corr_matrix = []
+    if len(CORR_FEATURES) >= 2:
+        corr = df[CORR_FEATURES].corr().round(2)
+        corr_matrix = corr.values.tolist()
+
+    correlation = {
+        "features": CORR_FEATURES,
+        "matrix": corr_matrix,
+    }
+
+    # ── Time series (sampled to ≤500 points) ─────────────────────────────────
+    MAX_TS = 500
+    ts_df = df.copy()
+    if date_col:
+        ts_df = ts_df.dropna(subset=[date_col])
+    if len(ts_df) > MAX_TS:
+        step = len(ts_df) // MAX_TS
+        ts_df = ts_df.iloc[::step].reset_index(drop=True)
+
+    def _ts_series(col):
+        if col not in ts_df.columns:
+            return []
+        return [None if pd.isna(v) else round(float(v), 4) for v in ts_df[col]]
+
+    macd_col = _first(["macd", "macd_12_26"])
+    timeseries = {
+        "dates":  [str(v)[:10] for v in ts_df[date_col]] if date_col else [],
+        "close":  _ts_series("close"),
+        "volume": _ts_series("volume"),
+        "rsi":    _ts_series("rsi_14"),
+        "macd":   _ts_series(macd_col) if macd_col else [],
+    }
+
+    # ── Clustering ───────────────────────────────────────────────────────────
+    clustering = {"elbow": {}, "pca": {}}
+    try:
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.decomposition import PCA
+        from sklearn.cluster import KMeans
+
+        CLUSTER_FEATURES = [
+            c for c in [
+                "daily_return", "volume", "log_return",
+                "ema_5", "ema_50", "atr_14", "bb_pct_b",
+                "rsi_14", "macd", "macd_12_26", "ema_ratio", "trend_score",
+            ] if c in df.columns
+        ]
+        if len(CLUSTER_FEATURES) >= 3:
+            X = df[CLUSTER_FEATURES].dropna()
+            if len(X) >= 20:
+                scaler = StandardScaler()
+                X_scaled = scaler.fit_transform(X)
+
+                # Elbow
+                inertia = []
+                k_range = list(range(2, 9))
+                for k in k_range:
+                    km = KMeans(n_clusters=k, random_state=42, n_init=5)
+                    km.fit(X_scaled)
+                    inertia.append(round(float(km.inertia_), 2))
+                clustering["elbow"] = {"k": k_range, "inertia": inertia}
+
+                # PCA scatter (k=3)
+                km3 = KMeans(n_clusters=3, random_state=42, n_init=5)
+                labels = km3.fit_predict(X_scaled)
+                pca = PCA(n_components=2)
+                coords = pca.fit_transform(X_scaled)
+                # Sample down for payload size
+                idx = np.linspace(0, len(coords) - 1, min(300, len(coords)), dtype=int)
+                clustering["pca"] = {
+                    "x":       [round(float(coords[i, 0]), 3) for i in idx],
+                    "y":       [round(float(coords[i, 1]), 3) for i in idx],
+                    "cluster": [int(labels[i]) for i in idx],
+                }
+    except ImportError:
+        clustering["error"] = "scikit-learn not installed"
+    except Exception as exc:
+        clustering["error"] = str(exc)
+
+    return {
+        "instrument_id": instrument_id or _active_instrument_id,
+        "summary": summary,
+        "distributions": distributions,
+        "correlation": correlation,
+        "timeseries": timeseries,
+        "clustering": clustering,
+    }
+
+
 @app.get("/api/v1/risk-timeline", tags=["Data"])
 def get_risk_timeline(phase: str = "Backtest"):
     """Serve risk_timeline.csv as JSON. Use phase='all' to return all phases."""
@@ -738,6 +1082,89 @@ def get_risk_timeline(phase: str = "Backtest"):
     if "phase" in df.columns and phase.lower() != "all":
         df = df[df["phase"] == phase]
     return _df_to_json(df)
+
+
+@app.get("/api/v1/trade-events", tags=["Data"])
+def get_trade_events():
+    """Serve risk_trade_events.csv as JSON."""
+    import pandas as pd
+    path = os.path.join(OUTPUT_DIR, "risk_trade_events.csv")
+    if not os.path.exists(path):
+        return []
+    df = pd.read_csv(path)
+    return _df_to_json(df)
+
+
+@app.get("/api/v1/training-progress", tags=["Data"])
+def get_training_progress():
+    """Serve training_progress.csv (TD loss + reward over timesteps) as JSON."""
+    import pandas as pd
+    path = os.path.join(OUTPUT_DIR, "training_progress.csv")
+    if not os.path.exists(path):
+        return []
+    df = pd.read_csv(path).dropna(subset=["timestep"])
+    return _df_to_json(df)
+
+
+# ─── Model Changelog ──────────────────────────────────────────────────────────
+
+_CHANGELOG_COLS = ["date", "version", "category", "change", "notes"]
+_CHANGELOG_CATEGORIES = ["Reward", "Hyperparameter", "Feature", "Architecture", "Data", "Other"]
+_CHANGELOG_SEED = [
+    {"date": "2026-03-17", "version": "v1.0", "category": "Hyperparameter",
+     "change": "Baseline: Double DQN, 200k timesteps, lr=1e-4, buffer=50k, net=[128,128], explore=10%",
+     "notes": "Original model. Backtest Sharpe 1.191, MDD -4.55%, Return 13.85% vs B&H 16.65%"},
+    {"date": "2026-03-17", "version": "v1.1", "category": "Reward",
+     "change": "Replace binary cliff reward with Markowitz-style: ret - 50*ret² + smooth DD penalty",
+     "notes": "Old reward had 2000x scale mismatch. New reward penalises variance proportionally."},
+    {"date": "2026-03-17", "version": "v1.1", "category": "Feature",
+     "change": "Add ATR-14 as 8th observation feature (atr_14 / atr_mean, clipped 0-3)",
+     "notes": "Gives agent live volatility regime signal. Backward-compat via obs-space shape detection."},
+]
+
+
+@app.get("/api/v1/changelog", tags=["Data"])
+def get_changelog():
+    """Serve model_changelog.csv as JSON, seeding with defaults if absent."""
+    import pandas as pd
+    path = os.path.join(OUTPUT_DIR, "model_changelog.csv")
+    if not os.path.exists(path):
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        pd.DataFrame(_CHANGELOG_SEED, columns=_CHANGELOG_COLS).to_csv(path, index=False)
+    df = pd.read_csv(path)
+    for col in _CHANGELOG_COLS:
+        if col not in df.columns:
+            df[col] = ""
+    return _df_to_json(df[_CHANGELOG_COLS].iloc[::-1].reset_index(drop=True))
+
+
+class ChangelogEntry(BaseModel):
+    date: str
+    version: str = ""
+    category: str = "Other"
+    change: str
+    notes: str = ""
+
+
+@app.post("/api/v1/changelog", tags=["Data"], status_code=201)
+def add_changelog_entry(entry: ChangelogEntry):
+    """Append a new entry to model_changelog.csv."""
+    import pandas as pd
+    path = os.path.join(OUTPUT_DIR, "model_changelog.csv")
+    if not os.path.exists(path):
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        df = pd.DataFrame(_CHANGELOG_SEED, columns=_CHANGELOG_COLS)
+    else:
+        df = pd.read_csv(path)
+        for col in _CHANGELOG_COLS:
+            if col not in df.columns:
+                df[col] = ""
+    new_row = pd.DataFrame([{
+        "date": entry.date, "version": entry.version,
+        "category": entry.category, "change": entry.change, "notes": entry.notes,
+    }])
+    pd.concat([df, new_row], ignore_index=True).to_csv(path, index=False)
+    return {"status": "ok", "message": "Entry added"}
 
 
 @app.get("/api/v1/market-signals", tags=["Data"])
@@ -827,6 +1254,20 @@ def get_price_history():
     try:
         from rita.core.portfolio_manager import load_price_history
         return load_price_history(INPUT_DIR)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/v1/portfolio/orders-charges", tags=["Portfolio"],
+         dependencies=[Depends(_require_portfolio_key)])
+def get_orders_charges():
+    """
+    Compute Zerodha F&O broker transaction charges from all orders-*.csv files.
+    Returns list of { date, brokerage, stt, exchange, sebi, stamp, gst, total } oldest-first.
+    """
+    try:
+        from rita.core.portfolio_manager import compute_orders_charges
+        return compute_orders_charges(INPUT_DIR)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

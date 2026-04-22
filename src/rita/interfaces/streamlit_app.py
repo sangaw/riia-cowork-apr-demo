@@ -11,7 +11,7 @@ import math
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../.."))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../.."))
 
 import numpy as np
 import pandas as pd
@@ -20,7 +20,7 @@ from plotly.subplots import make_subplots
 import streamlit as st
 
 from rita.orchestration.workflow import WorkflowOrchestrator
-from rita.core.data_loader import BACKTEST_START, prepare_data
+from rita.core.data_loader import BACKTEST_START
 from rita.core.performance import RISK_FREE_RATE, TRADING_DAYS
 from rita.core.risk_engine import RiskEngine
 from rita.core.training_tracker import TrainingTracker
@@ -33,8 +33,22 @@ from rita.config import NIFTY_CSV_PATH as CSV_PATH, OUTPUT_DIR, INPUT_DIR, API_B
 _PREPARED_CSV = os.path.join(OUTPUT_DIR, "nifty_merged.csv")
 
 
-def _get_active_csv() -> str:
-    """Return the extended CSV if prepare_data() has been run, else the base CSV."""
+def _get_instrument_registry() -> list:
+    import json as _json
+    path = os.path.join(INPUT_DIR, "instruments.json")
+    if not os.path.exists(path):
+        return []
+    with open(path, "r", encoding="utf-8") as f:
+        return _json.load(f)
+
+
+def _get_active_csv(instrument_id: str = "nifty50") -> str:
+    """Return the prepared CSV for the given instrument, else fall back to nifty_merged / base CSV."""
+    for inst in _get_instrument_registry():
+        if inst["id"] == instrument_id:
+            p = os.path.join(OUTPUT_DIR, inst["prepared_csv"])
+            if os.path.exists(p):
+                return p
     return _PREPARED_CSV if os.path.exists(_PREPARED_CSV) else CSV_PATH
 
 STEP_NAMES = [
@@ -77,11 +91,27 @@ st.markdown("""
 
 def render_sidebar() -> dict:
     st.sidebar.title("RIIA")
-    st.sidebar.caption("Nifty 50 · Double DQN · 8-Step Workflow")
+
+    # Instrument selector
+    registry = _get_instrument_registry()
+    if registry:
+        inst_ids    = [i["id"] for i in registry]
+        inst_labels = [f"{i.get('flag','')} {i['name']} ({i['exchange']})" for i in registry]
+        saved_id    = st.session_state.get("_instrument_id", "nifty50")
+        default_idx = inst_ids.index(saved_id) if saved_id in inst_ids else 0
+        selected_label = st.sidebar.selectbox(
+            "Instrument", inst_labels, index=default_idx, key="inst_selector"
+        )
+        instrument_id = inst_ids[inst_labels.index(selected_label)]
+        inst_obj = next((i for i in registry if i["id"] == instrument_id), {})
+        st.sidebar.caption(f"{inst_obj.get('description', '')} · Double DQN")
+    else:
+        instrument_id = "nifty50"
+        st.sidebar.caption("Nifty 50 · Double DQN · 8-Step Workflow")
 
     # Model training
     st.sidebar.subheader("Model Training")
-    model_zip = os.path.join(OUTPUT_DIR, "rita_ddqn_model.zip")
+    model_zip = os.path.join(OUTPUT_DIR, f"model_{instrument_id}.zip")
     model_exists = os.path.exists(model_zip)
 
     if model_exists:
@@ -138,6 +168,7 @@ def render_sidebar() -> dict:
         "sim_end": sim_end or None,
         "record_run": record_run,
         "run_notes": run_notes,
+        "instrument_id": instrument_id,
     }
 
 
@@ -3447,114 +3478,13 @@ def _restore_from_disk(orch: WorkflowOrchestrator) -> tuple[dict, set]:
         return {}, set()
 
 
-# ─── Data Preparation Section ─────────────────────────────────────────────────
-
-def _render_data_prep_section():
-    """
-    Data Preparation panel for the data science workflow.
-    - Shows current active dataset (base vs extended) and its date range.
-    - Lets users upload new NSE-format CSVs (saved to rita_input/).
-    - Runs prepare_data() to merge and extend the dataset.
-    - Resets the orchestrator to pick up the new CSV automatically.
-    """
-    prepared_exists = os.path.exists(_PREPARED_CSV)
-    label = "📂 Data Preparation" + (" — Extended dataset active" if prepared_exists else " — Base dataset active")
-
-    with st.expander(label, expanded=False):
-        # ── Active dataset info ───────────────────────────────────────────────
-        active_csv = _get_active_csv()
-        col_src, col_rows, col_from, col_to = st.columns(4)
-        if os.path.exists(active_csv):
-            try:
-                _hdr = pd.read_csv(active_csv, usecols=[0])
-                _dates = pd.to_datetime(_hdr.iloc[:, 0], errors="coerce").dropna()
-                col_src.metric("Source", "Extended" if prepared_exists else "Base")
-                col_rows.metric("Rows", f"{len(_dates):,}")
-                col_from.metric("From", str(_dates.min())[:10])
-                col_to.metric("To", str(_dates.max())[:10])
-            except Exception as exc:
-                st.warning(f"Could not read active CSV: {exc}")
-        else:
-            st.warning(f"Active CSV not found: `{active_csv}`")
-
-        st.divider()
-
-        # ── Input files in rita_input/ ────────────────────────────────────────
-        import glob as _glob
-        os.makedirs(INPUT_DIR, exist_ok=True)
-        input_files = sorted(_glob.glob(os.path.join(INPUT_DIR, "*.csv")))
-
-        col_files, col_upload = st.columns([1, 1])
-        with col_files:
-            st.markdown(f"**Files in `{INPUT_DIR}/`**")
-            if input_files:
-                for f in input_files:
-                    size_kb = round(os.path.getsize(f) / 1024, 1)
-                    st.markdown(f"📄 `{os.path.basename(f)}` — {size_kb} KB")
-            else:
-                st.caption("No CSV files found. Upload one below.")
-
-        with col_upload:
-            st.markdown("**Upload new NSE CSV**")
-            uploaded = st.file_uploader(
-                "Drop NSE-format CSV here",
-                type=["csv"],
-                label_visibility="collapsed",
-                help="Standard NSE export: Date, Open, High, Low, Close, Shares Traded, Turnover (₹ Cr)",
-            )
-            if uploaded is not None:
-                dest = os.path.join(INPUT_DIR, uploaded.name)
-                with open(dest, "wb") as fh:
-                    fh.write(uploaded.read())
-                st.success(f"Saved `{uploaded.name}` to `{INPUT_DIR}/`")
-                st.rerun()
-
-        st.divider()
-
-        # ── Prepare Data button ───────────────────────────────────────────────
-        col_btn, col_msg = st.columns([1, 3])
-        with col_btn:
-            prep_clicked = st.button(
-                "▶ Prepare Data",
-                type="primary",
-                width="stretch",
-                help="Merge files in rita_input/ with the base CSV and save to rita_output/nifty_merged.csv",
-            )
-        if prep_clicked:
-            if not input_files:
-                col_msg.warning("No CSV files in `rita_input/` — upload at least one first.")
-            else:
-                with st.spinner("Merging CSV files…"):
-                    result = prepare_data(
-                        input_dir=INPUT_DIR,
-                        base_csv=CSV_PATH,
-                        output_csv=_PREPARED_CSV,
-                    )
-                if result.get("status") == "ok":
-                    st.success(
-                        f"✅ Done — {result['rows_added']} rows added | "
-                        f"{result['total_rows']:,} total | "
-                        f"{result['date_from']} → {result['date_to']}"
-                    )
-                    if result.get("skipped"):
-                        st.warning(f"Skipped: {', '.join(result['skipped'])}")
-                    # Reset orchestrator to pick up the new extended CSV
-                    st.session_state.orch = WorkflowOrchestrator(_PREPARED_CSV, OUTPUT_DIR)
-                    st.session_state.step_results = {}
-                    st.session_state.completed_steps = set()
-                    st.session_state._disk_restore_done = True
-                    st.info("Orchestrator reset — run the pipeline to use the extended dataset.")
-                elif result.get("status") == "no_input_files":
-                    st.warning("No input files found after glob — check rita_input/.")
-                else:
-                    st.error(f"Error: {result.get('message', result)}")
-
-
 def main():
-    st.title("RIIA — Risk Informed Investment Approach for Nifty 50 using RL model")
+    st.title("RIIA — Risk Informed Investment Approach")
     st.caption("Double DQN · Train 2010–2022 · Validate 2023–2024 · Backtest 2025")
 
     config = render_sidebar()
+    instrument_id = config.get("instrument_id", "nifty50")
+    st.session_state["_instrument_id"] = instrument_id
 
     # Initialise session state
     if "step_results" not in st.session_state:
@@ -3563,13 +3493,22 @@ def main():
         st.session_state.completed_steps = set()
     if "_disk_restore_done" not in st.session_state:
         st.session_state._disk_restore_done = False
+
+    # Reset orchestrator when instrument changes
+    if "orch" in st.session_state and getattr(st.session_state.orch, "instrument_id", "nifty50") != instrument_id:
+        del st.session_state["orch"]
+        st.session_state.step_results = {}
+        st.session_state.completed_steps = set()
+        st.session_state._disk_restore_done = True
+
     if "orch" not in st.session_state:
-        active_csv = _get_active_csv()
+        active_csv = _get_active_csv(instrument_id)
         if not os.path.exists(active_csv):
-            st.error(f"**Data file not found:** `{active_csv}`")
-            st.info("Set `NIFTY_CSV_PATH` env var or update the path in the source.")
+            st.error(f"**Data file not found:** `{active_csv}` — run the prepare script for this instrument first.")
             st.stop()
-        st.session_state.orch = WorkflowOrchestrator(active_csv, OUTPUT_DIR)
+        inst_obj = next((i for i in _get_instrument_registry() if i["id"] == instrument_id), {})
+        rfr = inst_obj.get("risk_free_rate", 0.07)
+        st.session_state.orch = WorkflowOrchestrator(active_csv, OUTPUT_DIR, risk_free_rate=rfr, instrument_id=instrument_id)
 
     orch: WorkflowOrchestrator = st.session_state.orch
 
@@ -3580,11 +3519,6 @@ def main():
         if restored_results:
             st.session_state.step_results = restored_results
             st.session_state.completed_steps = restored_completed
-
-    # ─── Data Preparation ─────────────────────────────────────────────────────
-    _render_data_prep_section()
-
-    st.divider()
 
     # Action buttons
     btn_build, btn_reuse, btn_reset = st.columns([2, 2, 1])
@@ -3605,7 +3539,12 @@ def main():
         st.session_state.step_results = {}
         st.session_state.completed_steps = set()
         st.session_state._disk_restore_done = True  # prevent re-restore after explicit reset
-        st.session_state.orch = WorkflowOrchestrator(_get_active_csv(), OUTPUT_DIR)
+        inst_obj = next((i for i in _get_instrument_registry() if i["id"] == instrument_id), {})
+        st.session_state.orch = WorkflowOrchestrator(
+            _get_active_csv(instrument_id), OUTPUT_DIR,
+            risk_free_rate=inst_obj.get("risk_free_rate", 0.07),
+            instrument_id=instrument_id,
+        )
         st.rerun()
 
     run_clicked = build_clicked or reuse_clicked
@@ -3624,7 +3563,12 @@ def main():
     if run_clicked:
         st.session_state.step_results = {}
         st.session_state.completed_steps = set()
-        st.session_state.orch = WorkflowOrchestrator(_get_active_csv(), OUTPUT_DIR)
+        inst_obj = next((i for i in _get_instrument_registry() if i["id"] == instrument_id), {})
+        st.session_state.orch = WorkflowOrchestrator(
+            _get_active_csv(instrument_id), OUTPUT_DIR,
+            risk_free_rate=inst_obj.get("risk_free_rate", 0.07),
+            instrument_id=instrument_id,
+        )
         orch = st.session_state.orch
         try:
             results, completed = run_pipeline(orch, config, progress_slot)

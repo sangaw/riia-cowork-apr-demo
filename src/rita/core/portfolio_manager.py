@@ -283,6 +283,112 @@ def load_price_history(input_dir: str) -> list:
     return complete
 
 
+def compute_orders_charges(input_dir: str) -> list:
+    """
+    Parse all orders-*.csv files and compute Zerodha F&O transaction charges per day.
+
+    Zerodha F&O rates applied:
+      Brokerage : ₹20 flat per COMPLETE order
+      STT       : 0.1% of premium on options sell; 0.02% of notional on futures sell
+      Exchange  : 0.035% of premium (options, both sides); 0.00173% of notional (futures, both sides)
+      SEBI      : ₹10 per crore on total turnover (both sides)
+      Stamp     : 0.003% on options buy; 0.002% on futures buy
+      GST       : 18% on (brokerage + exchange + SEBI)
+
+    Returns list of { date, brokerage, stt, exchange, sebi, stamp, gst, total } sorted oldest-first.
+    """
+    results = []
+    ord_files = sorted(
+        f for f in os.listdir(input_dir)
+        if f.lower().startswith("orders-") and f.lower().endswith(".csv")
+    )
+
+    for fname in ord_files:
+        fpath = os.path.join(input_dir, fname)
+        try:
+            df = pd.read_csv(fpath, quotechar='"')
+            df.columns = [c.strip().strip('"') for c in df.columns]
+
+            status_col = next((c for c in df.columns if c.lower() == "status"), None)
+            time_col   = next((c for c in df.columns if c.lower() == "time"), None)
+            type_col   = next((c for c in df.columns if c.lower() == "type"), None)
+            inst_col   = next((c for c in df.columns if c.lower() == "instrument"), None)
+            qty_col    = next((c for c in df.columns if "qty" in c.lower()), None)
+            price_col  = next((c for c in df.columns
+                               if "avg" in c.lower() and "price" in c.lower()), None)
+
+            if not all([status_col, time_col, type_col, inst_col, qty_col, price_col]):
+                continue
+
+            complete = df[df[status_col].str.strip().str.upper() == "COMPLETE"].copy()
+            if complete.empty:
+                continue
+
+            # Derive trade date from first row's Time column ("2026-04-20 15:16:22")
+            first_time = str(complete.iloc[0][time_col]).strip()
+            try:
+                trade_date = datetime.strptime(first_time[:10], "%Y-%m-%d")
+            except ValueError:
+                continue
+            date_str = trade_date.strftime("%d-%b-%Y").upper()
+
+            brokerage = 0.0
+            stt       = 0.0
+            exchange  = 0.0
+            sebi      = 0.0
+            stamp     = 0.0
+
+            for _, row in complete.iterrows():
+                order_type  = str(row[type_col]).strip().upper()
+                instrument  = str(row[inst_col]).strip().upper()
+                qty_str     = str(row[qty_col]).strip()
+                filled_qty  = float(qty_str.split("/")[0]) if "/" in qty_str else float(qty_str or 0)
+                avg_price   = float(str(row[price_col]).replace(",", "") or 0)
+
+                if filled_qty <= 0 or avg_price <= 0:
+                    continue
+
+                is_option = instrument.endswith("CE") or instrument.endswith("PE")
+                is_future = instrument.endswith("FUT")
+                turnover  = filled_qty * avg_price
+
+                brokerage += 20.0                          # ₹20 flat per order
+
+                if is_option:
+                    exchange += turnover * 0.00035         # 0.035% both sides
+                    sebi     += turnover * 0.000001        # ₹10/Cr both sides
+                    if order_type == "SELL":
+                        stt  += turnover * 0.001           # 0.1% options sell
+                    else:
+                        stamp += turnover * 0.00003        # 0.003% options buy
+                elif is_future:
+                    exchange += turnover * 0.0000173       # 0.00173% both sides
+                    sebi     += turnover * 0.000001        # ₹10/Cr both sides
+                    if order_type == "SELL":
+                        stt  += turnover * 0.0002          # 0.02% futures sell
+                    else:
+                        stamp += turnover * 0.00002        # 0.002% futures buy
+
+            gst   = (brokerage + exchange + sebi) * 0.18
+            total = brokerage + stt + exchange + sebi + stamp + gst
+
+            results.append({
+                "date":      date_str,
+                "brokerage": round(brokerage, 2),
+                "stt":       round(stt, 2),
+                "exchange":  round(exchange, 2),
+                "sebi":      round(sebi, 2),
+                "stamp":     round(stamp, 2),
+                "gst":       round(gst, 2),
+                "total":     round(total, 2),
+            })
+        except Exception:
+            continue
+
+    results.sort(key=lambda r: datetime.strptime(r["date"], "%d-%b-%Y"))
+    return results
+
+
 # ─── Positions parser ────────────────────────────────────────────────────────
 
 def _find_latest_csv(input_dir: str, prefix: str) -> Optional[str]:

@@ -1,0 +1,2262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RITA — Data Scientist Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@300;400;500&family=Epilogue:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+:root{
+  --bg:#F5F3EE;--surface:#FFFFFF;--surface2:#F9F8F5;--border:#E4E0D8;--border2:#D0CBBC;
+  --text:#1A1814;--t2:#4A4640;--t3:#8C877A;--t4:#B8B2A6;
+  --build:#1A6B3C;--build-bg:#EDF7F2;--build-bd:#B6DEC9;
+  --run:#0056B8;--run-bg:#EDF4FF;--run-bd:#AECBF5;
+  --mon:#6B2FA0;--mon-bg:#F5EFFE;--mon-bd:#CFADF0;
+  --warn:#92480A;--warn-bg:#FEF4EB;--warn-bd:#F5C99A;
+  --danger:#9B1C1C;--danger-bg:#FEF2F2;--danger-bd:#FCA5A5;
+  --ds:#0E7490;--ds-bg:#ECFEFF;--ds-bd:#67E8F9;
+  --fd:'Epilogue',sans-serif;--fm:'IBM Plex Mono',monospace;--fs:'Instrument Serif',serif;
+  --r:6px;--sh:0 1px 3px rgba(0,0,0,.07),0 1px 2px rgba(0,0,0,.04);
+  --shm:0 4px 12px rgba(0,0,0,.08),0 2px 4px rgba(0,0,0,.05);
+}
+body{background:var(--bg);color:var(--text);font-family:var(--fd);font-size:13px;line-height:1.5;min-height:100vh;}
+.shell{display:grid;grid-template-columns:220px 1fr;grid-template-rows:52px 1fr;min-height:100vh;}
+
+/* ── Topbar ── */
+.topbar{grid-column:1/-1;background:var(--surface);border-bottom:1.5px solid var(--border);display:flex;align-items:center;padding:0 20px;position:sticky;top:0;z-index:200;box-shadow:var(--sh);}
+.logo{display:flex;align-items:center;gap:9px;min-width:202px;}
+.logo-icon{width:26px;height:26px;background:var(--text);border-radius:5px;display:flex;align-items:center;justify-content:center;}
+.logo-icon svg{fill:var(--surface);}
+.logo-name{font-family:var(--fs);font-size:16px;letter-spacing:-.01em;}
+.logo-sub{font-family:var(--fm);font-size:10px;color:var(--t3);margin-left:2px;}
+.topbar-mid{flex:1;padding:0 16px;}
+.topbar-right{display:flex;align-items:center;gap:10px;}
+.status-pill{display:flex;align-items:center;gap:6px;font-family:var(--fm);font-size:11px;color:var(--t2);background:var(--surface2);border:1px solid var(--border);border-radius:100px;padding:3px 10px;}
+.status-dot{width:7px;height:7px;border-radius:50%;background:#ccc;flex-shrink:0;}
+.status-dot.ok{background:var(--build);animation:blink 2s infinite;}
+.status-dot.err{background:var(--danger);}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:5px;font-family:var(--fd);font-size:12px;font-weight:600;padding:7px 14px;border-radius:var(--r);border:1.5px solid transparent;cursor:pointer;transition:opacity .12s,background .12s;white-space:nowrap;line-height:1;}
+.btn:hover{opacity:.85;} .btn:disabled{opacity:.4;cursor:not-allowed;}
+.btn-build{background:var(--build);color:#fff;border-color:var(--build);}
+.btn-run{background:var(--run);color:#fff;border-color:var(--run);}
+.btn-ghost{background:transparent;color:var(--t2);border-color:var(--border);}
+.btn-ds{background:var(--ds);color:#fff;border-color:var(--ds);}
+.btn-warn{background:var(--warn);color:#fff;border-color:var(--warn);}
+.btn-sm{padding:4px 10px;font-size:11px;}
+.btn-full{width:100%;justify-content:center;margin-top:12px;}
+
+/* ── Sidebar ── */
+.sidebar{background:var(--surface);border-right:1.5px solid var(--border);overflow-y:auto;display:flex;flex-direction:column;}
+.nav-section{margin-bottom:2px;padding-top:8px;}
+.nav-label{font-family:var(--fm);font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.1em;color:var(--t4);padding:6px 16px 3px;}
+.nav-item{display:flex;align-items:center;gap:8px;padding:7px 16px;cursor:pointer;font-size:12px;color:var(--t2);transition:background .1s,color .1s;border-left:2px solid transparent;user-select:none;}
+.nav-item:hover{background:var(--surface2);color:var(--text);}
+.nav-item.active{color:var(--text);font-weight:600;}
+.nav-item.active.c-ds{border-left-color:var(--ds);background:var(--ds-bg);}
+.nav-item.active.c-build{border-left-color:var(--build);background:var(--build-bg);}
+.nav-item.active.c-run{border-left-color:var(--run);background:var(--run-bg);}
+.nav-item.active.c-mon{border-left-color:var(--mon);background:var(--mon-bg);}
+.nav-item.active.c-warn{border-left-color:var(--warn);background:var(--warn-bg);}
+.nav-item.active.c-text{border-left-color:var(--text);background:var(--surface2);}
+.nav-icon{width:15px;text-align:center;flex-shrink:0;font-size:12px;}
+.sidebar-footer{margin-top:auto;padding:10px 16px;border-top:1px solid var(--border);}
+.sidebar-footer .lbl{font-family:var(--fm);font-size:10px;color:var(--t4);}
+
+/* ── Main ── */
+.main{overflow-y:auto;padding:22px 26px;}
+
+/* Section visibility */
+.section{display:none;}
+.section.active{display:block;}
+
+/* Page header */
+.page-hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px;}
+.page-title{font-family:var(--fs);font-size:21px;letter-spacing:-.01em;}
+.page-sub{color:var(--t3);font-size:11px;margin-top:2px;}
+.hdr-actions{display:flex;gap:8px;flex-shrink:0;align-items:flex-start;}
+
+/* Pipeline panels (2-col) */
+.pipeline-panels{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
+.pipe-panel{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:18px;box-shadow:var(--sh);}
+.pipe-panel.build{border-top:3px solid var(--build);}
+.pipe-panel.reuse{border-top:3px solid var(--run);}
+.pipe-badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--fm);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:3px 9px;border-radius:3px;margin-bottom:10px;}
+.pipe-badge.build{background:var(--build-bg);color:var(--build);border:1px solid var(--build-bd);}
+.pipe-badge.reuse{background:var(--run-bg);color:var(--run);border:1px solid var(--run-bd);}
+.pipe-desc{font-size:12px;color:var(--t2);line-height:1.55;margin-bottom:14px;}
+
+/* Config form inside panels */
+.cfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
+.cfg-group{display:flex;flex-direction:column;gap:3px;}
+.cfg-group.full{grid-column:1/-1;}
+.cfg-label{font-size:11px;font-weight:600;color:var(--t3);}
+.cfg-input,.cfg-select{background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r);padding:6px 9px;font-family:var(--fd);font-size:12px;color:var(--text);outline:none;width:100%;transition:border-color .12s;}
+.cfg-input:focus,.cfg-select:focus{border-color:var(--ds);}
+.cfg-input[type="date"]{cursor:pointer;color-scheme:light;}
+.cfg-hint{font-size:10px;color:var(--t4);}
+.cfg-check{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--t2);}
+.cfg-check input{accent-color:var(--ds);}
+
+/* Inline step bar inside panels */
+.inline-steps{margin-top:14px;display:none;}
+.inline-steps.visible{display:block;}
+.istep-bar{display:grid;grid-template-columns:repeat(8,1fr);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:6px;}
+.istep{padding:5px 2px;text-align:center;font-family:var(--fm);font-size:8px;color:var(--t4);border-right:1px solid var(--border);}
+.istep:last-child{border-right:none;}
+.istep.done{background:var(--build-bg);color:var(--build);}
+.istep.running{background:var(--run-bg);color:var(--run);font-weight:700;}
+.istep-status{font-family:var(--fm);font-size:11px;color:var(--t3);min-height:18px;}
+
+/* Step detail accordion */
+.step-accordion{margin-top:10px;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
+.step-acc-item{border-bottom:1px solid var(--border);}
+.step-acc-item:last-child{border-bottom:none;}
+.step-acc-hdr{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:12px;background:var(--surface);}
+.step-acc-hdr:hover{background:var(--surface2);}
+.step-acc-hdr .sn{font-family:var(--fm);font-size:10px;color:var(--t3);width:18px;}
+.step-acc-hdr .st{flex:1;}
+.step-acc-hdr .sb{font-family:var(--fm);font-size:10px;}
+.step-acc-body{display:none;padding:10px 12px;background:var(--surface2);font-size:12px;color:var(--t2);}
+.step-acc-body.open{display:block;}
+.step-kv{display:flex;flex-wrap:wrap;gap:8px;}
+.step-kv-item{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:6px 10px;min-width:110px;}
+.step-kv-label{font-family:var(--fm);font-size:9px;text-transform:uppercase;color:var(--t4);}
+.step-kv-val{font-family:var(--fm);font-size:13px;font-weight:500;margin-top:1px;}
+
+/* KPI rows */
+.kpi-row{display:grid;gap:10px;margin-bottom:16px;}
+.kpi-row-4{grid-template-columns:repeat(4,1fr);}
+.kpi-row-5{grid-template-columns:repeat(5,1fr);}
+.kpi-row-6{grid-template-columns:repeat(6,1fr);}
+.kpi-row-3{grid-template-columns:repeat(3,1fr);}
+.kpi{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:12px 14px;box-shadow:var(--sh);}
+.kpi-label{font-family:var(--fm);font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--t3);margin-bottom:3px;}
+.kpi-value{font-family:var(--fm);font-size:20px;font-weight:500;letter-spacing:-.02em;line-height:1.1;}
+.kpi-delta{font-size:10px;color:var(--t3);margin-top:3px;}
+.kpi-value.pos{color:var(--build);}
+.kpi-value.neg{color:var(--danger);}
+.kpi-value.neu{color:var(--run);}
+.kpi-value.ds{color:var(--ds);}
+
+/* Cards */
+.card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:16px;box-shadow:var(--sh);margin-bottom:14px;}
+.card-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.card-title{font-size:12px;font-weight:700;color:var(--text);}
+.card-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;}
+.card-row-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px;}
+
+/* Charts */
+.chart-wrap{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:14px;box-shadow:var(--sh);margin-bottom:14px;}
+.chart-title{font-size:12px;font-weight:600;margin-bottom:10px;color:var(--t2);}
+.chart-box{position:relative;width:100%;}
+.h180{height:180px;} .h220{height:220px;} .h260{height:260px;} .h300{height:300px;} .h340{height:340px;}
+
+/* Tables */
+.tbl-wrap{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);overflow:auto;max-height:300px;box-shadow:var(--sh);margin-bottom:14px;}
+table{width:100%;border-collapse:collapse;}
+th{position:sticky;top:0;z-index:1;background:var(--surface2);font-family:var(--fm);font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--t3);padding:8px 12px;text-align:left;border-bottom:1px solid var(--border);}
+td{padding:7px 12px;border-bottom:1px solid var(--border);font-size:12px;color:var(--t2);}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:var(--surface2);}
+.td-mono{font-family:var(--fm);}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;font-family:var(--fm);font-size:10px;font-weight:500;padding:2px 7px;border-radius:3px;text-transform:uppercase;letter-spacing:.04em;}
+.badge.ok{background:var(--build-bg);color:var(--build);border:1px solid var(--build-bd);}
+.badge.warn{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn-bd);}
+.badge.err{background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger-bd);}
+.badge.run{background:var(--run-bg);color:var(--run);border:1px solid var(--run-bd);}
+.badge.ds{background:var(--ds-bg);color:var(--ds);border:1px solid var(--ds-bd);}
+.badge.neu{background:var(--surface2);color:var(--t2);border:1px solid var(--border);}
+.badge.mon{background:var(--mon-bg);color:var(--mon);border:1px solid var(--mon-bd);}
+
+/* Alert strip */
+.alert-strip{border:1.5px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:14px;}
+.alert-row{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--border);}
+.alert-row:last-child{border-bottom:none;}
+.alert-row.ok{background:var(--build-bg);}
+.alert-row.warn{background:var(--warn-bg);}
+.alert-row.err{background:var(--danger-bg);}
+.alert-icon{font-size:13px;flex-shrink:0;}
+.alert-msg{flex:1;font-size:12px;color:var(--t2);}
+.alert-tag{font-family:var(--fm);font-size:10px;color:var(--t3);}
+
+/* Form */
+.form-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;}
+.form-group{display:flex;flex-direction:column;gap:4px;}
+.form-group.full{grid-column:1/-1;}
+.form-label{font-size:11px;font-weight:600;color:var(--t2);}
+.form-input,.form-select,.form-textarea{background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r);padding:7px 10px;font-family:var(--fd);font-size:12px;color:var(--text);outline:none;transition:border-color .12s;width:100%;}
+.form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--ds);}
+.form-textarea{resize:vertical;min-height:64px;}
+
+/* Divider */
+.divider{border:none;border-top:1px solid var(--border);margin:16px 0;}
+
+/* Empty / loading */
+.empty{text-align:center;padding:32px 20px;color:var(--t4);font-size:12px;}
+
+/* Spinner */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{display:inline-block;width:13px;height:13px;border:2px solid var(--border);border-top-color:var(--ds);border-radius:50%;animation:spin .65s linear infinite;vertical-align:middle;margin-right:5px;}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+
+/* ── Viz / Data Understanding ── */
+.viz-controls{display:flex;align-items:center;gap:16px;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:18px;box-shadow:var(--sh);}
+.viz-pill{font-family:var(--fm);font-size:11px;font-weight:500;padding:5px 14px;border-radius:100px;border:1.5px solid var(--border);background:var(--surface2);color:var(--t2);cursor:pointer;transition:background .1s,border-color .1s,color .1s;white-space:nowrap;}
+.viz-pill:hover{border-color:var(--ds);color:var(--ds);}
+.viz-pill.selected{background:var(--ds-bg);border-color:var(--ds);color:var(--ds);font-weight:700;}
+.viz-pill:disabled{opacity:.4;cursor:not-allowed;}
+.viz-section-hdr{font-family:var(--fm);font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--t4);margin:18px 0 10px;display:flex;align-items:center;gap:8px;}
+.viz-section-hdr::after{content:'';flex:1;border-top:1px solid var(--border);}
+.viz-grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:4px;}
+.viz-grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:4px;}
+.viz-card{background:var(--surface);border:1.5px solid var(--border);border-top:3px solid var(--ds);border-radius:var(--r);padding:12px;box-shadow:var(--sh);display:flex;flex-direction:column;gap:6px;}
+.viz-card-title{font-size:12px;font-weight:700;color:var(--text);}
+.viz-canvas-wrap{position:relative;height:140px;cursor:pointer;border-radius:4px;overflow:hidden;background:var(--surface2);}
+.viz-canvas-wrap:hover{outline:2px solid var(--ds);}
+.viz-canvas-wrap canvas{width:100%!important;height:100%!important;}
+.viz-desc{font-size:11px;color:var(--t3);line-height:1.5;margin-top:2px;}
+.viz-card-wide{grid-column:1/-1;}
+.viz-canvas-wrap.tall{height:240px;}
+
+/* Viz modal */
+.viz-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:500;align-items:center;justify-content:center;}
+.viz-modal.open{display:flex;}
+.viz-modal-inner{background:var(--surface);border-radius:var(--r);padding:20px;max-width:860px;width:90vw;max-height:90vh;overflow-y:auto;position:relative;}
+.viz-modal-close{position:absolute;top:10px;right:14px;font-size:20px;cursor:pointer;color:var(--t3);line-height:1;}
+.viz-modal-close:hover{color:var(--text);}
+.viz-modal-title{font-size:14px;font-weight:700;margin-bottom:4px;}
+.viz-modal-desc{font-size:12px;color:var(--t3);margin-bottom:12px;}
+.viz-modal-canvas-wrap{position:relative;height:360px;}
+.viz-modal-canvas-wrap canvas{width:100%!important;height:100%!important;}
+
+/* Correlation heatmap table */
+.corr-table-wrap{overflow:auto;margin-top:4px;}
+.corr-table{border-collapse:collapse;font-family:var(--fm);font-size:9px;}
+.corr-table th{padding:3px 6px;background:var(--surface2);color:var(--t3);text-align:center;border:1px solid var(--border);white-space:nowrap;}
+.corr-table td{padding:3px 6px;text-align:center;border:1px solid var(--border);font-size:9px;}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- ── Topbar ── -->
+<header class="topbar">
+  <a class="logo" href="/dashboard/" style="text-decoration:none;color:inherit;">
+    <div class="logo-icon">
+      <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1L1 5v6l7 4 7-4V5L8 1zm0 1.8L13.5 6 8 9.2 2.5 6 8 2.8zM2 7.1l5.5 3.2v3.9L2 11V7.1zm7.5 7.1v-3.9L15 7.1V11l-5.5 3.2z"/></svg>
+    </div>
+    <span class="logo-name">RITA</span>
+    <span class="logo-sub">DS Lab</span>
+  </a>
+  <div class="topbar-mid">
+    <span style="font-family:var(--fm);font-size:11px;color:var(--t3)">Data Scientist Workspace · Double DQN · Model Training · Analytics</span>
+  </div>
+  <div class="topbar-right">
+    <div id="inst-pill" style="display:none;align-items:center;gap:8px;background:var(--surface2);border:1.5px solid var(--border);border-radius:100px;padding:4px 12px 4px 8px;font-family:var(--fm);font-size:11px;color:var(--t2)">
+      <span id="inst-pill-flag" style="font-size:15px"></span>
+      <span id="inst-pill-name"></span>
+      <span id="inst-pill-exch" style="color:var(--t4)"></span>
+      <span style="color:var(--border2)">·</span>
+      <a href="/dashboard/" style="color:var(--run);text-decoration:none;font-size:10px;font-weight:600;letter-spacing:.04em">SWITCH ↗</a>
+    </div>
+    <a href="/dashboard/rita.html" style="font-family:var(--fm);font-size:11px;color:var(--t2);text-decoration:none">RITA App ↗</a>
+    <div class="status-pill">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="status-text" style="font-family:var(--fm);font-size:11px">Connecting</span>
+    </div>
+  </div>
+</header>
+
+<!-- ── Sidebar ── -->
+<nav class="sidebar">
+  <div class="nav-section">
+    <div class="nav-label">Visualize</div>
+    <div class="nav-item c-ds active" data-s="understand" onclick="show('understand',this)">
+      <span class="nav-icon">🔬</span> Understand
+    </div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Modeling</div>
+    <div class="nav-item c-text" data-s="dashboard" onclick="show('dashboard',this)">
+      <span class="nav-icon">◈</span> Dashboard
+    </div>
+    <div class="nav-item c-ds" data-s="pipeline" onclick="show('pipeline',this)">
+      <span class="nav-icon">🏗</span> Build
+    </div>
+    <div class="nav-item c-build" data-s="performance" onclick="show('performance',this)">
+      <span class="nav-icon">📈</span> Performance
+    </div>
+    <div class="nav-item c-build" data-s="risk" onclick="show('risk',this)">
+      <span class="nav-icon">🛡</span> Risk View
+    </div>
+    <div class="nav-item c-build" data-s="trades" onclick="show('trades',this)">
+      <span class="nav-icon">📊</span> Trade Journal
+    </div>
+    <div class="nav-item c-build" data-s="explain" onclick="show('explain',this)">
+      <span class="nav-icon">🔍</span> Explainability
+    </div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Model</div>
+    <div class="nav-item c-run" data-s="training" onclick="show('training',this)">
+      <span class="nav-icon">📉</span> Training Progress
+    </div>
+    <div class="nav-item c-run" data-s="changelog" onclick="show('changelog',this)">
+      <span class="nav-icon">📝</span> Model Changelog
+    </div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">Ops</div>
+    <div class="nav-item c-mon" data-s="observability" onclick="show('observability',this)">
+      <span class="nav-icon">🔭</span> Observability
+    </div>
+    <div class="nav-item c-mon" data-s="mcp" onclick="show('mcp',this)">
+      <span class="nav-icon">🔌</span> MCP Calls
+    </div>
+    <div class="nav-item c-warn" data-s="export" onclick="show('export',this)">
+      <span class="nav-icon">📥</span> Export &amp; DevOps
+    </div>
+  </div>
+  <div class="sidebar-footer">
+    <div class="lbl" id="sb-data-info">Data: checking…</div>
+    <div class="lbl" style="margin-top:2px" id="sb-model-info">Model: checking…</div>
+  </div>
+</nav>
+
+<!-- ── Main ── -->
+<main class="main">
+
+<!-- ════════════════════════════════════════════════
+     PIPELINE LAB
+     ════════════════════════════════════════════════ -->
+<div id="s-pipeline" class="section">
+  <div class="page-hdr">
+    <div>
+      <div class="page-title">Build</div>
+      <div class="page-sub">Configure and run the DDQN investment model pipeline end-to-end</div>
+    </div>
+    <div class="hdr-actions">
+      <button class="btn btn-ghost btn-sm" onclick="resetSession()">↺ Reset Session</button>
+    </div>
+  </div>
+
+  <div class="pipeline-panels">
+    <!-- Build panel -->
+    <div class="pipe-panel build">
+      <div class="pipe-badge build">🏗 Build Model Pipeline</div>
+      <div class="pipe-desc">Train a <strong>new DDQN model from scratch</strong> using the configured timesteps and seeds, then run all 8 workflow steps. Use this when experimenting with new hyperparameters, features, or reward functions.</div>
+
+      <div class="cfg-grid">
+        <div class="cfg-group">
+          <label class="cfg-label">Instrument</label>
+          <select class="cfg-select" id="b-instrument"></select>
+        </div>
+        <div class="cfg-group">
+          <label class="cfg-label">Training Timesteps</label>
+          <select class="cfg-select" id="b-timesteps">
+            <option value="50000">50,000</option>
+            <option value="100000" selected>100,000</option>
+            <option value="200000">200,000</option>
+            <option value="300000">300,000</option>
+            <option value="500000">500,000</option>
+          </select>
+          <div class="cfg-hint">More = better, slower</div>
+        </div>
+        <div class="cfg-group">
+          <label class="cfg-label">Best-of-N Seeds</label>
+          <select class="cfg-select" id="b-seeds">
+            <option value="1">1 seed</option>
+            <option value="3" selected>3 seeds</option>
+            <option value="5">5 seeds</option>
+            <option value="10">10 seeds</option>
+          </select>
+          <div class="cfg-hint">Keep highest Sharpe</div>
+        </div>
+        <div class="cfg-group">
+          <label class="cfg-label">Simulation Start</label>
+          <input class="cfg-input" id="b-start" type="date" value="2025-08-01">
+        </div>
+        <div class="cfg-group">
+          <label class="cfg-label">Simulation End</label>
+          <input class="cfg-input" id="b-end" type="date">
+        </div>
+        <div class="cfg-group">
+          <label class="cfg-label">Run Notes</label>
+          <input class="cfg-input" id="b-notes" type="text" placeholder="e.g. reward v2">
+        </div>
+        <div class="cfg-group full">
+          <label class="cfg-check"><input type="checkbox" id="b-record" checked> Record to training history</label>
+        </div>
+      </div>
+
+      <button class="btn btn-build btn-full" id="btn-build" onclick="runBuild()">🏗 Build Model Pipeline</button>
+
+      <!-- Inline step progress -->
+      <div class="inline-steps" id="build-steps">
+        <div class="istep-bar" id="build-bar">
+          <div class="istep" id="b-s1">1<br>Set Goal</div>
+          <div class="istep" id="b-s2">2<br>Analyze</div>
+          <div class="istep" id="b-s3">3<br>Design</div>
+          <div class="istep" id="b-s4">4<br>Train</div>
+          <div class="istep" id="b-s5">5<br>Set Period</div>
+          <div class="istep" id="b-s6">6<br>Backtest</div>
+          <div class="istep" id="b-s7">7<br>Get Results</div>
+          <div class="istep" id="b-s8">8<br>Update</div>
+        </div>
+        <div class="istep-status" id="build-status"></div>
+        <div class="step-accordion" id="build-accordion" style="margin-top:10px;display:none;"></div>
+      </div>
+    </div>
+
+    <!-- Re-use panel -->
+    <div class="pipe-panel reuse">
+      <div class="pipe-badge reuse">▶ Re-use Model Pipeline</div>
+      <div class="pipe-desc"><strong>Skip training</strong> — load the existing trained model and run the backtest on the configured period. Faster for testing different date ranges or refreshing with latest market data.</div>
+
+      <div class="cfg-grid">
+        <div class="cfg-group">
+          <label class="cfg-label">Instrument</label>
+          <select class="cfg-select" id="r-instrument"></select>
+        </div>
+        <div class="cfg-group">
+          <label class="cfg-label">Simulation Start</label>
+          <input class="cfg-input" id="r-start" type="date" value="2025-08-01">
+        </div>
+        <div class="cfg-group">
+          <label class="cfg-label">Simulation End</label>
+          <input class="cfg-input" id="r-end" type="date">
+        </div>
+        <div class="cfg-group">
+          <label class="cfg-label">Run Notes</label>
+          <input class="cfg-input" id="r-notes" type="text" placeholder="e.g. backtest 2026 data">
+        </div>
+        <div class="cfg-group full">
+          <label class="cfg-check"><input type="checkbox" id="r-record" checked> Record to training history</label>
+        </div>
+      </div>
+
+      <button class="btn btn-run btn-full" id="btn-reuse" onclick="runReuse()">▶ Re-use Model Pipeline</button>
+
+      <!-- Inline step progress -->
+      <div class="inline-steps" id="reuse-steps">
+        <div class="istep-bar" id="reuse-bar">
+          <div class="istep" id="r-s1">1<br>Set Goal</div>
+          <div class="istep" id="r-s2">2<br>Analyze</div>
+          <div class="istep" id="r-s3">3<br>Design</div>
+          <div class="istep" id="r-s4">4<br>Load</div>
+          <div class="istep" id="r-s5">5<br>Set Period</div>
+          <div class="istep" id="r-s6">6<br>Backtest</div>
+          <div class="istep" id="r-s7">7<br>Get Results</div>
+          <div class="istep" id="r-s8">8<br>Update</div>
+        </div>
+        <div class="istep-status" id="reuse-status"></div>
+        <div class="step-accordion" id="reuse-accordion" style="margin-top:10px;display:none;"></div>
+      </div>
+    </div>
+  </div><!-- /pipeline-panels -->
+</div>
+
+<!-- ════════════════════════════════════════════════
+     DASHBOARD
+     ════════════════════════════════════════════════ -->
+<div id="s-dashboard" class="section">
+  <div class="page-hdr">
+    <div>
+      <div class="page-title">Dashboard</div>
+      <div class="page-sub">Results from the last successful model build &nbsp;<span id="dash-run-badge" style="display:none" class="badge neu"></span></div>
+    </div>
+    <div class="hdr-actions"><button class="btn btn-ghost btn-sm" onclick="loadDashboard()">↻ Refresh</button></div>
+  </div>
+
+  <div class="kpi-row kpi-row-5" id="dash-kpis">
+    <div class="kpi"><div class="kpi-label">Return</div><div class="kpi-value" id="d-return">—</div><div class="kpi-delta" id="d-return-d"></div></div>
+    <div class="kpi"><div class="kpi-label">CAGR</div><div class="kpi-value" id="d-cagr">—</div><div class="kpi-delta" id="d-cagr-d"></div></div>
+    <div class="kpi"><div class="kpi-label">Sharpe</div><div class="kpi-value" id="d-sharpe">—</div><div class="kpi-delta" id="d-sharpe-d"></div></div>
+    <div class="kpi"><div class="kpi-label">Max DD</div><div class="kpi-value" id="d-mdd">—</div><div class="kpi-delta" id="d-mdd-d"></div></div>
+    <div class="kpi"><div class="kpi-label">Win Rate</div><div class="kpi-value" id="d-winrate">—</div><div class="kpi-delta" id="d-winrate-d"></div></div>
+  </div>
+
+  <div class="card-row">
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Constraint Status</span></div>
+      <div class="alert-strip" id="dash-constraints">
+        <div class="alert-row"><span class="alert-icon">⏳</span><span class="alert-msg">Run the pipeline to see constraint status.</span></div>
+      </div>
+      <div id="dash-recommendations"></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Last Run Summary</span></div>
+      <div id="dash-goal">
+        <div class="empty" style="padding:16px">No training history found. Run the pipeline first.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     PERFORMANCE
+     ════════════════════════════════════════════════ -->
+<div id="s-performance" class="section">
+  <div class="page-hdr">
+    <div><div class="page-title">Performance</div><div class="page-sub" id="perf-page-sub">Backtest results — DDQN strategy vs Buy &amp; Hold</div></div>
+    <div class="hdr-actions"><button class="btn btn-ghost btn-sm" onclick="loadPerformance()">↻ Refresh</button></div>
+  </div>
+
+  <div class="kpi-row kpi-row-5" id="perf-kpis">
+    <div class="kpi"><div class="kpi-label">Total Return</div><div class="kpi-value" id="p-return">—</div><div class="kpi-delta" id="p-return-d"></div></div>
+    <div class="kpi"><div class="kpi-label">CAGR</div><div class="kpi-value" id="p-cagr">—</div><div class="kpi-delta" id="p-cagr-d"></div></div>
+    <div class="kpi"><div class="kpi-label">Sharpe Ratio</div><div class="kpi-value" id="p-sharpe">—</div><div class="kpi-delta" id="p-sharpe-d"></div></div>
+    <div class="kpi"><div class="kpi-label">Max Drawdown</div><div class="kpi-value" id="p-mdd">—</div><div class="kpi-delta" id="p-mdd-d"></div></div>
+    <div class="kpi"><div class="kpi-label">Win Rate</div><div class="kpi-value" id="p-winrate">—</div><div class="kpi-delta" id="p-winrate-d"></div></div>
+  </div>
+
+  <div class="alert-strip" id="perf-constraints">
+    <div class="alert-row"><span class="alert-icon">⏳</span><span class="alert-msg">Loading…</span></div>
+  </div>
+
+  <div class="card-row">
+    <div class="chart-wrap">
+      <div class="chart-title">Cumulative Returns (base = 100)</div>
+      <div class="chart-box h260"><canvas id="ch-returns"></canvas></div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Portfolio Drawdown (%)</div>
+      <div class="chart-box h260"><canvas id="ch-drawdown"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card-row">
+    <div class="chart-wrap">
+      <div class="chart-title">Rolling 63-Day Sharpe Ratio</div>
+      <div class="chart-box h220"><canvas id="ch-sharpe-roll"></canvas></div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">DDQN Allocation Decisions (0% · 50% · 100%)</div>
+      <div class="chart-box h220"><canvas id="ch-alloc"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr">
+      <span class="card-title">Model Build History</span>
+      <span class="badge ds" id="build-badge">0 runs</span>
+    </div>
+    <div class="tbl-wrap" id="build-hist-tbl"><div class="empty">No runs recorded yet.</div></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     RISK VIEW
+     ════════════════════════════════════════════════ -->
+<div id="s-risk" class="section">
+  <div class="page-hdr">
+    <div><div class="page-title">Risk View</div><div class="page-sub">Portfolio VaR, drawdown budget, trade risk impact, and regime confidence</div></div>
+    <div class="hdr-actions"><button class="btn btn-ghost btn-sm" onclick="loadRisk()">↻ Refresh</button></div>
+  </div>
+
+  <div class="kpi-row kpi-row-4" id="risk-kpis">
+    <div class="kpi"><div class="kpi-label">Avg VaR (Invested)</div><div class="kpi-value" id="r-avg-var">—</div></div>
+    <div class="kpi"><div class="kpi-label">Peak VaR</div><div class="kpi-value neg" id="r-peak-var">—</div><div class="kpi-delta" id="r-peak-var-d"></div></div>
+    <div class="kpi"><div class="kpi-label">Max Budget Used</div><div class="kpi-value" id="r-max-budget">—</div><div class="kpi-delta">of 10% MDD limit</div></div>
+    <div class="kpi"><div class="kpi-label">Risk-Increasing Trades</div><div class="kpi-value" id="r-ri-trades">—</div><div class="kpi-delta" id="r-rr-trades-d"></div></div>
+  </div>
+
+  <div class="card-row">
+    <div class="chart-wrap">
+      <div class="chart-title">Rolling 20d Volatility &amp; Portfolio VaR 95%</div>
+      <div class="chart-box h260"><canvas id="ch-var"></canvas></div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Drawdown Risk Budget (% of 10% MDD Limit)</div>
+      <div class="chart-box h260"><canvas id="ch-budget"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card-row">
+    <div class="chart-wrap">
+      <div class="chart-title">ΔVaR per Allocation Change (Trade Risk Impact)</div>
+      <div class="chart-box h260"><canvas id="ch-trade-risk"></canvas></div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Market Regime — Trend Score</div>
+      <div class="chart-box h260"><canvas id="ch-regime"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Phase Risk Summary</span></div>
+    <div class="tbl-wrap" id="risk-phase-tbl"><div class="empty">Run the pipeline to populate risk data.</div></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     TRADE JOURNAL
+     ════════════════════════════════════════════════ -->
+<div id="s-trades" class="section">
+  <div class="page-hdr">
+    <div><div class="page-title">Trade Journal</div><div class="page-sub" id="trades-page-sub">Model entry/exit signals overlaid on price — phase-by-phase analysis</div></div>
+    <div class="hdr-actions"><button class="btn btn-ghost btn-sm" onclick="loadTrades()">↻ Refresh</button></div>
+  </div>
+
+  <div class="kpi-row kpi-row-5" id="trade-kpis">
+    <div class="kpi"><div class="kpi-label">Total Entries</div><div class="kpi-value neu" id="t-entries">—</div></div>
+    <div class="kpi"><div class="kpi-label">Profit Exits</div><div class="kpi-value pos" id="t-profit">—</div></div>
+    <div class="kpi"><div class="kpi-label">Loss Exits</div><div class="kpi-value neg" id="t-loss">—</div></div>
+    <div class="kpi"><div class="kpi-label">Exit Win Rate</div><div class="kpi-value" id="t-winrate">—</div></div>
+    <div class="kpi"><div class="kpi-label">Total Trade Events</div><div class="kpi-value" id="t-total">—</div></div>
+  </div>
+
+  <div class="chart-wrap">
+    <div class="chart-title" id="trades-chart-title">Close — ▲ Entry · ▼ Profit Exit · ✕ Loss Exit (All Phases)</div>
+    <div class="chart-box h300"><canvas id="ch-trade-price"></canvas></div>
+  </div>
+
+  <div class="card-row">
+    <div class="chart-wrap">
+      <div class="chart-title">Portfolio Value (Normalised, base = 1.0)</div>
+      <div class="chart-box h220"><canvas id="ch-trade-pv"></canvas></div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Drawdown % by Phase</div>
+      <div class="chart-box h220"><canvas id="ch-trade-dd"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Per-Phase Trade Statistics</span></div>
+    <div class="tbl-wrap" id="trade-phase-tbl"><div class="empty">Run the pipeline to populate trade journal.</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Full Trade Log</span></div>
+    <div class="tbl-wrap" id="trade-log-tbl"><div class="empty">Run the pipeline to populate trade log.</div></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     EXPLAINABILITY
+     ════════════════════════════════════════════════ -->
+<div id="s-explain" class="section">
+  <div class="page-hdr">
+    <div><div class="page-title">Explainability</div><div class="page-sub">SHAP feature importance — what drives the DDQN's allocation decisions</div></div>
+    <div class="hdr-actions"><button class="btn btn-ghost btn-sm" onclick="loadExplain()">↻ Refresh</button></div>
+  </div>
+
+  <div class="kpi-row kpi-row-3" id="shap-kpis">
+    <div class="kpi"><div class="kpi-label">Most Influential Feature</div><div class="kpi-value ds" id="sh-top">—</div></div>
+    <div class="kpi"><div class="kpi-label">Top Driver — Cash (0%)</div><div class="kpi-value" id="sh-cash">—</div></div>
+    <div class="kpi"><div class="kpi-label">Top Driver — Full (100%)</div><div class="kpi-value" id="sh-full">—</div></div>
+  </div>
+
+  <div class="card-row">
+    <div class="chart-wrap">
+      <div class="chart-title">Global Feature Importance — Mean |SHAP| per Feature × Action</div>
+      <div class="chart-box h300"><canvas id="ch-shap-bar"></canvas></div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Feature Influence per Action — Radar</div>
+      <div class="chart-box h300"><canvas id="ch-shap-radar"></canvas></div>
+    </div>
+  </div>
+
+  <div class="tbl-wrap" id="shap-tbl"><div class="empty">Run the pipeline to generate SHAP explainability data.</div></div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     TRAINING PROGRESS
+     ════════════════════════════════════════════════ -->
+<div id="s-training" class="section">
+  <div class="page-hdr">
+    <div><div class="page-title">Training Progress</div><div class="page-sub">Round-by-round model improvement across training experiments</div></div>
+    <div class="hdr-actions"><button class="btn btn-ghost btn-sm" onclick="loadTraining()">↻ Refresh</button></div>
+  </div>
+
+  <div class="kpi-row kpi-row-4" id="train-kpis">
+    <div class="kpi"><div class="kpi-label">Rounds Recorded</div><div class="kpi-value ds" id="tr-rounds">—</div></div>
+    <div class="kpi"><div class="kpi-label">Best Backtest Sharpe</div><div class="kpi-value" id="tr-best-sharpe">—</div></div>
+    <div class="kpi"><div class="kpi-label">Latest Backtest Return</div><div class="kpi-value" id="tr-latest-ret">—</div></div>
+    <div class="kpi"><div class="kpi-label">Latest Val Sharpe</div><div class="kpi-value" id="tr-latest-val">—</div></div>
+  </div>
+
+  <div class="card-row">
+    <div class="chart-wrap">
+      <div class="chart-title">Sharpe Ratio — Round by Round</div>
+      <div class="chart-box h260"><canvas id="ch-tr-sharpe"></canvas></div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Max Drawdown — Round by Round (lower is better)</div>
+      <div class="chart-box h260"><canvas id="ch-tr-mdd"></canvas></div>
+    </div>
+  </div>
+
+  <div class="chart-wrap">
+    <div class="chart-title">Backtest Total Return &amp; CAGR — Round by Round</div>
+    <div class="chart-box h220"><canvas id="ch-tr-return"></canvas></div>
+  </div>
+
+  <div class="chart-wrap">
+    <div class="chart-title">Training Loss &amp; Reward over Timesteps (available after retrain)</div>
+    <div class="chart-box h220"><canvas id="ch-tr-loss"></canvas></div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Constraint Checklist per Round</span></div>
+    <div class="tbl-wrap" id="train-constraint-tbl"><div class="empty">No data.</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Full Training History</span></div>
+    <div class="tbl-wrap" id="train-hist-tbl"><div class="empty">No training history yet.</div></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     OBSERVABILITY
+     ════════════════════════════════════════════════ -->
+<div id="s-observability" class="section">
+  <div class="page-hdr">
+    <div><div class="page-title">Observability</div><div class="page-sub">Pipeline step timing, model drift detection, and system health</div></div>
+    <div class="hdr-actions"><button class="btn btn-ghost btn-sm" onclick="loadObservability()">↻ Refresh</button></div>
+  </div>
+
+  <div class="kpi-row kpi-row-3" id="obs-kpis">
+    <div class="kpi"><div class="kpi-label">Total Steps Logged</div><div class="kpi-value ds" id="ob-total">—</div></div>
+    <div class="kpi"><div class="kpi-label">Failed Steps</div><div class="kpi-value" id="ob-failed">—</div></div>
+    <div class="kpi"><div class="kpi-label">Drift Status</div><div class="kpi-value" id="ob-drift">—</div></div>
+  </div>
+
+  <div class="card-row">
+    <div class="chart-wrap">
+      <div class="chart-title">Avg Step Duration (seconds)</div>
+      <div class="chart-box h220"><canvas id="ch-ob-dur"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Health Checks</span></div>
+      <div class="alert-strip" id="obs-health"><div class="alert-row"><span class="alert-icon">⏳</span><span class="alert-msg">Loading…</span></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Recent Pipeline Runs</span></div>
+    <div class="tbl-wrap" id="obs-run-tbl"><div class="empty">No runs logged yet.</div></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     MCP CALLS
+     ════════════════════════════════════════════════ -->
+<div id="s-mcp" class="section">
+  <div class="page-hdr">
+    <div><div class="page-title">MCP Calls</div><div class="page-sub">Live log of Claude Desktop → RITA MCP tool invocations</div></div>
+    <div class="hdr-actions"><button class="btn btn-ghost btn-sm" onclick="loadMCP()">↻ Refresh</button></div>
+  </div>
+
+  <div class="kpi-row kpi-row-6" id="mcp-kpis">
+    <div class="kpi"><div class="kpi-label">Total Calls</div><div class="kpi-value ds" id="mc-total">—</div></div>
+    <div class="kpi"><div class="kpi-label">Success Rate</div><div class="kpi-value" id="mc-success">—</div></div>
+    <div class="kpi"><div class="kpi-label">Tools Used</div><div class="kpi-value" id="mc-tools">—</div></div>
+    <div class="kpi"><div class="kpi-label">Avg Latency</div><div class="kpi-value" id="mc-latency">—</div></div>
+    <div class="kpi"><div class="kpi-label">Errors</div><div class="kpi-value" id="mc-errors">—</div></div>
+    <div class="kpi"><div class="kpi-label">Last Call</div><div class="kpi-value" id="mc-last">—</div></div>
+  </div>
+
+  <div class="card-row">
+    <div class="chart-wrap">
+      <div class="chart-title">Tool Usage (total calls per tool)</div>
+      <div class="chart-box h260"><canvas id="ch-mc-usage"></canvas></div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Avg Latency per Tool (ms)</div>
+      <div class="chart-box h260"><canvas id="ch-mc-latency"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Recent MCP Calls (newest first)</span></div>
+    <div class="tbl-wrap" id="mcp-tbl"><div class="empty">No MCP calls logged yet. Connect Claude Desktop and invoke a RITA tool.</div></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     MODEL CHANGELOG
+     ════════════════════════════════════════════════ -->
+<div id="s-changelog" class="section">
+  <div class="page-hdr">
+    <div><div class="page-title">Model Changelog</div><div class="page-sub">Track every model improvement — reward changes, hyperparameters, features, data updates</div></div>
+    <div class="hdr-actions"><button class="btn btn-ghost btn-sm" onclick="loadChangelog()">↻ Refresh</button></div>
+  </div>
+
+  <div class="tbl-wrap" id="cl-tbl"><div class="empty">Loading…</div></div>
+
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">➕ Log a New Change</span></div>
+    <div class="form-grid">
+      <div class="form-group"><label class="form-label">Date</label><input class="form-input" id="cl-date" type="text"></div>
+      <div class="form-group"><label class="form-label">Version Tag</label><input class="form-input" id="cl-version" type="text" placeholder="e.g. v1.2"></div>
+      <div class="form-group"><label class="form-label">Category</label>
+        <select class="form-select" id="cl-cat">
+          <option>Reward</option><option>Hyperparameter</option><option>Feature</option>
+          <option>Architecture</option><option>Data</option><option>Other</option>
+        </select>
+      </div>
+      <div class="form-group full"><label class="form-label">Change Description</label><input class="form-input" id="cl-change" type="text" placeholder="What did you change?"></div>
+      <div class="form-group full"><label class="form-label">Rationale / Notes</label><textarea class="form-textarea" id="cl-notes" placeholder="Why? What problem does it solve?"></textarea></div>
+    </div>
+    <button class="btn btn-ds" onclick="saveChangelog()">Save Entry</button>
+    <span id="cl-msg" style="font-size:11px;margin-left:10px;"></span>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     EXPORT & DEVOPS
+     ════════════════════════════════════════════════ -->
+<div id="s-export" class="section">
+  <div class="page-hdr">
+    <div><div class="page-title">Export &amp; DevOps</div><div class="page-sub">Download results, API health, deployment manifest, and environment config</div></div>
+  </div>
+
+  <div class="card-row">
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Download Results</span></div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button class="btn btn-ghost" style="justify-content:flex-start" onclick="dlJSON('/api/v1/performance-summary','performance_summary.json')">⬇ Performance Summary (JSON)</button>
+        <button class="btn btn-ghost" style="justify-content:flex-start" onclick="dlJSON('/api/v1/training-history','training_history.json')">⬇ Training History (JSON)</button>
+        <button class="btn btn-ghost" style="justify-content:flex-start" onclick="dlJSON('/api/v1/risk-timeline?phase=all','risk_timeline.json')">⬇ Risk Timeline — all phases (JSON)</button>
+        <button class="btn btn-ghost" style="justify-content:flex-start" onclick="dlJSON('/api/v1/trade-events','trade_events.json')">⬇ Trade Events (JSON)</button>
+        <button class="btn btn-ghost" style="justify-content:flex-start" onclick="dlJSON('/api/v1/mcp-calls','mcp_calls.json')">⬇ MCP Call Log (JSON)</button>
+        <button class="btn btn-ghost" style="justify-content:flex-start" onclick="dlJSON('/api/v1/changelog','model_changelog.json')">⬇ Model Changelog (JSON)</button>
+        <button class="btn btn-ghost" style="justify-content:flex-start" onclick="dlJSON('/api/v1/shap','shap_importance.json')">⬇ SHAP Importance (JSON)</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title">API Health</span>
+        <button class="btn btn-ghost btn-sm" onclick="pingAPI()">↻ Ping</button>
+      </div>
+      <div id="api-health"><div class="empty" style="padding:16px">Click Ping to check API.</div></div>
+    </div>
+  </div>
+
+  <div class="card-row">
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Deployment Manifest</span></div>
+      <div id="deploy-manifest"><div class="empty" style="padding:16px">Loading…</div></div>
+    </div>
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Environment Configuration</span></div>
+      <div class="tbl-wrap" id="env-tbl"><div class="empty">Loading…</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     UNDERSTAND DATA
+     ════════════════════════════════════════════════ -->
+<div id="s-understand" class="section active">
+  <div class="page-hdr">
+    <div>
+      <div class="page-title">Understand Data</div>
+      <div class="page-sub">Explore feature distributions, correlations, time series and clustering for the selected instrument</div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="viz-controls">
+    <div style="flex:1;">
+      <div class="cfg-label" style="margin-bottom:8px;">Instrument</div>
+      <div id="viz-instrument-list" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
+      <button class="btn btn-ds" onclick="runUnderstand()">Understand Data</button>
+      <span id="viz-status" style="font-family:var(--fm);font-size:11px;color:var(--t3);"></span>
+    </div>
+  </div>
+
+  <!-- Empty state -->
+  <div id="viz-empty" class="empty" style="padding:48px 20px;">
+    Select an instrument and click <strong>Understand Data</strong> to load analysis.
+  </div>
+
+  <!-- Results — hidden until loaded -->
+  <div id="viz-results" style="display:none;">
+
+    <!-- KPIs -->
+    <div class="kpi-row kpi-row-6" id="viz-kpis">
+      <div class="kpi"><div class="kpi-label">Rows</div><div class="kpi-value ds" id="vk-rows">—</div></div>
+      <div class="kpi"><div class="kpi-label">Features</div><div class="kpi-value ds" id="vk-features">—</div></div>
+      <div class="kpi"><div class="kpi-label">From</div><div class="kpi-value" id="vk-from" style="font-size:13px">—</div></div>
+      <div class="kpi"><div class="kpi-label">To</div><div class="kpi-value" id="vk-to" style="font-size:13px">—</div></div>
+      <div class="kpi"><div class="kpi-label">Missing %</div><div class="kpi-value" id="vk-missing">—</div></div>
+      <div class="kpi"><div class="kpi-label">Trend Classes</div><div class="kpi-value" id="vk-trends">—</div></div>
+    </div>
+
+    <!-- Distributions -->
+    <div class="viz-section-hdr">Distributions</div>
+    <div class="viz-grid-4" id="viz-dist-grid"></div>
+
+    <!-- Correlation -->
+    <div class="viz-section-hdr">Correlation Heatmap</div>
+    <div class="card" style="margin-bottom:14px;">
+      <div class="card-hdr"><span class="card-title">Feature Correlation Matrix</span><span class="badge ds" id="viz-corr-badge"></span></div>
+      <div class="corr-table-wrap" id="viz-corr-table"></div>
+    </div>
+
+    <!-- Time Series -->
+    <div class="viz-section-hdr">Time Series</div>
+    <div class="viz-grid-4" id="viz-ts-grid"></div>
+
+    <!-- Clustering -->
+    <div class="viz-section-hdr">Clustering Analysis</div>
+    <div class="viz-grid-2" id="viz-cluster-grid"></div>
+
+  </div><!-- /viz-results -->
+</div>
+
+<!-- Viz Modal -->
+<div class="viz-modal" id="viz-modal" onclick="closeVizModal()">
+  <div class="viz-modal-inner" onclick="event.stopPropagation()">
+    <span class="viz-modal-close" onclick="closeVizModal()">&times;</span>
+    <div class="viz-modal-title" id="vm-title"></div>
+    <div class="viz-modal-desc" id="vm-desc"></div>
+    <div class="viz-modal-canvas-wrap"><canvas id="vm-canvas"></canvas></div>
+  </div>
+</div>
+
+</main>
+</div><!-- /shell -->
+
+<!-- ══════════════════════════════════════
+     JAVASCRIPT — injected in next step
+     ══════════════════════════════════════ -->
+<script>
+// ─── GLOBAL STATE ──────────────────────────────────────────────
+const CHARTS = {};
+let lastResults = null;
+let running = false;
+
+const C = {
+  build:'#1A6B3C', buildBg:'rgba(26,107,60,.12)',
+  run:'#0056B8',   runBg:'rgba(0,86,184,.12)',
+  mon:'#6B2FA0',   monBg:'rgba(107,47,160,.12)',
+  warn:'#92480A',  warnBg:'rgba(146,72,10,.12)',
+  danger:'#9B1C1C',dangerBg:'rgba(155,28,28,.12)',
+  ds:'#0E7490',    dsBg:'rgba(14,116,144,.12)',
+  t2:'#4A4640', t3:'#8C877A', grid:'rgba(0,0,0,.05)'
+};
+
+const STEP_NAMES = [
+  'Set Goal','Analyze Market','Design Strategy','Train Model',
+  'Set Period','Run Backtest','Get Results','Update Goal'
+];
+
+// ─── UTILITIES ─────────────────────────────────────────────────
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+
+function fmt(v, dec=2) {
+  if (v==null||v==='') return '—';
+  const n = parseFloat(v);
+  return isNaN(n) ? String(v) : n.toFixed(dec);
+}
+function fmtPctRaw(v, dec=1) {
+  if (v==null||v==='') return '—';
+  const n = parseFloat(v);
+  return isNaN(n) ? String(v) : n.toFixed(dec)+'%';
+}
+
+function mkTbl(rows, cols) {
+  if (!rows||!rows.length) return '<div class="empty">No data.</div>';
+  const ths = cols.map(c=>`<th${c.right?' style="text-align:right"':''}>${c.label}</th>`).join('');
+  const trs = rows.map(r=>{
+    const tds = cols.map(c=>{
+      const v = r[c.key]??'—';
+      return `<td${c.mono?' class="td-mono"':''}${c.right?' style="text-align:right"':''}>${v}</td>`;
+    }).join('');
+    return `<tr>${tds}</tr>`;
+  }).join('');
+  return `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+}
+
+function destroyChart(id) { if(CHARTS[id]){CHARTS[id].destroy();delete CHARTS[id];} }
+
+function mkChart(id, type, data, extra={}) {
+  destroyChart(id);
+  const canvas = document.getElementById(id);
+  if (!canvas) return;
+  const defScales = (type==='bar'||type==='line') ? {
+    x:{grid:{color:C.grid},ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3,maxTicksLimit:12}},
+    y:{grid:{color:C.grid},ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3}}
+  } : {};
+  CHARTS[id] = new Chart(canvas, {
+    type, data,
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{labels:{font:{family:"'IBM Plex Mono'",size:10},color:C.t2}}},
+      scales: defScales,
+      ...extra
+    }
+  });
+  return CHARTS[id];
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UNDERSTAND DATA
+// ═══════════════════════════════════════════════════════════════
+
+let _vizSelectedInstrument = null;
+const VIZ_CHARTS = {};
+
+function loadUnderstand() {
+  // Fetch instruments and active instrument in parallel
+  Promise.all([
+    api('/api/v1/instruments'),
+    api('/api/v1/instrument/active').catch(() => null)
+  ]).then(([instruments, active]) => {
+    const list = document.getElementById('viz-instrument-list');
+    if (!list) return;
+    if (!instruments || !instruments.length) {
+      list.innerHTML = '<span style="font-size:12px;color:var(--t4)">No instruments found.</span>';
+      return;
+    }
+    // Use active instrument from home page if not yet set in this session
+    if (!_vizSelectedInstrument && active?.id) {
+      _vizSelectedInstrument = active.id;
+    }
+    list.innerHTML = instruments.map(inst => {
+      const ready = inst.data_ready !== false;
+      const sel = _vizSelectedInstrument === inst.id;
+      return `<button class="viz-pill${sel?' selected':''}${!ready?' disabled':''}"
+        title="${ready?'':'Data not prepared yet'}"
+        onclick="vizSelectInstrument('${inst.id}',this)"
+        ${!ready?'disabled':''}>${inst.name||inst.id}</button>`;
+    }).join('');
+    // If still nothing selected, fall back to first ready
+    if (!_vizSelectedInstrument) {
+      const first = instruments.find(i => i.data_ready !== false);
+      if (first) {
+        _vizSelectedInstrument = first.id;
+        list.querySelector('.viz-pill')?.classList.add('selected');
+      }
+    }
+  }).catch(() => {
+    const list = document.getElementById('viz-instrument-list');
+    if (list) list.innerHTML = '<span style="font-size:12px;color:var(--danger)">Could not load instruments.</span>';
+  });
+}
+
+function vizSelectInstrument(id, el) {
+  _vizSelectedInstrument = id;
+  document.querySelectorAll('#viz-instrument-list .viz-pill').forEach(p => p.classList.remove('selected'));
+  el?.classList.add('selected');
+}
+
+async function runUnderstand() {
+  if (!_vizSelectedInstrument) {
+    document.getElementById('viz-status').textContent = 'Select an instrument first.';
+    return;
+  }
+  const statusEl = document.getElementById('viz-status');
+  statusEl.innerHTML = '<span class="spinner"></span>Loading…';
+  document.getElementById('viz-empty').style.display = 'none';
+  document.getElementById('viz-results').style.display = 'none';
+
+  try {
+    const d = await api(`/api/v1/data-understanding?instrument_id=${_vizSelectedInstrument}`);
+    statusEl.textContent = '';
+    renderVizKPIs(d.summary);
+    renderDistributions(d.distributions);
+    renderCorrelation(d.correlation);
+    renderTimeSeries(d.timeseries);
+    renderClustering(d.clustering);
+    document.getElementById('viz-results').style.display = '';
+  } catch(e) {
+    statusEl.textContent = 'Error: ' + e.message;
+    document.getElementById('viz-empty').style.display = '';
+  }
+}
+
+// ── KPIs ──────────────────────────────────────────────────────
+function renderVizKPIs(s) {
+  if (!s) return;
+  document.getElementById('vk-rows').textContent     = s.rows?.toLocaleString() ?? '—';
+  document.getElementById('vk-features').textContent = s.features ?? '—';
+  document.getElementById('vk-from').textContent     = s.date_from || '—';
+  document.getElementById('vk-to').textContent       = s.date_to   || '—';
+  const mp = s.missing_pct ?? null;
+  const mpEl = document.getElementById('vk-missing');
+  mpEl.textContent = mp !== null ? mp.toFixed(2)+'%' : '—';
+  mpEl.className = 'kpi-value ' + (mp > 5 ? 'neg' : mp > 1 ? 'warn' : 'pos');
+  document.getElementById('vk-trends').textContent   = s.trend_classes || '—';
+}
+
+// ── Distributions ─────────────────────────────────────────────
+const DIST_META = {
+  close:         { desc:'Distribution of daily closing prices. Identifies price concentration zones and outliers.' },
+  daily_return:  { desc:'Daily % returns. Bell-shaped distribution centred near zero is expected for equities.' },
+  rsi_14:        { desc:'RSI(14) distribution. Values cluster below 30 or above 70 indicate trending regimes.' },
+  volume:        { desc:'Trade volume distribution. Right-skewed — a few sessions dominate activity.' },
+  macd:          { desc:'MACD line distribution. Values near zero show periods of low momentum.' },
+  macd_12_26:    { desc:'MACD line distribution. Values near zero show periods of low momentum.' },
+  log_return:    { desc:'Log returns are more symmetric than simple returns and used in risk models.' },
+  macd_hist:     { desc:'MACD histogram — difference between MACD and signal line. Positive = bullish momentum.' },
+  macd_histogram_12_26: { desc:'MACD histogram — difference between MACD and signal line.' },
+  bb_pct_b:      { desc:'Bollinger Band %B. Values near 1 = price at upper band; near 0 = lower band.' },
+  volatility_20: { desc:'20-day rolling volatility. Clusters at higher values mark stressed market regimes.' },
+};
+
+function renderDistributions(dists) {
+  const grid = document.getElementById('viz-dist-grid');
+  if (!grid || !dists) return;
+  grid.innerHTML = '';
+  Object.entries(dists).forEach(([col, d]) => {
+    const meta = DIST_META[col] || {};
+    const cardId = 'vdist-' + col;
+    const card = document.createElement('div');
+    card.className = 'viz-card';
+    card.innerHTML = `
+      <span class="badge ds">Distribution</span>
+      <div class="viz-card-title">${d.label}</div>
+      <div class="viz-canvas-wrap" onclick="openVizModal('${cardId}','${d.label}','${(meta.desc||'').replace(/'/g,"\\'")}')">
+        <canvas id="${cardId}"></canvas>
+      </div>
+      <div class="viz-desc">${meta.desc||''}</div>`;
+    grid.appendChild(card);
+    _makeBarChart(cardId, d.labels, d.values, d.label);
+  });
+}
+
+function _makeBarChart(id, labels, values, label) {
+  destroyChart(id);
+  const canvas = document.getElementById(id);
+  if (!canvas) return;
+  VIZ_CHARTS[id] = { type:'bar', labels, values, label };
+  new Chart(canvas, {
+    type: 'bar',
+    data: { labels, datasets:[{ data:values, backgroundColor: C.dsBg, borderColor: C.ds, borderWidth:1, borderRadius:2 }] },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false} },
+      scales:{
+        x:{ display:false },
+        y:{ grid:{color:C.grid}, ticks:{font:{family:"'IBM Plex Mono'",size:8},color:C.t3,maxTicksLimit:4} }
+      }
+    }
+  });
+}
+
+// ── Correlation heatmap ───────────────────────────────────────
+function renderCorrelation(corr) {
+  const wrap = document.getElementById('viz-corr-table');
+  const badge = document.getElementById('viz-corr-badge');
+  if (!wrap || !corr || !corr.features?.length) return;
+  const feats = corr.features;
+  badge.textContent = feats.length + ' features';
+
+  // Build colour-coded HTML table
+  const hdr = '<th></th>' + feats.map(f => `<th title="${f}">${f.replace(/_/g,' ')}</th>`).join('');
+  const rows = corr.matrix.map((row, i) => {
+    const cells = row.map((v, j) => {
+      const abs = Math.abs(v);
+      const alpha = i === j ? 0.15 : abs * 0.7;
+      const color = i === j ? 'var(--t4)' : v > 0 ? `rgba(26,107,60,${alpha})` : `rgba(155,28,28,${alpha})`;
+      const txt = i === j ? '—' : v.toFixed(2);
+      return `<td style="background:${color}">${txt}</td>`;
+    }).join('');
+    return `<tr><th>${feats[i].replace(/_/g,' ')}</th>${cells}</tr>`;
+  }).join('');
+
+  wrap.innerHTML = `<table class="corr-table"><thead><tr>${hdr}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// ── Time Series ───────────────────────────────────────────────
+const TS_META = [
+  { key:'close',  label:'Close Price',   desc:'OHLCV closing price over the full history of the instrument.' },
+  { key:'volume', label:'Volume',        desc:'Daily traded volume. Spikes often coincide with significant price moves.' },
+  { key:'rsi',    label:'RSI (14)',      desc:'Relative Strength Index. Dashed lines at 30 and 70 mark extremes.' },
+  { key:'macd',   label:'MACD (12/26)',  desc:'MACD line. Crosses above zero indicate bullish momentum shifts.' },
+];
+
+function renderTimeSeries(ts) {
+  const grid = document.getElementById('viz-ts-grid');
+  if (!grid || !ts?.dates?.length) return;
+  grid.innerHTML = '';
+  TS_META.forEach(m => {
+    if (!ts[m.key]?.length) return;
+    const cardId = 'vts-' + m.key;
+    const card = document.createElement('div');
+    card.className = 'viz-card';
+    card.innerHTML = `
+      <span class="badge run">Time Series</span>
+      <div class="viz-card-title">${m.label}</div>
+      <div class="viz-canvas-wrap" onclick="openVizModal('${cardId}','${m.label}','${m.desc.replace(/'/g,"\\'")}')">
+        <canvas id="${cardId}"></canvas>
+      </div>
+      <div class="viz-desc">${m.desc}</div>`;
+    grid.appendChild(card);
+    _makeLineChart(cardId, ts.dates, ts[m.key], m.label, m.key === 'rsi');
+  });
+}
+
+function _makeLineChart(id, dates, values, label, isRsi) {
+  destroyChart(id);
+  const canvas = document.getElementById(id);
+  if (!canvas) return;
+  VIZ_CHARTS[id] = { type:'line', dates, values, label, isRsi };
+  const annotations = isRsi ? {
+    line30:{ type:'line', yMin:30, yMax:30, borderColor:'rgba(155,28,28,.4)', borderWidth:1, borderDash:[3,3] },
+    line70:{ type:'line', yMin:70, yMax:70, borderColor:'rgba(26,107,60,.4)', borderWidth:1, borderDash:[3,3] }
+  } : {};
+  new Chart(canvas, {
+    type:'line',
+    data:{ labels:dates, datasets:[{ data:values, borderColor:C.run, borderWidth:1.5, pointRadius:0, fill:false, tension:0.2 }] },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, annotation:{annotations} },
+      scales:{
+        x:{ display:false },
+        y:{ grid:{color:C.grid}, ticks:{font:{family:"'IBM Plex Mono'",size:8},color:C.t3,maxTicksLimit:4} }
+      }
+    }
+  });
+}
+
+// ── Clustering ────────────────────────────────────────────────
+const CLUSTER_COLORS = ['rgba(14,116,144,.7)','rgba(26,107,60,.7)','rgba(155,28,28,.7)'];
+
+function renderClustering(cl) {
+  const grid = document.getElementById('viz-cluster-grid');
+  if (!grid || !cl) return;
+  grid.innerHTML = '';
+
+  // Elbow chart
+  if (cl.elbow?.k?.length) {
+    const cid = 'vcl-elbow';
+    const card = document.createElement('div');
+    card.className = 'viz-card';
+    card.innerHTML = `
+      <span class="badge mon">Clustering</span>
+      <div class="viz-card-title">Elbow Method</div>
+      <div class="viz-canvas-wrap" onclick="openVizModal('${cid}','Elbow Method','Inertia vs number of clusters. The elbow point suggests the optimal k.')">
+        <canvas id="${cid}"></canvas>
+      </div>
+      <div class="viz-desc">Inertia vs k. The elbow suggests the optimal number of market regime clusters.</div>`;
+    grid.appendChild(card);
+    destroyChart(cid);
+    const canvas = document.getElementById(cid);
+    VIZ_CHARTS[cid] = { type:'elbow', ...cl.elbow };
+    new Chart(canvas, {
+      type:'line',
+      data:{ labels:cl.elbow.k, datasets:[{ data:cl.elbow.inertia, borderColor:C.mon, borderWidth:2, pointRadius:4, pointBackgroundColor:C.mon, fill:false }] },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false} },
+        scales:{
+          x:{ title:{display:true,text:'k',font:{family:"'IBM Plex Mono'",size:9},color:C.t3}, grid:{color:C.grid}, ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3} },
+          y:{ title:{display:true,text:'Inertia',font:{family:"'IBM Plex Mono'",size:9},color:C.t3}, grid:{color:C.grid}, ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3} }
+        }
+      }
+    });
+  }
+
+  // PCA scatter
+  if (cl.pca?.x?.length) {
+    const cid = 'vcl-pca';
+    const card = document.createElement('div');
+    card.className = 'viz-card';
+    card.innerHTML = `
+      <span class="badge mon">Clustering</span>
+      <div class="viz-card-title">PCA Cluster Scatter</div>
+      <div class="viz-canvas-wrap" onclick="openVizModal('${cid}','PCA Cluster Scatter','2D PCA projection of all features coloured by K-Means cluster (k=3).')">
+        <canvas id="${cid}"></canvas>
+      </div>
+      <div class="viz-desc">2D PCA projection coloured by K-Means cluster (k=3). Distinct regions indicate separable market regimes.</div>`;
+    grid.appendChild(card);
+    destroyChart(cid);
+    const canvas = document.getElementById(cid);
+    VIZ_CHARTS[cid] = { type:'pca', ...cl.pca };
+    // Split by cluster
+    const byCluster = {};
+    cl.pca.cluster.forEach((c, i) => {
+      if (!byCluster[c]) byCluster[c] = [];
+      byCluster[c].push({ x: cl.pca.x[i], y: cl.pca.y[i] });
+    });
+    const datasets = Object.entries(byCluster).map(([c, pts]) => ({
+      label: 'Cluster ' + c,
+      data: pts,
+      backgroundColor: CLUSTER_COLORS[+c] || 'rgba(100,100,100,.6)',
+      pointRadius: 3,
+    }));
+    new Chart(canvas, {
+      type:'scatter',
+      data:{ datasets },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{labels:{font:{family:"'IBM Plex Mono'",size:9},color:C.t2}} },
+        scales:{
+          x:{ title:{display:true,text:'PCA 1',font:{family:"'IBM Plex Mono'",size:9},color:C.t3}, grid:{color:C.grid}, ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3} },
+          y:{ title:{display:true,text:'PCA 2',font:{family:"'IBM Plex Mono'",size:9},color:C.t3}, grid:{color:C.grid}, ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3} }
+        }
+      }
+    });
+  }
+}
+
+// ── Modal ─────────────────────────────────────────────────────
+let _vmChart = null;
+
+function openVizModal(chartId, title, desc) {
+  document.getElementById('vm-title').textContent = title;
+  document.getElementById('vm-desc').textContent = desc;
+  document.getElementById('viz-modal').classList.add('open');
+
+  // Re-render the chart into the modal canvas
+  if (_vmChart) { _vmChart.destroy(); _vmChart = null; }
+  const src = VIZ_CHARTS[chartId];
+  if (!src) return;
+  const canvas = document.getElementById('vm-canvas');
+
+  if (src.type === 'bar') {
+    _vmChart = new Chart(canvas, {
+      type:'bar',
+      data:{ labels:src.labels, datasets:[{ data:src.values, backgroundColor:C.dsBg, borderColor:C.ds, borderWidth:1, borderRadius:2 }] },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false} },
+        scales:{
+          x:{ grid:{color:C.grid}, ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3,maxTicksLimit:10} },
+          y:{ grid:{color:C.grid}, ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3} }
+        }
+      }
+    });
+  } else if (src.type === 'line') {
+    const annotations = src.isRsi ? {
+      line30:{ type:'line', yMin:30, yMax:30, borderColor:'rgba(155,28,28,.4)', borderWidth:1, borderDash:[3,3] },
+      line70:{ type:'line', yMin:70, yMax:70, borderColor:'rgba(26,107,60,.4)', borderWidth:1, borderDash:[3,3] }
+    } : {};
+    _vmChart = new Chart(canvas, {
+      type:'line',
+      data:{ labels:src.dates, datasets:[{ data:src.values, borderColor:C.run, borderWidth:1.5, pointRadius:0, fill:false, tension:0.2 }] },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, annotation:{annotations} },
+        scales:{
+          x:{ grid:{color:C.grid}, ticks:{font:{family:"'IBM Plex Mono'",size:8},color:C.t3,maxTicksLimit:12} },
+          y:{ grid:{color:C.grid}, ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3} }
+        }
+      }
+    });
+  } else if (src.type === 'elbow') {
+    _vmChart = new Chart(canvas, {
+      type:'line',
+      data:{ labels:src.k, datasets:[{ data:src.inertia, borderColor:C.mon, borderWidth:2, pointRadius:5, pointBackgroundColor:C.mon, fill:false }] },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false} },
+        scales:{
+          x:{ title:{display:true,text:'k'}, grid:{color:C.grid}, ticks:{font:{family:"'IBM Plex Mono'",size:10}} },
+          y:{ title:{display:true,text:'Inertia'}, grid:{color:C.grid}, ticks:{font:{family:"'IBM Plex Mono'",size:10}} }
+        }
+      }
+    });
+  } else if (src.type === 'pca') {
+    const byCluster = {};
+    src.cluster.forEach((c, i) => {
+      if (!byCluster[c]) byCluster[c] = [];
+      byCluster[c].push({ x:src.x[i], y:src.y[i] });
+    });
+    const datasets = Object.entries(byCluster).map(([c, pts]) => ({
+      label:'Cluster '+c, data:pts,
+      backgroundColor: CLUSTER_COLORS[+c]||'rgba(100,100,100,.6)', pointRadius:4,
+    }));
+    _vmChart = new Chart(canvas, {
+      type:'scatter',
+      data:{ datasets },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{labels:{font:{family:"'IBM Plex Mono'",size:10},color:C.t2}} },
+        scales:{
+          x:{ title:{display:true,text:'PCA 1'}, grid:{color:C.grid}, ticks:{font:{family:"'IBM Plex Mono'",size:10}} },
+          y:{ title:{display:true,text:'PCA 2'}, grid:{color:C.grid}, ticks:{font:{family:"'IBM Plex Mono'",size:10}} }
+        }
+      }
+    });
+  }
+}
+
+function closeVizModal() {
+  document.getElementById('viz-modal').classList.remove('open');
+  if (_vmChart) { _vmChart.destroy(); _vmChart = null; }
+}
+
+document.addEventListener('keydown', e => { if (e.key==='Escape') closeVizModal(); });
+
+// ─── NAVIGATION ────────────────────────────────────────────────
+function show(sId, el) {
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('s-'+sId)?.classList.add('active');
+  el?.classList.add('active');
+  const loaders = {
+    understand:loadUnderstand,
+    dashboard:loadDashboard, performance:loadPerformance, risk:loadRisk,
+    trades:loadTrades, explain:loadExplain, training:loadTraining,
+    observability:loadObservability, mcp:loadMCP,
+    changelog:loadChangelog, export:loadExport
+  };
+  if (loaders[sId]) loaders[sId]();
+}
+
+// ─── INLINE STEP BAR ───────────────────────────────────────────
+function markIStep(prefix, n, state) {
+  const el = document.getElementById(`${prefix}-s${n}`);
+  if (!el) return;
+  el.classList.remove('done','running');
+  if (state==='done') el.classList.add('done');
+  if (state==='running') el.classList.add('running');
+}
+function resetISteps(prefix) { for(let i=1;i<=8;i++) markIStep(prefix,i,'pending'); }
+
+function buildAccordion(accId, stepData) {
+  const acc = document.getElementById(accId);
+  if (!acc) return;
+  acc.style.display='';
+  acc.innerHTML = stepData.map((s,i)=>{
+    const ok = s.status==='ok'||s.status==='success';
+    const dur = s.duration_s ? parseFloat(s.duration_s).toFixed(2)+'s' : '';
+    const detail = s.details||{};
+    const kvHtml = Object.entries(detail).map(([k,v])=>
+      `<div class="step-kv-item"><div class="step-kv-label">${k}</div><div class="step-kv-val">${v}</div></div>`
+    ).join('');
+    return `
+    <div class="step-acc-item">
+      <div class="step-acc-hdr" onclick="this.nextElementSibling.classList.toggle('open')">
+        <span class="sn">${i+1}</span>
+        <span class="st">${s.name||s.step_name||STEP_NAMES[i]}</span>
+        <span style="font-family:var(--fm);font-size:10px;color:var(--t3);margin-right:6px">${dur}</span>
+        <span class="badge ${ok?'ok':'err'}">${ok?'✓':'✗'}</span>
+      </div>
+      <div class="step-acc-body">
+        ${kvHtml?`<div class="step-kv">${kvHtml}</div>`:'<div style="color:var(--t4);font-size:11px">No detail data.</div>'}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ─── PIPELINE RUNNER ───────────────────────────────────────────
+async function runPipeline(forceRetrain) {
+  if (running) return;
+  const prefix  = forceRetrain ? 'b' : 'r';
+  const btnId   = forceRetrain ? 'btn-build' : 'btn-reuse';
+  const stepsEl = document.getElementById(forceRetrain ? 'build-steps' : 'reuse-steps');
+  const statusEl= document.getElementById(forceRetrain ? 'build-status' : 'reuse-status');
+  const accId   = forceRetrain ? 'build-accordion' : 'reuse-accordion';
+
+  const get = id => document.getElementById(id);
+  const iid = forceRetrain ? 'b' : 'r';
+  const selectedInstrumentId = get(`${iid}-instrument`)?.value || _activeInst?.id || '';
+  const seeds = parseInt(get('b-seeds')?.value || 3);
+
+  const body = {
+    target_return_pct:15, time_horizon_days:252, risk_tolerance:'moderate',
+    force_retrain: forceRetrain,
+    seeds,
+    sim_start: get(`${iid}-start`).value||null,
+    sim_end:   get(`${iid}-end`).value||null
+  };
+  if (forceRetrain) {
+    body.timesteps = parseInt(get('b-timesteps').value);
+  }
+
+  const totalTimesteps = forceRetrain
+    ? (parseInt(get('b-timesteps')?.value||100000) * seeds)
+    : 0;
+
+  running = true;
+  get(btnId).disabled = true;
+  stepsEl.classList.add('visible');
+  resetISteps(prefix);
+  statusEl.innerHTML = '<span class="spinner"></span>Switching instrument…';
+
+  // Switch active instrument on the server to match the selected dropdown
+  if (selectedInstrumentId) {
+    try {
+      await api('/api/v1/instrument/select', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ instrument_id: selectedInstrumentId })
+      });
+      await loadActiveInstrument(); // update topbar pill immediately
+    } catch(e) {
+      statusEl.innerHTML = `<span class="badge err" style="font-size:11px">✗ Could not select instrument: ${e.message}</span>`;
+      running = false;
+      get(btnId).disabled = false;
+      return;
+    }
+  }
+
+  statusEl.innerHTML = '<span class="spinner"></span>Starting pipeline…';
+
+  // Step keys returned by /progress match these in order
+  const STEP_KEYS = [
+    'step1_goal_set','step2_market_analyzed','step3_strategy_designed',
+    'step4_model_trained','step5_period_set','step6_backtest_run',
+    'step7_results_ready','step8_goal_updated'
+  ];
+
+  let pollTimer = null;
+  let lastRunningStep = 1;
+  let seenInProgress = false; // guards against stale state from prior completed run
+
+  async function pollProgress() {
+    try {
+      const prog = await api('/progress');
+      const steps = prog.steps || {};
+
+      // Find first incomplete step = currently running step
+      let runningStep = null;
+      for (let i = 0; i < STEP_KEYS.length; i++) {
+        if (!steps[STEP_KEYS[i]]) { runningStep = i + 1; break; }
+      }
+
+      // If all steps appear done but we haven't seen an in-progress state yet,
+      // this is stale data from the prior completed run — stay on "Starting…"
+      if (runningStep === null && !seenInProgress) {
+        pollTimer = setTimeout(pollProgress, 2000);
+        return;
+      }
+      if (runningStep === null) runningStep = 8; // truly on last step
+      if (!seenInProgress) seenInProgress = true;
+      lastRunningStep = runningStep;
+
+      // Update step bar — only mark steps the server has confirmed done
+      for (let i = 1; i <= 8; i++) {
+        if (steps[STEP_KEYS[i-1]]) markIStep(prefix, i, 'done');
+        else if (i === runningStep)  markIStep(prefix, i, 'running');
+      }
+
+      // Status line — show real training progress for step 4
+      if (runningStep === 4 && forceRetrain) {
+        api('/api/v1/training-progress').then(rows => {
+          if (rows && rows.length) {
+            const maxTs = Math.max(...rows.map(r => parseInt(r.timestep)||0));
+            const pct   = totalTimesteps > 0 ? Math.min(Math.round(maxTs / totalTimesteps * 100), 99) : '?';
+            statusEl.innerHTML = `<span class="spinner"></span>Step 4 — Training… ${maxTs.toLocaleString()} / ${totalTimesteps.toLocaleString()} steps (${pct}%)`;
+          } else {
+            statusEl.innerHTML = '<span class="spinner"></span>Step 4 — Model Training…';
+          }
+        }).catch(() => {
+          statusEl.innerHTML = '<span class="spinner"></span>Step 4 — Model Training…';
+        });
+      } else {
+        statusEl.innerHTML = `<span class="spinner"></span>Step ${runningStep} — ${STEP_NAMES[runningStep-1]}…`;
+      }
+    } catch(e) { /* keep polling silently */ }
+
+    pollTimer = setTimeout(pollProgress, 2000);
+  }
+
+  pollProgress(); // start real-time polling immediately
+
+  try {
+    const result = await api('/api/v1/pipeline',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+    clearTimeout(pollTimer);
+    for(let i=1;i<=8;i++) markIStep(prefix,i,'done');
+    statusEl.innerHTML='<span class="badge ok" style="font-size:11px">✓ Complete</span>';
+    lastResults = result;
+    try {
+      const log = await api('/api/v1/step-log');
+      if (log&&log.length) buildAccordion(accId, log);
+    } catch(e){}
+    await loadActiveInstrument(); // refresh topbar pill + page subtitles for new instrument
+    setTimeout(()=>{ const n=document.querySelector('[data-s="dashboard"]'); show('dashboard',n); }, 800);
+  } catch(e) {
+    clearTimeout(pollTimer);
+    markIStep(prefix, lastRunningStep, 'pending');
+    statusEl.innerHTML=`<span class="badge err" style="font-size:11px">✗ ${e.message}</span>`;
+  } finally {
+    running=false;
+    get(btnId).disabled=false;
+  }
+}
+
+function runBuild()  { runPipeline(true);  }
+function runReuse()  { runPipeline(false); }
+
+async function resetSession() {
+  if(!confirm('Reset pipeline session? In-memory results will be cleared.')) return;
+  try {
+    await api('/reset',{method:'POST'});
+    lastResults=null;
+    ['build-steps','reuse-steps'].forEach(id=>document.getElementById(id).classList.remove('visible'));
+    ['build-status','reuse-status'].forEach(id=>document.getElementById(id).innerHTML='');
+    ['build-accordion','reuse-accordion'].forEach(id=>{ document.getElementById(id).style.display='none'; document.getElementById(id).innerHTML=''; });
+    resetISteps('b'); resetISteps('r');
+  } catch(e) { alert('Reset failed: '+e.message); }
+}
+
+// ─── INSTRUMENTS ───────────────────────────────────────────────
+let _instrumentList = [];
+
+async function loadInstruments() {
+  try {
+    const d = await api('/api/v1/instruments');
+    const raw = Array.isArray(d) ? d : (d.instruments||[]);
+    _instrumentList = raw.map(i => typeof i === 'string'
+      ? { id: i, name: i }
+      : { id: i.id||i.name||'nifty50', name: i.name||i.symbol||i.id||'NIFTY' });
+    if (!_instrumentList.length) _instrumentList = [{ id:'nifty50', name:'NIFTY' }];
+  } catch(e){ _instrumentList = [{ id:'nifty50', name:'NIFTY' }]; }
+
+  ['b-instrument','r-instrument'].forEach(selId => {
+    const sel = document.getElementById(selId);
+    if (sel) sel.innerHTML = _instrumentList.map(i => `<option value="${i.id}">${i.name}</option>`).join('');
+  });
+}
+
+// ─── STATUS CHECK ──────────────────────────────────────────────
+async function checkStatus() {
+  const dot=document.getElementById('status-dot');
+  const txt=document.getElementById('status-text');
+  const sbD=document.getElementById('sb-data-info');
+  const sbM=document.getElementById('sb-model-info');
+  try {
+    const h=await api('/health');
+    dot.className='status-dot ok'; txt.textContent='API Online';
+    if(h.latest_date) sbD.textContent=`Data: through ${h.latest_date}`;
+    else if(h.data_rows) sbD.textContent=`Data: ${h.data_rows} rows`;
+    if(h.model_file) sbM.textContent=`Model: ${h.model_file}`;
+  } catch(e) {
+    dot.className='status-dot err'; txt.textContent='API Offline';
+    sbD.textContent='Data: unavailable'; sbM.textContent='Model: unavailable';
+  }
+}
+
+// ─── DASHBOARD ─────────────────────────────────────────────────
+async function loadDashboard() {
+  try {
+    // Pull last run info from training history for context badge
+    // Last run badge from training history
+    api('/api/v1/training-history').then(hist => {
+      if (!hist || !hist.length) return;
+      const last = hist[hist.length - 1];
+      const badge = document.getElementById('dash-run-badge');
+      if (!badge) return;
+      const parts = [];
+      if (last.timestamp) parts.push(last.timestamp.slice(0,10));
+      if (last.val_sharpe != null) parts.push('Val Sharpe ' + parseFloat(last.val_sharpe).toFixed(3));
+      if (last.backtest_sharpe != null) parts.push('BT Sharpe ' + parseFloat(last.backtest_sharpe).toFixed(3));
+      if (parts.length) { badge.textContent = parts.join(' · '); badge.style.display = ''; }
+    }).catch(()=>{});
+
+    const d = await api('/api/v1/performance-summary');
+    const set = (id, v, cls) => { const e = document.getElementById(id); if(e){ e.textContent = v; if(cls) e.className = 'kpi-value ' + cls; } };
+
+    // KPIs — actual keys from performance_summary.csv
+    const ret = parseFloat(d.portfolio_total_return_pct ?? d.total_return_pct ?? d.total_return ?? 0);
+    set('d-return', fmtPctRaw(ret, 1), ret >= 0 ? 'pos' : 'neg');
+    set('d-cagr',    fmtPctRaw(parseFloat(d.portfolio_cagr_pct ?? d.cagr_pct ?? d.cagr ?? 0), 1), '');
+    const sharpe = parseFloat(d.sharpe_ratio ?? d.sharpe ?? 0);
+    set('d-sharpe',  fmt(sharpe, 2), sharpe >= 1 ? 'pos' : sharpe >= 0 ? 'neu' : 'neg');
+    const mdd = parseFloat(d.max_drawdown_pct ?? d.max_drawdown ?? 0);
+    set('d-mdd',     fmtPctRaw(mdd, 1), 'neg');
+    set('d-winrate', fmtPctRaw(parseFloat(d.win_rate_pct ?? d.win_rate ?? 0), 1), '');
+
+    // Constraints — built from individual boolean fields in the flat dict
+    const constraintRows = [
+      { name: 'Sharpe Ratio',  met: d.sharpe_constraint_met,   value: fmt(d.sharpe_ratio, 2),           threshold: '≥ 0.5' },
+      { name: 'Max Drawdown',  met: d.drawdown_constraint_met,  value: fmtPctRaw(d.max_drawdown_pct, 1), threshold: '≤ -25%' },
+      { name: 'All Constraints', met: d.constraints_met,        value: '',                                threshold: '' },
+    ].filter(c => c.met !== undefined);
+
+    if (constraintRows.length) {
+      document.getElementById('dash-constraints').innerHTML = constraintRows.map(c => {
+        const ok = String(c.met).toLowerCase() === 'true';
+        const cls = ok ? 'ok' : 'err';
+        return `<div class="alert-row ${cls}"><span class="alert-icon">${ok ? '✓' : '✗'}</span><span class="alert-msg">${c.name}${c.value ? ': ' + c.value : ''}</span><span class="alert-tag">${c.threshold}</span></div>`;
+      }).join('');
+    }
+
+    // Last run summary in goal panel — from training history last entry
+    api('/api/v1/training-history').then(hist => {
+      if (!hist || !hist.length) return;
+      const last = hist[hist.length - 1];
+      const rows = [
+        ['Round',            last.round],
+        ['Timestamp',        last.timestamp],
+        ['Timesteps',        last.timesteps?.toLocaleString()],
+        ['Val Sharpe',       last.val_sharpe != null ? parseFloat(last.val_sharpe).toFixed(3) : null],
+        ['Val CAGR',         last.val_cagr_pct != null ? fmtPctRaw(last.val_cagr_pct, 1) : null],
+        ['Val Max DD',       last.val_mdd_pct != null ? fmtPctRaw(last.val_mdd_pct, 1) : null],
+        ['Backtest Sharpe',  last.backtest_sharpe != null ? parseFloat(last.backtest_sharpe).toFixed(3) : null],
+        ['Backtest Return',  last.backtest_return_pct != null ? fmtPctRaw(last.backtest_return_pct, 1) : null],
+        ['Backtest CAGR',    last.backtest_cagr_pct != null ? fmtPctRaw(last.backtest_cagr_pct, 1) : null],
+        ['Trade Count',      last.backtest_trade_count],
+        ['Notes',            last.notes],
+      ].filter(([, v]) => v != null && v !== '' && v !== 'null');
+      document.getElementById('dash-goal').innerHTML = '<div style="padding:2px 0">' +
+        rows.map(([k, v]) => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px"><span style="color:var(--t3)">${k}</span><span style="font-family:var(--fm);font-weight:500">${v}</span></div>`).join('') +
+        '</div>';
+    }).catch(() => {});
+
+  } catch(e) { console.warn('Dashboard:', e); }
+}
+
+// ─── PERFORMANCE ───────────────────────────────────────────────
+async function loadPerformance() {
+  try {
+    const [summary, daily, history] = await Promise.all([
+      api('/api/v1/performance-summary'),
+      api('/api/v1/backtest-daily'),
+      api('/api/v1/training-history').catch(()=>[])
+    ]);
+    const p=summary.performance||summary;
+    const set=(id,v,cls)=>{ const e=document.getElementById(id); if(e){e.textContent=v;if(cls)e.className='kpi-value '+cls;} };
+    const ret=parseFloat(p.portfolio_total_return_pct??p.total_return_pct??p.total_return??0);
+    set('p-return', fmtPctRaw(ret,1), ret>=0?'pos':'neg');
+    set('p-cagr',   fmtPctRaw(parseFloat(p.portfolio_cagr_pct??p.cagr_pct??p.cagr??0),1), '');
+    set('p-sharpe', fmt(p.sharpe_ratio??p.sharpe,2), 'neu');
+    set('p-mdd',    fmtPctRaw(parseFloat(p.max_drawdown_pct??p.max_drawdown??0),1), 'neg');
+    set('p-winrate',fmtPctRaw(parseFloat(p.win_rate_pct??p.win_rate??0),1), '');
+
+    const constraints=summary.constraints||[];
+    if(constraints.length) {
+      document.getElementById('perf-constraints').innerHTML=constraints.map(c=>{
+        const ok=c.passed||c.status==='pass'||c.status==='ok';
+        const cls=ok?'ok':(c.status==='warn'?'warn':'err');
+        return `<div class="alert-row ${cls}"><span class="alert-icon">${ok?'✓':(cls==='warn'?'⚠':'✗')}</span><span class="alert-msg">${c.name||c.constraint}: <strong>${c.value??''}</strong></span><span class="alert-tag">${c.threshold??''}</span></div>`;
+      }).join('');
+    }
+
+    if(daily&&daily.length) {
+      const labels=daily.map(r=>r.date);
+      const strat=daily.map(r=>parseFloat(r.cumulative_strategy??r.portfolio_value??1)*100);
+      const bnh  =daily.map(r=>parseFloat(r.cumulative_bnh??r.buy_hold??1)*100);
+      const alloc=daily.map(r=>parseFloat(r.allocation??0));
+      // Compute drawdown from portfolio_value if drawdown_pct column absent
+      const pvRaw=daily.map(r=>parseFloat(r.portfolio_value??1));
+      const dd = daily.map((r,i)=>{
+        if(r.drawdown_pct!=null&&r.drawdown_pct!=='') return parseFloat(r.drawdown_pct)*100;
+        let peak=pvRaw[0]; for(let j=1;j<=i;j++) if(pvRaw[j]>peak) peak=pvRaw[j];
+        return peak>0?(pvRaw[i]-peak)/peak*100:0;
+      });
+      // Compute daily returns from portfolio_value for rolling Sharpe
+      const rets=pvRaw.map((v,i)=>i===0?0:(pvRaw[i-1]>0?(v-pvRaw[i-1])/pvRaw[i-1]:0));
+
+      const _instName = _activeInst?.name || _activeInst?.id || 'Instrument';
+      mkChart('ch-returns','line',{labels,datasets:[
+        {label:'DDQN Strategy',data:strat,borderColor:C.build,backgroundColor:C.buildBg,borderWidth:1.5,pointRadius:0,fill:true},
+        {label:`${_instName} Buy & Hold`,data:bnh,borderColor:C.run,backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,borderDash:[4,2]}
+      ]});
+
+      mkChart('ch-drawdown','line',{labels,datasets:[
+        {label:'Drawdown %',data:dd,borderColor:C.danger,backgroundColor:C.dangerBg,borderWidth:1.5,pointRadius:0,fill:true}
+      ]});
+
+      // Rolling 63-day Sharpe computed client-side
+      const rollSharpe=rets.map((_,i)=>{
+        if(i<63) return null;
+        const sl=rets.slice(i-63,i);
+        const mn=sl.reduce((a,b)=>a+b,0)/63;
+        const sd=Math.sqrt(sl.map(x=>(x-mn)**2).reduce((a,b)=>a+b,0)/63);
+        return sd>0?(mn/sd)*Math.sqrt(252):null;
+      });
+      mkChart('ch-sharpe-roll','line',{labels,datasets:[
+        {label:'Rolling 63d Sharpe',data:rollSharpe,borderColor:C.ds,backgroundColor:C.dsBg,borderWidth:1.5,pointRadius:0,fill:true,spanGaps:false}
+      ]},{plugins:{legend:{labels:{font:{family:"'IBM Plex Mono'",size:10},color:C.t2}},annotation:{annotations:{zero:{type:'line',yMin:0,yMax:0,borderColor:'rgba(0,0,0,.3)',borderDash:[3,2]}}}}});
+
+      mkChart('ch-alloc','bar',{labels,datasets:[
+        {label:'Allocation %',data:alloc.map(v=>v*100),
+         backgroundColor:alloc.map(v=>v>0.6?C.buildBg:v>0.3?C.dsBg:C.runBg),
+         borderColor:alloc.map(v=>v>0.6?C.build:v>0.3?C.ds:C.run),borderWidth:1}
+      ]},{scales:{x:{grid:{color:C.grid},ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3,maxTicksLimit:12}},y:{grid:{color:C.grid},ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3},min:0,max:100}}});
+    }
+
+    const rows=Array.isArray(history)?history:(history.runs||[]);
+    const histEl=document.getElementById('build-hist-tbl');
+    const badge=document.getElementById('build-badge');
+    if(rows.length) {
+      if(badge) badge.textContent=`${rows.length} runs`;
+      histEl.innerHTML=mkTbl(rows.slice().reverse(),[
+        {key:'run_date',label:'Date',mono:true},{key:'instrument',label:'Instrument'},
+        {key:'timesteps',label:'Timesteps',mono:true,right:true},{key:'seeds',label:'Seeds',mono:true,right:true},
+        {key:'val_sharpe',label:'Val Sharpe',mono:true,right:true},
+        {key:'backtest_return_pct',label:'Return%',mono:true,right:true},
+        {key:'sharpe_ratio',label:'Sharpe',mono:true,right:true},
+        {key:'max_drawdown_pct',label:'Max DD%',mono:true,right:true},{key:'notes',label:'Notes'}
+      ]);
+    } else { histEl.innerHTML='<div class="empty">No build history recorded yet.</div>'; }
+  } catch(e){ console.warn('Performance:',e); }
+}
+
+// ─── RISK VIEW ─────────────────────────────────────────────────
+async function loadRisk() {
+  try {
+    const [risk, events] = await Promise.all([
+      api('/api/v1/risk-timeline').catch(()=>[]),
+      api('/api/v1/trade-events').catch(()=>[])
+    ]);
+    if(!risk||!risk.length) return;
+
+    const labels=risk.map(r=>r.date);
+    const vol   =risk.map(r=>parseFloat(r.rolling_vol_20d??r.volatility??0));
+    const var95 =risk.map(r=>parseFloat(r.portfolio_var_95??r.var_95??0));
+    const budget=risk.map(r=>parseFloat(r.drawdown_budget_pct??r.dd_budget_used??r.budget_pct??0));
+    const trend =risk.map(r=>parseFloat(r.trend_score??r.regime??0));
+    const alloc =risk.map(r=>parseFloat(r.allocation??0));
+    // Build delta VaR series from trade events mapped to risk timeline dates
+    const evtMap={}; events.forEach(e=>{ if(e.date) evtMap[e.date]=(parseFloat(e.delta_var??e.delta_allocation??0)); });
+    const delta=labels.map(d=>evtMap[d]??0);
+
+    const invested=risk.filter(r=>parseFloat(r.allocation??0)>0.3);
+    const avgVar=invested.length?invested.reduce((s,r)=>s+parseFloat(r.portfolio_var_95??r.var_95??0),0)/invested.length:0;
+    const peakVar=Math.max(...var95); const maxBudget=Math.max(...budget);
+    const riTrades=events.filter(e=>e.risk_action==='Increased'||e.event_type==='entry'||e.trade_type==='entry').length;
+
+    const e=id=>document.getElementById(id);
+    if(e('r-avg-var'))  e('r-avg-var').textContent=fmtPctRaw(avgVar,2);
+    if(e('r-peak-var')) e('r-peak-var').textContent=fmtPctRaw(peakVar,2);
+    if(e('r-max-budget')) e('r-max-budget').textContent=fmtPctRaw(maxBudget,1);
+    if(e('r-ri-trades')) e('r-ri-trades').textContent=riTrades;
+
+    mkChart('ch-var','line',{labels,datasets:[
+      {label:'Rolling Vol 20d %',data:vol,borderColor:C.warn,backgroundColor:'transparent',borderWidth:1.5,pointRadius:0},
+      {label:'Portfolio VaR 95% %',data:var95,borderColor:C.danger,backgroundColor:C.dangerBg,borderWidth:1.5,pointRadius:0,fill:true}
+    ]});
+
+    mkChart('ch-budget','line',{labels,datasets:[
+      {label:'DD Budget Used %',data:budget,borderColor:C.run,backgroundColor:C.runBg,borderWidth:1.5,pointRadius:0,fill:true}
+    ]},{plugins:{legend:{labels:{font:{family:"'IBM Plex Mono'",size:10},color:C.t2}},annotation:{annotations:{limit:{type:'line',yMin:100,yMax:100,borderColor:C.danger,borderDash:[4,2]}}}}});
+
+    mkChart('ch-trade-risk','bar',{labels,datasets:[
+      {label:'ΔVaR %',data:delta,backgroundColor:delta.map(v=>v>0?C.dangerBg:C.buildBg),borderColor:delta.map(v=>v>0?C.danger:C.build),borderWidth:1}
+    ]});
+
+    mkChart('ch-regime','line',{labels,datasets:[
+      {label:'Trend Score',data:trend,borderColor:C.ds,backgroundColor:C.dsBg,borderWidth:1.5,pointRadius:0,fill:true,yAxisID:'y'},
+      {label:'Allocation %',data:alloc.map(v=>v*100),borderColor:C.build,backgroundColor:'transparent',borderWidth:1,borderDash:[3,2],pointRadius:0,yAxisID:'y2'}
+    ]},{scales:{
+      x:{grid:{color:C.grid},ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3,maxTicksLimit:12}},
+      y:{grid:{color:C.grid},ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3}},
+      y2:{position:'right',grid:{display:false},ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3},min:0,max:100}
+    }});
+
+    const phases={};
+    risk.forEach(r=>{ const p=r.phase||'All'; if(!phases[p]) phases[p]={phase:p,cnt:0,varSum:0,budMax:0};
+      phases[p].cnt++; phases[p].varSum+=parseFloat(r.portfolio_var_95??r.var_95??0);
+      phases[p].budMax=Math.max(phases[p].budMax,parseFloat(r.drawdown_budget_pct??r.dd_budget_used??r.budget_pct??0)); });
+    const phRows=Object.values(phases).map(p=>({phase:p.phase,days:p.cnt,avg_var:fmtPctRaw(p.varSum/p.cnt,2),max_budget:fmtPctRaw(p.budMax,1)}));
+    document.getElementById('risk-phase-tbl').innerHTML=mkTbl(phRows,[
+      {key:'phase',label:'Phase'},{key:'days',label:'Days',mono:true,right:true},
+      {key:'avg_var',label:'Avg VaR%',mono:true,right:true},{key:'max_budget',label:'Max Budget%',mono:true,right:true}
+    ]);
+  } catch(e){ console.warn('Risk:',e); }
+}
+
+// ─── TRADE JOURNAL ─────────────────────────────────────────────
+async function loadTrades() {
+  try {
+    const [events, daily] = await Promise.all([
+      api('/api/v1/trade-events').catch(()=>[]),
+      api('/api/v1/backtest-daily').catch(()=>[])
+    ]);
+    // risk_trade_events uses risk_action='Increased'/'Reduced' for entries/exits
+    const entries=events.filter(e=>e.risk_action==='Increased'||e.event_type==='entry'||e.trade_type==='entry');
+    const pEx=events.filter(e=>(e.risk_action==='Reduced'||e.event_type==='exit'||e.trade_type==='exit')&&parseFloat(e.pnl??0)>0);
+    const lEx=events.filter(e=>(e.risk_action==='Reduced'||e.event_type==='exit'||e.trade_type==='exit')&&parseFloat(e.pnl??0)<=0);
+    const wr=(pEx.length+lEx.length)>0?pEx.length/(pEx.length+lEx.length):0;
+    const s=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
+    s('t-entries',entries.length||events.length); s('t-profit',pEx.length); s('t-loss',lEx.length);
+    s('t-winrate',fmtPctRaw(wr*100,1)); s('t-total',events.length);
+
+    if(daily&&daily.length) {
+      const labels=daily.map(r=>r.date);
+      const prices=daily.map(r=>parseFloat(r.close_price??r.close??r.price??0));
+      const pv    =daily.map(r=>parseFloat(r.portfolio_value??1));
+      // Compute drawdown from portfolio_value if column absent
+      const dd=pv.map((v,i)=>{
+        const r=daily[i];
+        if(r.drawdown_pct!=null&&r.drawdown_pct!=='') return parseFloat(r.drawdown_pct)*100;
+        let peak=pv[0]; for(let j=1;j<=i;j++) if(pv[j]>peak) peak=pv[j];
+        return peak>0?(v-peak)/peak*100:0;
+      });
+      const ep=entries.map(e=>({x:e.date,y:parseFloat(e.price??0)}));
+      const pp=pEx.map(e=>({x:e.date,y:parseFloat(e.price??0)}));
+      const lp=lEx.map(e=>({x:e.date,y:parseFloat(e.price??0)}));
+
+      const _tradeInstName = _activeInst?.name || _activeInst?.id || 'Close';
+      mkChart('ch-trade-price','line',{labels,datasets:[
+        {label:`${_tradeInstName} Close`,data:prices,borderColor:C.ds,backgroundColor:'transparent',borderWidth:1.5,pointRadius:0},
+        {label:'▲ Entry',data:labels.map(l=>{const f=ep.find(p=>p.x===l);return f?f.y:null;}),pointRadius:5,pointBackgroundColor:C.build,pointStyle:'triangle',borderColor:'transparent',backgroundColor:'transparent',showLine:false},
+        {label:'▼ Profit Exit',data:labels.map(l=>{const f=pp.find(p=>p.x===l);return f?f.y:null;}),pointRadius:5,pointBackgroundColor:C.build,pointStyle:'rectRot',borderColor:'transparent',backgroundColor:'transparent',showLine:false},
+        {label:'✕ Loss Exit',data:labels.map(l=>{const f=lp.find(p=>p.x===l);return f?f.y:null;}),pointRadius:5,pointBackgroundColor:C.danger,pointStyle:'crossRot',borderColor:'transparent',backgroundColor:'transparent',showLine:false}
+      ]});
+
+      mkChart('ch-trade-pv','line',{labels,datasets:[
+        {label:'Portfolio Value',data:pv,borderColor:C.build,backgroundColor:C.buildBg,borderWidth:1.5,pointRadius:0,fill:true}
+      ]});
+      mkChart('ch-trade-dd','line',{labels,datasets:[
+        {label:'Drawdown %',data:dd,borderColor:C.danger,backgroundColor:C.dangerBg,borderWidth:1.5,pointRadius:0,fill:true}
+      ]});
+    }
+
+    const phases={};
+    events.forEach(e=>{ const p=e.phase||'All'; if(!phases[p]) phases[p]={phase:p,entries:0,profit:0,loss:0};
+      if(e.event_type==='entry'||e.trade_type==='entry') phases[p].entries++;
+      else if(parseFloat(e.pnl??0)>0) phases[p].profit++; else phases[p].loss++; });
+    const phRows=Object.values(phases).map(p=>({phase:p.phase,entries:p.entries,profit_exits:p.profit,loss_exits:p.loss,
+      win_rate:fmtPctRaw((p.profit+p.loss)>0?p.profit/(p.profit+p.loss)*100:0,1)}));
+    document.getElementById('trade-phase-tbl').innerHTML=mkTbl(phRows,[
+      {key:'phase',label:'Phase'},{key:'entries',label:'Entries',mono:true,right:true},
+      {key:'profit_exits',label:'Profit Exits',mono:true,right:true},{key:'loss_exits',label:'Loss Exits',mono:true,right:true},
+      {key:'win_rate',label:'Win Rate',mono:true,right:true}
+    ]);
+    document.getElementById('trade-log-tbl').innerHTML=mkTbl(events,[
+      {key:'date',label:'Date',mono:true},{key:'phase',label:'Phase'},
+      {key:'risk_action',label:'Action'},{key:'allocation',label:'Alloc',mono:true,right:true},
+      {key:'delta_allocation',label:'Δ Alloc',mono:true,right:true},
+      {key:'portfolio_var_95',label:'VaR 95%',mono:true,right:true},{key:'regime',label:'Regime'}
+    ]);
+  } catch(e){ console.warn('Trades:',e); }
+}
+
+// ─── EXPLAINABILITY ────────────────────────────────────────────
+async function loadExplain() {
+  try {
+    const data=await api('/api/v1/shap');
+    const rawRows=Array.isArray(data)?data:(data.features||[]);
+    if(!rawRows.length) return;
+
+    // SHAP CSV is wide format: first col = feature name, remaining cols = action names
+    // Detect if long format (has 'action' column) or wide format
+    const isLong = rawRows[0].hasOwnProperty('action') || rawRows[0].hasOwnProperty('action_label');
+    let features, actions, getVal;
+    if(isLong) {
+      features=[...new Set(rawRows.map(r=>r.feature))];
+      actions=[...new Set(rawRows.map(r=>r.action??r.action_label??'Action'))];
+      getVal=(f,a)=>{ const r=rawRows.find(r=>r.feature===f&&(r.action??r.action_label)===a); return r?Math.abs(parseFloat(r.mean_abs_shap??r.importance??0)):0; };
+    } else {
+      // Wide format: each row is a feature, columns (except 'feature') are actions
+      features=rawRows.map(r=>r.feature);
+      actions=Object.keys(rawRows[0]).filter(k=>k!=='feature');
+      getVal=(f,a)=>{ const r=rawRows.find(r=>r.feature===f); return r?Math.abs(parseFloat(r[a]??0)):0; };
+    }
+
+    const colors=[C.build,C.run,C.ds,C.warn];
+    mkChart('ch-shap-bar','bar',{labels:features,datasets:actions.map((a,ai)=>({
+      label:a,
+      data:features.map(f=>getVal(f,a)),
+      backgroundColor:colors[ai%4]+'55', borderColor:colors[ai%4], borderWidth:1.5
+    }))},{indexAxis:'y',
+      scales:{x:{grid:{color:C.grid},ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3}},
+              y:{grid:{color:C.grid},ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3}}}});
+
+    // Radar
+    destroyChart('ch-shap-radar');
+    const canvas=document.getElementById('ch-shap-radar');
+    if(canvas) {
+      CHARTS['ch-shap-radar']=new Chart(canvas,{type:'radar',
+        data:{labels:features,datasets:actions.map((a,ai)=>({
+          label:a,
+          data:features.map(f=>getVal(f,a)),
+          borderColor:colors[ai%4],backgroundColor:colors[ai%4]+'33',borderWidth:1.5,pointRadius:3
+        }))},
+        options:{responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{labels:{font:{family:"'IBM Plex Mono'",size:10},color:C.t2}}},
+          scales:{r:{ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3},grid:{color:C.grid}}}}
+      });
+    }
+
+    // KPIs
+    const totals=features.map(f=>({f,v:actions.reduce((s,a)=>s+getVal(f,a),0)})).sort((a,b)=>b.v-a.v);
+    if(totals.length) { const t=document.getElementById('sh-top'); if(t) t.textContent=totals[0].f; }
+    const cashA=actions.find(a=>a.toLowerCase().includes('0')||a.toLowerCase().includes('cash'));
+    const fullA=actions.find(a=>a.toLowerCase().includes('100')||a.toLowerCase().includes('full'));
+    [cashA,fullA].forEach((a,i)=>{
+      if(!a) return;
+      const top=features.map(f=>({f,v:getVal(f,a)})).sort((a,b)=>b.v-a.v)[0];
+      const el=document.getElementById(i===0?'sh-cash':'sh-full');
+      if(top&&el) el.textContent=top.f;
+    });
+
+    // Table — flatten wide to rows for display
+    const tblRows=features.map(f=>{ const o={feature:f}; actions.forEach(a=>{ o[a]=fmt(getVal(f,a),4); }); return o; });
+    document.getElementById('shap-tbl').innerHTML=mkTbl(tblRows,[
+      {key:'feature',label:'Feature'},
+      ...actions.map(a=>({key:a,label:a,mono:true,right:true}))
+    ]);
+  } catch(e){ console.warn('Explain:',e); }
+}
+
+// ─── TRAINING PROGRESS ─────────────────────────────────────────
+async function loadTraining() {
+  try {
+    const [history, progress] = await Promise.all([
+      api('/api/v1/training-history').catch(()=>[]),
+      api('/api/v1/training-progress').catch(()=>[])
+    ]);
+    const rows=Array.isArray(history)?history:(history.runs||[]);
+    const el=id=>document.getElementById(id);
+    if(el('tr-rounds')) el('tr-rounds').textContent=rows.length;
+    if(rows.length) {
+      const sharpes=rows.map(r=>parseFloat(r.sharpe_ratio??r.sharpe??0)).filter(v=>!isNaN(v));
+      const latest=rows[rows.length-1];
+      if(el('tr-best-sharpe')) el('tr-best-sharpe').textContent=fmt(Math.max(...sharpes),2);
+      if(el('tr-latest-ret')) el('tr-latest-ret').textContent=fmtPctRaw(parseFloat(latest.total_return_pct??latest.total_return??0),1);
+      if(el('tr-latest-val')) el('tr-latest-val').textContent=fmt(latest.val_sharpe??0,2);
+
+      const labels=rows.map((r,i)=>r.run_date||`Run ${i+1}`);
+      mkChart('ch-tr-sharpe','line',{labels,datasets:[
+        {label:'Backtest Sharpe',data:rows.map(r=>parseFloat(r.sharpe_ratio??r.sharpe??0)),borderColor:C.build,backgroundColor:C.buildBg,borderWidth:2,pointRadius:4,fill:true},
+        {label:'Val Sharpe',data:rows.map(r=>parseFloat(r.val_sharpe??0)),borderColor:C.ds,backgroundColor:'transparent',borderWidth:2,pointRadius:4,borderDash:[4,2]}
+      ]});
+      mkChart('ch-tr-mdd','line',{labels,datasets:[
+        {label:'Max DD %',data:rows.map(r=>Math.abs(parseFloat(r.max_drawdown_pct??r.max_drawdown??0))),borderColor:C.danger,backgroundColor:C.dangerBg,borderWidth:2,pointRadius:4,fill:true}
+      ]});
+      mkChart('ch-tr-return','bar',{labels,datasets:[
+        {label:'Total Return %',data:rows.map(r=>parseFloat(r.total_return_pct??r.total_return??0)),backgroundColor:C.buildBg,borderColor:C.build,borderWidth:1.5},
+        {label:'CAGR %',data:rows.map(r=>parseFloat(r.cagr_pct??r.cagr??0)),backgroundColor:C.dsBg,borderColor:C.ds,borderWidth:1.5}
+      ]});
+
+      const cRows=rows.map((r,i)=>{
+        const cs=r.constraints||[];
+        return {run:r.run_date||`Run ${i+1}`,sharpe:fmt(r.sharpe_ratio??r.sharpe??0,2),
+          mdd:fmtPctRaw(r.max_drawdown_pct??r.max_drawdown??0,1),
+          constraints_pass:`${cs.filter(c=>c.passed||c.status==='pass').length}/${cs.length||'—'}`,notes:r.notes||''};
+      });
+      document.getElementById('train-constraint-tbl').innerHTML=mkTbl(cRows,[
+        {key:'run',label:'Run',mono:true},{key:'sharpe',label:'Sharpe',mono:true,right:true},
+        {key:'mdd',label:'Max DD%',mono:true,right:true},{key:'constraints_pass',label:'Constraints',mono:true,right:true},{key:'notes',label:'Notes'}
+      ]);
+      document.getElementById('train-hist-tbl').innerHTML=mkTbl(rows.slice().reverse(),[
+        {key:'run_date',label:'Date',mono:true},{key:'instrument',label:'Instrument'},
+        {key:'timesteps',label:'Timesteps',mono:true,right:true},{key:'seeds',label:'Seeds',mono:true,right:true},
+        {key:'val_sharpe',label:'Val Sharpe',mono:true,right:true},{key:'sharpe_ratio',label:'Sharpe',mono:true,right:true},
+        {key:'total_return_pct',label:'Return%',mono:true,right:true},{key:'max_drawdown_pct',label:'Max DD%',mono:true,right:true},{key:'notes',label:'Notes'}
+      ]);
+    }
+
+    if(progress&&progress.length) {
+      const pLabels=progress.map(r=>r.timestep??r.step);
+      mkChart('ch-tr-loss','line',{labels:pLabels,datasets:[
+        {label:'TD Loss',data:progress.map(r=>parseFloat(r.td_loss??r.loss??0)),borderColor:C.danger,backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,yAxisID:'y'},
+        {label:'Reward',data:progress.map(r=>parseFloat(r.reward??r.mean_reward??0)),borderColor:C.build,backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,yAxisID:'y2',borderDash:[3,2]}
+      ]},{scales:{
+        x:{grid:{color:C.grid},ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3,maxTicksLimit:10}},
+        y:{grid:{color:C.grid},ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3}},
+        y2:{position:'right',grid:{display:false},ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3}}
+      }});
+    }
+  } catch(e){ console.warn('Training:',e); }
+}
+
+// ─── OBSERVABILITY ─────────────────────────────────────────────
+async function loadObservability() {
+  try {
+    const [log, drift] = await Promise.all([
+      api('/api/v1/step-log').catch(()=>[]),
+      api('/api/v1/drift').catch(()=>({}))
+    ]);
+    const failed=log.filter(s=>s.status!=='ok'&&s.status!=='success').length;
+    const el=id=>document.getElementById(id);
+    if(el('ob-total')) el('ob-total').textContent=log.length;
+    if(el('ob-failed')){ el('ob-failed').textContent=failed; el('ob-failed').className=`kpi-value ${failed>0?'neg':'pos'}`; }
+    const driftOk=!drift.drift_detected;
+    if(el('ob-drift')){ el('ob-drift').textContent=driftOk?'No Drift':'Drift Detected'; el('ob-drift').className=`kpi-value ${driftOk?'pos':'neg'}`; }
+
+    if(log.length) {
+      mkChart('ch-ob-dur','bar',{
+        labels:log.map(s=>s.step_name||s.name||'Step'),
+        datasets:[{label:'Duration (s)',data:log.map(s=>parseFloat(s.duration_s??0)),backgroundColor:C.dsBg,borderColor:C.ds,borderWidth:1.5}]
+      });
+    }
+
+    el('obs-health').innerHTML=[
+      {name:'FastAPI',ok:true,msg:'Responding (you are connected)'},
+      {name:'Model File',ok:!!drift.model_version,msg:drift.model_version?`v${drift.model_version}`:'Check rita_output/'},
+      {name:'Data Drift',ok:driftOk,msg:driftOk?'No drift detected':'Drift detected — consider retraining'},
+      {name:'Step Log',ok:failed===0,msg:failed===0?'All steps passing':`${failed} failed step(s)`}
+    ].map(c=>`<div class="alert-row ${c.ok?'ok':'warn'}"><span class="alert-icon">${c.ok?'✓':'⚠'}</span><span class="alert-msg"><strong>${c.name}</strong> — ${c.msg}</span></div>`).join('');
+
+    el('obs-run-tbl').innerHTML=mkTbl(log.slice(-20).reverse(),[
+      {key:'timestamp',label:'Time',mono:true},{key:'step_name',label:'Step'},
+      {key:'status',label:'Status',mono:true},{key:'duration_s',label:'Duration(s)',mono:true,right:true},{key:'notes',label:'Notes'}
+    ]);
+  } catch(e){ console.warn('Observability:',e); }
+}
+
+// ─── MCP CALLS ─────────────────────────────────────────────────
+async function loadMCP() {
+  try {
+    const data=await api('/api/v1/mcp-calls');
+    const calls=Array.isArray(data)?data:(data.calls||[]);
+    const success=calls.filter(c=>c.status==='success'||c.status==='ok').length;
+    const tools=[...new Set(calls.map(c=>c.tool_name||c.tool||c.function))].length;
+    const lats=calls.map(c=>parseFloat(c.latency_ms??c.duration_ms??0)).filter(v=>v>0);
+    const avgLat=lats.length?lats.reduce((a,b)=>a+b,0)/lats.length:0;
+    const errors=calls.filter(c=>c.status==='error'||c.status==='fail').length;
+    const last=calls.length?(calls[calls.length-1].timestamp||calls[calls.length-1].date||'—'):'—';
+
+    const e=id=>document.getElementById(id);
+    if(e('mc-total')) e('mc-total').textContent=calls.length;
+    if(e('mc-success')) e('mc-success').textContent=calls.length?fmtPctRaw(success/calls.length*100,0):'—';
+    if(e('mc-tools')) e('mc-tools').textContent=tools;
+    if(e('mc-latency')) e('mc-latency').textContent=avgLat>0?`${avgLat.toFixed(0)}ms`:'—';
+    if(e('mc-errors')){ e('mc-errors').textContent=errors; e('mc-errors').className=`kpi-value ${errors>0?'neg':'pos'}`; }
+    if(e('mc-last')) e('mc-last').textContent=String(last).slice(0,10);
+
+    const toolCounts={}, toolLat={};
+    calls.forEach(c=>{ const t=c.tool_name||c.tool||c.function||'unknown';
+      toolCounts[t]=(toolCounts[t]||0)+1;
+      if(!toolLat[t]) toolLat[t]=[];
+      const lat=parseFloat(c.latency_ms??c.duration_ms??0); if(lat>0) toolLat[t].push(lat); });
+    const names=Object.keys(toolCounts).sort((a,b)=>toolCounts[b]-toolCounts[a]).slice(0,12);
+
+    mkChart('ch-mc-usage','bar',{labels:names,datasets:[
+      {label:'Total Calls',data:names.map(t=>toolCounts[t]),backgroundColor:C.monBg,borderColor:C.mon,borderWidth:1.5}
+    ]},{indexAxis:'y',scales:{x:{grid:{color:C.grid},ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3}},y:{grid:{color:C.grid},ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3}}}});
+
+    mkChart('ch-mc-latency','bar',{labels:names,datasets:[
+      {label:'Avg Latency (ms)',data:names.map(t=>toolLat[t]?.length?toolLat[t].reduce((a,b)=>a+b,0)/toolLat[t].length:0),backgroundColor:C.warnBg,borderColor:C.warn,borderWidth:1.5}
+    ]},{indexAxis:'y',scales:{x:{grid:{color:C.grid},ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3}},y:{grid:{color:C.grid},ticks:{font:{family:"'IBM Plex Mono'",size:9},color:C.t3}}}});
+
+    e('mcp-tbl').innerHTML=mkTbl(calls.slice().reverse().slice(0,100),[
+      {key:'timestamp',label:'Time',mono:true},{key:'tool_name',label:'Tool'},
+      {key:'status',label:'Status',mono:true},{key:'latency_ms',label:'Latency(ms)',mono:true,right:true},{key:'error',label:'Error'}
+    ]);
+  } catch(e){ console.warn('MCP:',e); }
+}
+
+// ─── MODEL CHANGELOG ───────────────────────────────────────────
+async function loadChangelog() {
+  try {
+    const data=await api('/api/v1/changelog');
+    const rows=Array.isArray(data)?data:(data.entries||[]);
+    document.getElementById('cl-tbl').innerHTML=mkTbl(rows.slice().reverse(),[
+      {key:'date',label:'Date',mono:true},{key:'version',label:'Version',mono:true},
+      {key:'category',label:'Category'},{key:'change',label:'Change'},{key:'notes',label:'Notes'}
+    ]);
+    document.getElementById('cl-date').value=new Date().toISOString().slice(0,10);
+  } catch(e){ document.getElementById('cl-tbl').innerHTML='<div class="empty">Could not load changelog.</div>'; }
+}
+
+async function saveChangelog() {
+  const g=id=>document.getElementById(id).value;
+  const msg=document.getElementById('cl-msg');
+  try {
+    await api('/api/v1/changelog',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({date:g('cl-date'),version:g('cl-version'),category:g('cl-cat'),change:g('cl-change'),notes:g('cl-notes')})});
+    msg.style.color=C.build; msg.textContent='✓ Saved';
+    ['cl-change','cl-notes','cl-version'].forEach(id=>document.getElementById(id).value='');
+    await loadChangelog();
+  } catch(e){ msg.style.color=C.danger; msg.textContent='✗ '+e.message; }
+  setTimeout(()=>msg.textContent='',3000);
+}
+
+// ─── EXPORT & DEVOPS ───────────────────────────────────────────
+async function loadExport() {
+  try {
+    const h=await api('/health');
+    document.getElementById('deploy-manifest').innerHTML=[
+      ['Version',h.version||'1.0.0'],['Environment',h.environment||'development'],
+      ['Model File',h.model_file||'—'],['Data Rows',h.data_rows||'—'],
+      ['Latest Date',h.latest_date||'—'],['API Port','8000']
+    ].map(([k,v])=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px"><span style="color:var(--t3)">${k}</span><span style="font-family:var(--fm);font-weight:500">${v}</span></div>`).join('');
+  } catch(e){ document.getElementById('deploy-manifest').innerHTML='<div class="empty" style="padding:16px">API offline.</div>'; }
+
+  document.getElementById('env-tbl').innerHTML=mkTbl([
+    {key:'PYTHON_ENV',value:'C:/Users/Sandeep/pyenv-envs/poc'},
+    {key:'API_HOST',value:'0.0.0.0:8000'},{key:'DASHBOARD',value:'/dashboard/'},
+    {key:'RITA_OUTPUT',value:'rita_output/'},{key:'RITA_INPUT',value:'rita_input/'}
+  ],[{key:'key',label:'Variable',mono:true},{key:'value',label:'Value',mono:true}]);
+}
+
+async function pingAPI() {
+  const el=document.getElementById('api-health');
+  el.innerHTML='<div class="empty" style="padding:10px"><span class="spinner"></span>Pinging…</div>';
+  try {
+    const t0=performance.now(); const h=await api('/health'); const ms=(performance.now()-t0).toFixed(0);
+    el.innerHTML=`<div class="alert-strip">
+      <div class="alert-row ok"><span class="alert-icon">✓</span><span class="alert-msg">FastAPI responding — <strong>${ms}ms</strong></span></div>
+      <div class="alert-row ok"><span class="alert-icon">◈</span><span class="alert-msg">Version: ${h.version||'—'} · Model: ${h.model_file||'—'}</span></div>
+      <div class="alert-row ok"><span class="alert-icon">📊</span><span class="alert-msg">Data rows: ${h.data_rows||'—'} · Latest: ${h.latest_date||'—'}</span></div>
+    </div>`;
+  } catch(e){
+    el.innerHTML=`<div class="alert-strip"><div class="alert-row err"><span class="alert-icon">✗</span><span class="alert-msg">${e.message}</span></div></div>`;
+  }
+}
+
+async function dlJSON(path, filename) {
+  try {
+    const r=await fetch(path); const blob=await r.blob();
+    const url=URL.createObjectURL(blob); const a=document.createElement('a');
+    a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url);
+  } catch(e){ alert('Download failed: '+e.message); }
+}
+
+// ─── ACTIVE INSTRUMENT PILL ────────────────────────────────────
+let _activeInst = null;
+
+async function loadActiveInstrument() {
+  try {
+    const inst = await api('/api/v1/instrument/active');
+    if (!inst || !inst.id) return;
+    _activeInst = inst;
+
+    // Topbar pill
+    const pill = document.getElementById('inst-pill');
+    document.getElementById('inst-pill-flag').textContent = inst.flag || '';
+    document.getElementById('inst-pill-name').textContent = inst.name || inst.id;
+    document.getElementById('inst-pill-exch').textContent = inst.exchange ? `· ${inst.exchange}` : '';
+    pill.style.display = 'flex';
+
+    // Sidebar footer
+    const sbInfo = document.getElementById('sb-data-info');
+    if (sbInfo) sbInfo.textContent = `${inst.flag||''} ${inst.name||inst.id} · ${inst.exchange||''}`.trim();
+
+    // Build panel selects — default to active instrument
+    ['b-instrument', 'r-instrument'].forEach(selId => {
+      const sel = document.getElementById(selId);
+      if (sel) sel.value = inst.id;
+    });
+
+    // Page subtitles and chart titles that reference the instrument
+    const n = inst.name || inst.id;
+    const _upd = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+    _upd('perf-page-sub',    `Backtest results — DDQN strategy vs ${n} Buy & Hold`);
+    _upd('trades-page-sub',  `Model entry/exit signals overlaid on ${n} price — phase-by-phase analysis`);
+    _upd('trades-chart-title', `${n} Close — ▲ Entry · ▼ Profit Exit · ✕ Loss Exit (All Phases)`);
+  } catch { /* silently skip */ }
+}
+
+// ─── INIT ──────────────────────────────────────────────────────
+async function init() {
+  await loadInstruments();
+  await checkStatus();
+  setInterval(checkStatus, 30000);
+  await loadActiveInstrument();
+  loadUnderstand();  // default landing section
+}
+init();
+</script>
+</body>
+</html>

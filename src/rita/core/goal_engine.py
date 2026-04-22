@@ -68,6 +68,8 @@ def set_goal(
         "historical_worst_year_pct": hist_worst,
         "historical_sharpe": hist_sharpe,
         "suggested_realistic_target_pct": round(suggested_target, 1),
+        "last_12m_return_pct": historical_stats.get("last_12m_return_pct"),
+        "yearly_returns": historical_stats.get("yearly_returns", []),
         "strategy_constraints": {
             "min_sharpe_ratio": 1.0,
             "max_drawdown_pct": -10.0,

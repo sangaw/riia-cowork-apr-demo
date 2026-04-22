@@ -673,6 +673,9 @@ td.neg{color:var(--neg);font-family:var(--fm);font-weight:500;}
       <span class="phase-tag p01">Risk-Reward</span>
     </div>
 
+    <!-- Campaign summary widget — top of Risk-Reward -->
+    <div id="campaign-summary" style="display:none;margin-bottom:4px;"></div>
+
     <!-- Summary table at top -->
     <div class="card" id="scen-summary-card" style="margin-bottom:20px;"></div>
 
@@ -987,7 +990,13 @@ async function initApp() {
 
   // Render all sections
   saveToday();
-  syncPriceHistory().then(() => { renderScenarios(); renderDailyProgress(); });
+  syncPriceHistory().then(() => {
+    syncOrdersCharges().then(() => {
+      renderCampaignSummary();
+      renderScenarios();
+      renderDailyProgress();
+    });
+  });
   renderDashboard();
   renderPositionsKpis();
   renderPositionsTable();
@@ -1011,6 +1020,7 @@ let segChart = null, dpChart = null, marginChart = null, payoffChart = null, pay
 // ── Helpers ───────────────────────────────────────────────
 function fmt(n) { return Math.abs(n).toLocaleString('en-IN',{minimumFractionDigits:0,maximumFractionDigits:2}); }
 function fmtPnl(n) { return n>=0 ? `+₹${fmt(n)}` : `−₹${fmt(Math.abs(n))}`; }
+function fmtAmt(n) { return `₹${fmt(Math.abs(n))}`; }
 function pnlClass(n) { return n>=0 ? 'pos' : 'neg'; }
 
 // ── Navigation ────────────────────────────────────────────
@@ -1758,6 +1768,75 @@ async function syncPriceHistory() {
     }
   } catch (e) { /* non-critical */ }
 }
+async function syncOrdersCharges() {
+  // Fetch computed broker charges from all orders-*.csv files and merge into localStorage
+  try {
+    const charges = await fetch('/api/v1/portfolio/orders-charges',
+      RITA_API_KEY ? { headers: { 'X-API-Key': RITA_API_KEY } } : {}).then(r => r.json());
+    if (!Array.isArray(charges) || !charges.length) return;
+    const history = loadHistory();
+    let changed = false;
+    charges.forEach(c => {
+      const entry = history.find(h => h.date === c.date);
+      if (entry) {
+        entry.brokerCharges = c.total;
+        changed = true;
+      }
+    });
+    if (changed) {
+      try { localStorage.setItem('rrHistory', JSON.stringify(history)); } catch {}
+    }
+  } catch (e) { /* non-critical */ }
+}
+function renderCampaignSummary() {
+  const history = loadHistory().filter(h => h.nifty && h.banknifty);
+  const el = document.getElementById('campaign-summary');
+  if (!history.length) { el.style.display = 'none'; return; }
+
+  let sumRPnl = 0, sumUnreal = 0, sumTurnover = 0, sumTaxProv = 0, sumBroker = 0;
+  let hasBroker = false;
+  history.forEach(h => {
+    if (h.niftyPnl   != null) sumUnreal   += h.niftyPnl + (h.bnknPnl || 0);
+    if (h.niftyRPnl  != null) {
+      const r = h.niftyRPnl + (h.bnknRPnl || 0);
+      sumRPnl     += r;
+      sumTurnover += Math.abs(h.niftyRPnl) + Math.abs(h.bnknRPnl || 0);
+      sumTaxProv  += Math.max(r, 0) * 0.30;
+    }
+    if (h.brokerCharges != null) { sumBroker += h.brokerCharges; hasBroker = true; }
+  });
+  const sumNet = sumRPnl - sumTaxProv - (hasBroker ? sumBroker : 0);
+  const days   = history.length;
+  const auditPct = Math.min(sumTurnover / 10000000 * 100, 100).toFixed(1);
+
+  const kpi = (label, value, isAmount, sub, extraClass) => {
+    const cls   = isAmount ? (value >= 0 ? 'pos' : 'neg') : 'val';
+    const disp  = isAmount ? fmtAmt(value) : value;
+    return `<div class="kpi">
+      <div class="kpi-label">${label}</div>
+      <div class="kpi-value ${cls} ${extraClass||''}">${disp}</div>
+      ${sub ? `<div class="kpi-sub">${sub}</div>` : ''}
+    </div>`;
+  };
+
+  el.style.display = '';
+  el.innerHTML = `<div class="card" style="margin-bottom:4px;">
+    <div class="card-body" style="padding:10px 16px;">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+        <span style="font-family:var(--fm);font-size:11px;font-weight:700;color:var(--t2);letter-spacing:.06em;text-transform:uppercase;">Campaign Summary</span>
+        <span style="font-family:var(--fm);font-size:10px;color:var(--t3);">${days} trading days</span>
+      </div>
+      <div class="kpi-row" style="grid-template-columns:repeat(6,1fr);gap:8px;">
+        ${kpi('Realized P&L', sumRPnl, true, 'Closed trades total')}
+        ${kpi('Open MTM', sumUnreal, true, 'Unrealized today')}
+        ${kpi('F&O Turnover', '₹'+fmt(sumTurnover), false, auditPct+'% of ₹1Cr audit limit')}
+        ${hasBroker ? kpi('Broker Charges', sumBroker, true, 'From orders files') : `<div class="kpi"><div class="kpi-label">Broker Charges</div><div class="kpi-value val" style="color:var(--t3)">—</div><div class="kpi-sub">No orders files yet</div></div>`}
+        ${kpi('Tax Provision', sumTaxProv, true, '~30% on profitable days')}
+        ${kpi('Net Kept', sumNet, true, hasBroker ? 'After tax + charges' : 'After tax (charges pending)')}
+      </div>
+    </div>
+  </div>`;
+}
 function getProgressDir(und, mode) {
   const history = loadHistory();
   if (history.length < 2) return 'neutral';
@@ -1915,54 +1994,46 @@ function renderBullBearTable(und, mode) {
 function renderRRHistory() {
   const history = loadHistory();
   if (!history.length) return `<div class="info-note" style="margin-top:18px;">Daily history will appear here after you open the page on a second day. Data is saved automatically in browser localStorage.</div>`;
+
   const rows = [...history].reverse().map((h,i) => {
     const isToday = h.date === marketData.NIFTY.date;
-    const nBull = computeScen(scenarioLevels.NIFTY.bull.sl,     scenarioLevels.NIFTY.bull.target,     h.nifty,     portDelta.NIFTY).pct;
-    const nBear = computeScen(scenarioLevels.NIFTY.bear.sl,     scenarioLevels.NIFTY.bear.target,     h.nifty,     portDelta.NIFTY).pct;
-    const bBull = computeScen(scenarioLevels.BANKNIFTY.bull.sl, scenarioLevels.BANKNIFTY.bull.target, h.banknifty, portDelta.BANKNIFTY).pct;
-    const bBear = computeScen(scenarioLevels.BANKNIFTY.bear.sl, scenarioLevels.BANKNIFTY.bear.target, h.banknifty, portDelta.BANKNIFTY).pct;
-    // Direction vs previous row (i=0 is today, i+1 is yesterday)
-    const prev  = history[history.length - 1 - (i+1)];
-    const arrow = (cur, prevVal) => !prev ? '—' : cur > prevVal ? '<span style="color:var(--pos)">↑</span>' : cur < prevVal ? '<span style="color:var(--p03)">↓</span>' : '=';
-    const prevNBull = prev ? computeScen(scenarioLevels.NIFTY.bull.sl,     scenarioLevels.NIFTY.bull.target,     prev.nifty,     portDelta.NIFTY).pct     : null;
-    const prevNBear = prev ? computeScen(scenarioLevels.NIFTY.bear.sl,     scenarioLevels.NIFTY.bear.target,     prev.nifty,     portDelta.NIFTY).pct     : null;
-    const prevBBull = prev ? computeScen(scenarioLevels.BANKNIFTY.bull.sl, scenarioLevels.BANKNIFTY.bull.target, prev.banknifty, portDelta.BANKNIFTY).pct : null;
-    const prevBBear = prev ? computeScen(scenarioLevels.BANKNIFTY.bear.sl, scenarioLevels.BANKNIFTY.bear.target, prev.banknifty, portDelta.BANKNIFTY).pct : null;
-    // P&L columns — may be absent in older localStorage entries
+    const prev    = history[history.length - 1 - (i+1)];
     const hasPnl    = h.niftyPnl != null;
-    const totalPnl  = hasPnl ? h.niftyPnl + h.bnknPnl : null;
+    const totalPnl  = hasPnl ? h.niftyPnl + (h.bnknPnl || 0) : null;
     const hasRPnl   = h.niftyRPnl != null;
-    const totalRPnl = hasRPnl ? h.niftyRPnl + h.bnknRPnl : null;
+    const totalRPnl = hasRPnl ? h.niftyRPnl + (h.bnknRPnl || 0) : null;
+    const taxProv   = hasRPnl ? Math.max(totalRPnl, 0) * 0.30 : null;
+    const broker    = h.brokerCharges ?? null;
+    const netFinal  = hasRPnl ? totalRPnl - taxProv - (broker ?? 0) : null;
     const pnlCell   = (v) => v == null ? `<td class="val" style="color:var(--t3)">—</td>`
-      : `<td class="${v >= 0 ? 'pos' : 'neg'}">${fmtPnl(v)}</td>`;
+      : `<td class="${v >= 0 ? 'pos' : 'neg'}">${fmtAmt(v)}</td>`;
     const arrowPnl  = (cur, p) => !p || p.niftyPnl == null ? '' :
-      cur > (p.niftyPnl + p.bnknPnl) ? '<span style="color:var(--pos)">↑</span>' :
-      cur < (p.niftyPnl + p.bnknPnl) ? '<span style="color:var(--p03)">↓</span>' : '=';
+      cur > (p.niftyPnl + (p.bnknPnl||0)) ? '<span style="color:var(--pos)">↑</span>' :
+      cur < (p.niftyPnl + (p.bnknPnl||0)) ? '<span style="color:var(--p03)">↓</span>' : '=';
     const s = isToday ? 'font-weight:600;background:var(--surface2)' : '';
-    if (!h.nifty || !h.banknifty) return '';   // skip corrupt entries
+    if (!h.nifty || !h.banknifty) return '';
     return `<tr style="${s}">
       <td class="val">${h.date}${isToday?' ◀':''}</td>
       <td class="val">${h.nifty.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
       <td class="val">${h.banknifty.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
       ${pnlCell(hasPnl ? h.niftyPnl : null)}
-      ${pnlCell(hasPnl ? h.bnknPnl : null)}
-      ${hasPnl ? `<td class="${totalPnl >= 0 ? 'pos' : 'neg'}" style="font-weight:600">${arrowPnl(totalPnl, prev)} ${fmtPnl(totalPnl)}</td>` : `<td class="val" style="color:var(--t3)">—</td>`}
+      ${pnlCell(hasPnl ? h.bnknPnl  : null)}
+      ${hasPnl ? `<td class="${totalPnl >= 0 ? 'pos' : 'neg'}" style="font-weight:600">${arrowPnl(totalPnl, prev)} ${fmtAmt(totalPnl)}</td>` : `<td class="val" style="color:var(--t3)">—</td>`}
       ${pnlCell(totalRPnl)}
-      <td class="val">${arrow(nBull,prevNBull)} ${nBull.toFixed(1)}%</td>
-      <td class="val">${arrow(nBear,prevNBear)} ${nBear.toFixed(1)}%</td>
-      <td class="val">${arrow(bBull,prevBBull)} ${bBull.toFixed(1)}%</td>
-      <td class="val">${arrow(bBear,prevBBear)} ${bBear.toFixed(1)}%</td>
+      ${broker == null ? `<td class="val" style="color:var(--t3)">—</td>` : `<td class="neg">${fmtAmt(broker)}</td>`}
+      ${pnlCell(taxProv)}
+      ${pnlCell(netFinal)}
     </tr>`;
   }).join('');
   return `<div class="card" style="margin-top:18px;">
     <div class="card-hdr">
       <span class="card-title">Daily Progress History</span>
-      <span class="card-sub">Unrealized P&amp;L = open positions MTM · Realized P&amp;L = closed positions that day · Progress % = SL→Target distance</span>
+      <span class="card-sub">Broker ₹ = Zerodha charges computed from orders file (brokerage + STT + exchange + SEBI + stamp + GST) · Tax ~30% = provision on realized profits · Net = realized − broker − tax</span>
     </div>
     <div class="card-body" style="padding:0">
-      <div class="tbl-wrap">
+      <div class="tbl-wrap" style="max-height:380px;">
         <table>
-          <thead><tr><th>Date</th><th>NIFTY</th><th>BANKNIFTY</th><th>N Unreal</th><th>BN Unreal</th><th>Total Unreal</th><th>Realized</th><th>N-Bull%</th><th>N-Bear%</th><th>BN-Bull%</th><th>BN-Bear%</th></tr></thead>
+          <thead style="position:sticky;top:0;z-index:2;"><tr><th>Date</th><th>NIFTY</th><th>BANKNIFTY</th><th>N Unreal</th><th>BN Unreal</th><th>Total Unreal</th><th>Realized</th><th>Broker ₹</th><th>Tax ~30%</th><th>Net (after T+B)</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>

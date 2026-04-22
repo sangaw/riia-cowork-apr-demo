@@ -534,6 +534,213 @@ def _implied_vol(S, K, T, r, market_price, opt_type, tol=1e-5, max_iter=100) -> 
     return (lo + hi) / 2
 
 
+# ─── Black's Model (1976) ─────────────────────────────────────────────────────
+# Uses forward price F = S·e^(rT), removing the need for a dividend yield.
+# More accurate than Black-Scholes for cash-settled index options (NIFTY/BANKNIFTY).
+
+_STRIKE_STEP = {"NIFTY": 50, "BANKNIFTY": 100}
+
+
+def _black_d1d2(F: float, K: float, T: float, sigma: float):
+    if T <= 0 or sigma <= 0 or F <= 0 or K <= 0:
+        return None, None
+    d1 = (math.log(F / K) + 0.5 * sigma ** 2 * T) / (sigma * math.sqrt(T))
+    return d1, d1 - sigma * math.sqrt(T)
+
+
+def _black_price(F: float, K: float, T: float, r: float, sigma: float, opt_type: str) -> float:
+    d1, d2 = _black_d1d2(F, K, T, sigma)
+    if d1 is None:
+        return max(0.0, F - K) if opt_type == "CE" else max(0.0, K - F)
+    disc = math.exp(-r * T)
+    if opt_type == "CE":
+        return disc * (F * norm.cdf(d1) - K * norm.cdf(d2))
+    return disc * (K * norm.cdf(-d2) - F * norm.cdf(-d1))
+
+
+def _black_delta(F: float, K: float, T: float, r: float, sigma: float, opt_type: str) -> float:
+    d1, _ = _black_d1d2(F, K, T, sigma)
+    if d1 is None:
+        return 0.0
+    disc = math.exp(-r * T)
+    return disc * norm.cdf(d1) if opt_type == "CE" else -disc * norm.cdf(-d1)
+
+
+def _strike_from_delta(
+    S: float, T: float, r: float, sigma: float,
+    target_delta: float, opt_type: str,
+    max_iter: int = 120,
+) -> float:
+    """
+    Bisect to find the strike K where |Black's delta| == target_delta.
+    target_delta is a positive magnitude (e.g. 0.20).
+    """
+    F = S * math.exp(r * T)
+    if opt_type == "PE":
+        lo, hi = S * 0.40, S * 1.01
+        fn = lambda k: abs(_black_delta(F, k, T, r, sigma, "PE")) - target_delta
+    else:
+        lo, hi = S * 0.99, S * 1.60
+        fn = lambda k: _black_delta(F, k, T, r, sigma, "CE") - target_delta
+
+    if fn(lo) * fn(hi) > 0:
+        return S * (0.90 if opt_type == "PE" else 1.10)
+
+    for _ in range(max_iter):
+        mid = (lo + hi) / 2
+        val = fn(mid)
+        if abs(val) < 1e-6:
+            return mid
+        if opt_type == "PE":
+            lo, hi = (mid, hi) if val < 0 else (lo, mid)
+        else:
+            lo, hi = (mid, hi) if val > 0 else (lo, mid)
+    return (lo + hi) / 2
+
+
+def _next_3_expiries(today: date) -> list:
+    """
+    Rolling 3-month expiry window.
+    Crosses the 10th: drop current month, advance window by one month.
+    """
+    sm = today.month + (1 if today.day > 10 else 0)
+    sy = today.year + (sm > 12)
+    sm = sm if sm <= 12 else sm - 12
+    return [
+        _last_thursday(sy + (sm - 1 + i) // 12, (sm - 1 + i) % 12 + 1)
+        for i in range(3)
+    ]
+
+
+def compute_hedge_calendar(
+    input_dir: str,
+    nifty_capital: float     = 250_000,
+    banknifty_capital: float = 250_000,
+    max_loss_pct: float      = 0.20,
+    put_delta: float         = 0.20,
+    call_delta: float        = 0.20,
+) -> dict:
+    """
+    Rolling 3-month collar calendar using Black's 1976 model.
+
+    For each of the next 3 NSE expiries, and for each instrument:
+      • Finds the put strike where Black's |delta| == put_delta
+      • Finds the call strike where Black's delta == call_delta
+      • Prices both legs and returns fair values + collar summary.
+
+    IV is derived from the average of current active option positions;
+    falls back to 15% (NIFTY) / 16% (BANKNIFTY) when no positions exist.
+    """
+    market  = load_market_data(input_dir)
+    today   = date.today()
+    expiries = _next_3_expiries(today)
+
+    # Derive representative IV per underlying from current positions
+    active, _ = parse_positions(input_dir)
+    greeks_list = compute_greeks(active, market)
+    iv_sum: dict = {}
+    iv_cnt: dict = {}
+    for g in greeks_list:
+        iv_str = g.get("iv", "—")
+        if iv_str == "—":
+            continue
+        try:
+            v = float(iv_str.rstrip("%")) / 100
+            und = g["und"]
+            iv_sum[und] = iv_sum.get(und, 0.0) + v
+            iv_cnt[und] = iv_cnt.get(und, 0) + 1
+        except ValueError:
+            pass
+
+    _default_iv = {"NIFTY": 0.15, "BANKNIFTY": 0.16}
+
+    def _iv(und: str) -> float:
+        return iv_sum[und] / iv_cnt[und] if iv_cnt.get(und) else _default_iv.get(und, 0.15)
+
+    months = []
+    for exp in expiries:
+        T   = max((exp - today).days / 365.0, 1 / 365)
+        dte = (exp - today).days
+        inst_data: dict = {}
+
+        for und, capital in [("NIFTY", nifty_capital), ("BANKNIFTY", banknifty_capital)]:
+            spot_info = market.get(und)
+            if not spot_info:
+                continue
+            S        = spot_info["close"]
+            lot_size = LOT_SIZES.get(und, 75)
+            step     = _STRIKE_STEP.get(und, 50)
+            iv       = _iv(und)
+            F        = S * math.exp(RISK_FREE_RATE * T)
+            max_loss = capital * max_loss_pct
+
+            # Put leg — buy put at target delta
+            pk_raw     = _strike_from_delta(S, T, RISK_FREE_RATE, iv, put_delta, "PE")
+            put_strike = round(pk_raw / step) * step
+            put_price  = _black_price(F, put_strike, T, RISK_FREE_RATE, iv, "PE")
+            put_d_act  = abs(_black_delta(F, put_strike, T, RISK_FREE_RATE, iv, "PE"))
+            gap        = max(S - put_strike, step)
+            put_lots   = max(1, math.ceil(max_loss / (lot_size * gap)))
+            put_total  = round(put_price * lot_size * put_lots)
+
+            # Call leg — sell call at target delta
+            ck_raw      = _strike_from_delta(S, T, RISK_FREE_RATE, iv, call_delta, "CE")
+            call_strike = round(ck_raw / step) * step
+            call_price  = _black_price(F, call_strike, T, RISK_FREE_RATE, iv, "CE")
+            call_d_act  = _black_delta(F, call_strike, T, RISK_FREE_RATE, iv, "CE")
+            call_total  = round(call_price * lot_size * put_lots)
+
+            net_cost = put_total - call_total
+
+            inst_data[und] = {
+                "spot":     round(S, 2),
+                "forward":  round(F, 2),
+                "iv_pct":   f"{iv * 100:.1f}%",
+                "lot_size": lot_size,
+                "max_loss": round(max_loss),
+                "put": {
+                    "strike":        put_strike,
+                    "black_fair":    round(put_price, 2),
+                    "delta":         round(put_d_act, 3),
+                    "lots":          put_lots,
+                    "total_premium": put_total,
+                },
+                "call": {
+                    "strike":        call_strike,
+                    "black_fair":    round(call_price, 2),
+                    "delta":         round(call_d_act, 3),
+                    "lots":          put_lots,
+                    "total_premium": call_total,
+                },
+                "collar": {
+                    "net_cost":        net_cost,
+                    "net_cost_pct":    round(net_cost / capital * 100, 2),
+                    "protected_below": put_strike,
+                    "capped_above":    call_strike,
+                },
+            }
+
+        months.append({
+            "expiry":    exp.isoformat(),
+            "label":     exp.strftime("%b %Y"),
+            "exp_label": exp.strftime("%d-%b-%Y"),
+            "dte":       dte,
+            "instruments": inst_data,
+        })
+
+    return {
+        "config": {
+            "nifty_capital":     nifty_capital,
+            "banknifty_capital": banknifty_capital,
+            "max_loss_pct":      max_loss_pct,
+            "put_delta":         put_delta,
+            "call_delta":        call_delta,
+            "as_of":             today.isoformat(),
+        },
+        "months": months,
+    }
+
+
 def compute_greeks(active_positions: list, spot: dict, as_of: Optional[date] = None) -> list:
     """
     Compute approximate Black-Scholes greeks for each active position.

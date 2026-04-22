@@ -1288,6 +1288,40 @@ def get_hedge_history():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/v1/portfolio/hedge-calendar", tags=["Portfolio"],
+         dependencies=[Depends(_require_portfolio_key)])
+def get_hedge_calendar(
+    nifty_capital:     float = 250_000,
+    banknifty_capital: float = 250_000,
+    max_loss_pct:      float = 0.20,
+    put_delta:         float = 0.20,
+    call_delta:        float = 0.20,
+):
+    """
+    Rolling 3-month collar calendar using Black's 1976 model.
+
+    For each of the next 3 NSE monthly expiries, returns the fair value of:
+      • Buy Put  — at the strike where Black's |delta| == put_delta
+      • Sell Call — at the strike where Black's delta == call_delta
+    and the net collar cost / protected range for NIFTY and BANKNIFTY.
+
+    The 10th-of-month rule applies: once past the 10th, the current month
+    is dropped and the window advances to the next 3 forward months.
+    """
+    try:
+        from rita.core.portfolio_manager import compute_hedge_calendar
+        return compute_hedge_calendar(
+            INPUT_DIR,
+            nifty_capital=nifty_capital,
+            banknifty_capital=banknifty_capital,
+            max_loss_pct=max_loss_pct,
+            put_delta=put_delta,
+            call_delta=call_delta,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 import json as _json
 
 # ─── Manoeuvre group state helpers ───────────────────────────────────────────

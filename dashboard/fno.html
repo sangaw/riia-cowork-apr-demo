@@ -821,9 +821,58 @@ td.neg{color:var(--neg);font-family:var(--fm);font-weight:500;}
     <div class="page-hdr">
       <div>
         <div class="page-title">Hedge Radar</div>
-        <div class="page-sub">Long option quality · Strike distance · Theta decay risk · DTE scoring</div>
+        <div class="page-sub">Capital protection · Black's model collar calendar · Long option quality scoring</div>
       </div>
       <span class="phase-tag p03">Hedge Quality</span>
+    </div>
+
+    <!-- ── Collar Calendar ─────────────────────────────────────── -->
+    <div class="card" style="margin-bottom:18px;">
+      <div class="card-hdr">
+        <span class="card-title">Capital Protection — Collar Calendar</span>
+        <span class="card-sub">Black's 1976 model · 3-month rolling window · Buy Put + Sell Call</span>
+      </div>
+      <div class="card-body">
+
+        <!-- Config bar -->
+        <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border);">
+          <div style="display:flex;flex-direction:column;gap:3px;">
+            <label style="font-family:var(--fm);font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;">NIFTY Capital (₹)</label>
+            <input id="hc-nifty-cap" type="number" value="250000" step="50000" min="50000"
+              style="font-family:var(--fm);font-size:12px;width:120px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);color:var(--text);">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:3px;">
+            <label style="font-family:var(--fm);font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;">BANKNIFTY Capital (₹)</label>
+            <input id="hc-bnkn-cap" type="number" value="250000" step="50000" min="50000"
+              style="font-family:var(--fm);font-size:12px;width:120px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);color:var(--text);">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:3px;">
+            <label style="font-family:var(--fm);font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;">Max Loss %</label>
+            <input id="hc-max-loss" type="number" value="20" step="5" min="5" max="50"
+              style="font-family:var(--fm);font-size:12px;width:72px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);color:var(--text);">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:3px;">
+            <label style="font-family:var(--fm);font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;">Put Δ Target</label>
+            <input id="hc-put-delta" type="number" value="0.20" step="0.05" min="0.05" max="0.50"
+              style="font-family:var(--fm);font-size:12px;width:72px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);color:var(--text);">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:3px;">
+            <label style="font-family:var(--fm);font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;">Call Δ Target</label>
+            <input id="hc-call-delta" type="number" value="0.20" step="0.05" min="0.05" max="0.50"
+              style="font-family:var(--fm);font-size:12px;width:72px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);color:var(--text);">
+          </div>
+          <button onclick="loadHedgeCalendar(true)"
+            style="font-family:var(--fm);font-size:11px;font-weight:500;padding:5px 14px;background:var(--text);color:var(--surface);border:none;border-radius:var(--r);cursor:pointer;white-space:nowrap;">
+            Recalculate
+          </button>
+        </div>
+
+        <!-- Calendar grid (3 months × 2 instruments) -->
+        <div id="hc-grid">
+          <div style="text-align:center;padding:32px;font-family:var(--fm);font-size:12px;color:var(--t3);">Loading…</div>
+        </div>
+
+      </div>
     </div>
 
     <!-- KPI summary row -->
@@ -937,6 +986,7 @@ let hedgeQuality   = {};
 let hedgeHistory   = {};
 let hedgeHistoryLoaded = false;
 let hedgeTimelineChart = null;
+let hedgeCalendarLoaded = false;
 
 // ── Global state ──────────────────────────────────────────
 var currentUnd = 'ALL';
@@ -1031,6 +1081,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
     document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
     document.getElementById('page-' + item.dataset.page).classList.add('active');
     if (item.dataset.page === 'history') loadHedgeHistory();
+    if (item.dataset.page === 'hedge')   loadHedgeCalendar();
   });
 });
 
@@ -2105,6 +2156,144 @@ function renderScenarios() {
     </div>`;
 
   document.getElementById('rr-history').innerHTML = renderRRHistory();
+}
+
+// ── COLLAR CALENDAR (Black's Model) ──────────────────────
+async function loadHedgeCalendar(force) {
+  if (hedgeCalendarLoaded && !force) return;
+  const niftyCap  = parseFloat(document.getElementById('hc-nifty-cap').value)  || 250000;
+  const bnknCap   = parseFloat(document.getElementById('hc-bnkn-cap').value)   || 250000;
+  const maxLoss   = parseFloat(document.getElementById('hc-max-loss').value)   || 20;
+  const putDelta  = parseFloat(document.getElementById('hc-put-delta').value)  || 0.20;
+  const callDelta = parseFloat(document.getElementById('hc-call-delta').value) || 0.20;
+
+  const el = document.getElementById('hc-grid');
+  el.innerHTML = '<div style="text-align:center;padding:32px;font-family:var(--fm);font-size:12px;color:var(--t3);">Computing…</div>';
+
+  try {
+    const qs = `nifty_capital=${niftyCap}&banknifty_capital=${bnknCap}&max_loss_pct=${maxLoss/100}&put_delta=${putDelta}&call_delta=${callDelta}`;
+    const resp = await fetch(`/api/v1/portfolio/hedge-calendar?${qs}`,
+      RITA_API_KEY ? { headers: { 'X-API-Key': RITA_API_KEY } } : {});
+    if (!resp.ok) throw new Error(`API ${resp.status}`);
+    const data = await resp.json();
+    hedgeCalendarLoaded = true;
+    renderHedgeCalendar(data);
+  } catch (e) {
+    el.innerHTML = `<div style="color:var(--neg);font-family:var(--fm);font-size:12px;padding:16px;">Error: ${e.message}</div>`;
+  }
+}
+
+function renderHedgeCalendar(data) {
+  const el = document.getElementById('hc-grid');
+  if (!data || !data.months || !data.months.length) {
+    el.innerHTML = '<div style="color:var(--t3);font-family:var(--fm);font-size:12px;padding:16px;">No data returned.</div>';
+    return;
+  }
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
+      ${data.months.map(m => hcMonthCol(m)).join('')}
+    </div>
+    <div style="margin-top:12px;font-family:var(--fm);font-size:10px;color:var(--t3);">
+      IV derived from current active positions. Fair values are Black's 1976 model prices — compare with broker quotes to assess if hedge is cheap or expensive.
+      Rolling rule: after the 10th of the month, window advances to next 3 forward months.
+    </div>`;
+}
+
+function hcMonthCol(m) {
+  const nifty = m.instruments['NIFTY'];
+  const bnkn  = m.instruments['BANKNIFTY'];
+  return `
+    <div>
+      <div style="text-align:center;margin-bottom:10px;padding:8px;background:var(--surface2);border-radius:var(--r);border:1px solid var(--border);">
+        <div style="font-family:var(--fm);font-size:13px;font-weight:700;color:var(--text);">${m.label}</div>
+        <div style="font-family:var(--fm);font-size:10px;color:var(--t3);margin-top:1px;">Expiry ${m.exp_label} · ${m.dte}d</div>
+      </div>
+      ${nifty ? hcInstrumentCard('NIFTY', nifty, '#0056B8') : ''}
+      ${bnkn  ? hcInstrumentCard('BANKNIFTY', bnkn, '#6B2FA0') : ''}
+    </div>`;
+}
+
+function hcInstrumentCard(name, d, accent) {
+  const netPos  = d.collar.net_cost <= 0;
+  const netSign = d.collar.net_cost > 0 ? '−' : '+';
+  const netAbs  = Math.abs(d.collar.net_cost);
+  const netPct  = Math.abs(d.collar.net_cost_pct).toFixed(1);
+
+  return `
+    <div style="border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px;overflow:hidden;">
+      <div style="background:${accent}18;border-bottom:1px solid var(--border);padding:6px 10px;display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-family:var(--fm);font-size:11px;font-weight:700;color:${accent};">${name}</span>
+        <span style="font-family:var(--fm);font-size:9px;color:var(--t3);">IV ${d.iv_pct} · F ${d.forward.toLocaleString('en-IN',{maximumFractionDigits:0})}</span>
+      </div>
+      <div style="padding:10px;">
+
+        <!-- Buy Put -->
+        <div style="margin-bottom:8px;">
+          <div style="font-family:var(--fm);font-size:9px;font-weight:600;color:var(--neg);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">▼ Buy Put</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;">
+            <div>
+              <div style="font-family:var(--fm);font-size:9px;color:var(--t3);">Strike</div>
+              <div style="font-family:var(--fm);font-size:12px;font-weight:600;">${d.put.strike.toLocaleString('en-IN')}</div>
+            </div>
+            <div>
+              <div style="font-family:var(--fm);font-size:9px;color:var(--t3);">Black's Δ</div>
+              <div style="font-family:var(--fm);font-size:12px;font-weight:600;">${d.put.delta.toFixed(3)}</div>
+            </div>
+            <div>
+              <div style="font-family:var(--fm);font-size:9px;color:var(--t3);">Fair Value</div>
+              <div style="font-family:var(--fm);font-size:12px;font-weight:600;">₹${d.put.black_fair.toFixed(2)}</div>
+            </div>
+            <div>
+              <div style="font-family:var(--fm);font-size:9px;color:var(--t3);">Premium (${d.put.lots}L)</div>
+              <div style="font-family:var(--fm);font-size:12px;font-weight:600;color:var(--neg);">−₹${fmt(d.put.total_premium)}</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="border-top:1px dashed var(--border);margin:8px 0;"></div>
+
+        <!-- Sell Call -->
+        <div style="margin-bottom:8px;">
+          <div style="font-family:var(--fm);font-size:9px;font-weight:600;color:var(--pos);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">▲ Sell Call</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;">
+            <div>
+              <div style="font-family:var(--fm);font-size:9px;color:var(--t3);">Strike</div>
+              <div style="font-family:var(--fm);font-size:12px;font-weight:600;">${d.call.strike.toLocaleString('en-IN')}</div>
+            </div>
+            <div>
+              <div style="font-family:var(--fm);font-size:9px;color:var(--t3);">Black's Δ</div>
+              <div style="font-family:var(--fm);font-size:12px;font-weight:600;">${d.call.delta.toFixed(3)}</div>
+            </div>
+            <div>
+              <div style="font-family:var(--fm);font-size:9px;color:var(--t3);">Fair Value</div>
+              <div style="font-family:var(--fm);font-size:12px;font-weight:600;">₹${d.call.black_fair.toFixed(2)}</div>
+            </div>
+            <div>
+              <div style="font-family:var(--fm);font-size:9px;color:var(--t3);">Premium In (${d.call.lots}L)</div>
+              <div style="font-family:var(--fm);font-size:12px;font-weight:600;color:var(--pos);">+₹${fmt(d.call.total_premium)}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Collar summary -->
+        <div style="background:var(--surface2);border-radius:4px;padding:8px 10px;border:1px solid var(--border);">
+          <div style="font-family:var(--fm);font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Collar Net</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;">
+            <div>
+              <div style="font-family:var(--fm);font-size:9px;color:var(--t3);">Net Cost</div>
+              <div style="font-family:var(--fm);font-size:13px;font-weight:700;color:${netPos?'var(--pos)':'var(--neg)'};">${netSign}₹${fmt(netAbs)}</div>
+              <div style="font-family:var(--fm);font-size:9px;color:var(--t3);">${netPct}% of capital</div>
+            </div>
+            <div>
+              <div style="font-family:var(--fm);font-size:9px;color:var(--t3);">Protected Range</div>
+              <div style="font-family:var(--fm);font-size:10px;font-weight:600;">${d.collar.protected_below.toLocaleString('en-IN')} ↔ ${d.collar.capped_above.toLocaleString('en-IN')}</div>
+              <div style="font-family:var(--fm);font-size:9px;color:var(--t3);">Put floor · Call cap</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>`;
 }
 
 // ── HEDGE HISTORY ─────────────────────────────────────────
